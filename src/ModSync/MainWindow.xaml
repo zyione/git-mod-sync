@@ -1,0 +1,424 @@
+<Window x:Class="ModSync.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ModSync"
+        Width="600"
+        Height="520"
+        MinWidth="540"
+        MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        FontFamily="{StaticResource SystemFont}">
+
+    <!-- Outer Window Border with Rounded Corners & Soft Border -->
+    <Border Background="{DynamicResource AppBackgroundBrush}"
+            BorderBrush="{DynamicResource WindowBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="16"
+            SnapsToDevicePixels="True">
+        
+        <Grid>
+            <!-- Main Content Layout -->
+            <Grid Margin="24,14,24,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />  <!-- Window Header / Drag Bar -->
+                    <RowDefinition Height="Auto" />  <!-- App Title & Subtitle -->
+                    <RowDefinition Height="Auto" />  <!-- Status Card -->
+                    <RowDefinition Height="*" />     <!-- Actions Area -->
+                    <RowDefinition Height="Auto" />  <!-- Feedback / Toast Card -->
+                </Grid.RowDefinitions>
+
+                <!-- Window Header / Drag Area -->
+                <Grid Grid.Row="0" Margin="0,0,0,10" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="●" FontSize="11" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="ModSync" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Window Control Buttons (Theme Toggle, Minimize, Close) -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Theme Toggle Button -->
+                        <Button Click="ThemeToggle_Click"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Padding="8,4"
+                                Margin="0,0,4,0"
+                                ToolTip="Toggle Light / Dark Mode">
+                            <TextBlock x:Name="ThemeIconText" Text="◐" FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Button>
+
+                        <!-- Minimize Button -->
+                        <Button Click="Minimize_Click"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Padding="8,4"
+                                Margin="0,0,4,0">
+                            <TextBlock Text="─" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Button>
+
+                        <!-- Close Button -->
+                        <Button Click="Close_Click"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Padding="8,4">
+                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- App Branding -->
+                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,4,0,18">
+                    <TextBlock Text="ModSync"
+                               FontSize="30"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                    <TextBlock Text="Minecraft Mod Synchronizer"
+                               FontSize="13"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,3,0,0" />
+                </StackPanel>
+
+                <!-- Status Card (Compact Pill/Card) -->
+                <Border Grid.Row="2"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14"
+                        Padding="18,12"
+                        Margin="0,0,0,22">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Status Indicator Dot -->
+                        <Ellipse x:Name="StatusDot"
+                                 Grid.Column="0"
+                                 Width="9"
+                                 Height="9"
+                                 Fill="{DynamicResource SuccessBrush}"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,12,0" />
+
+                        <!-- Status Details -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="StatusHeadingText"
+                                       Text="Connected to GitHub"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}" />
+                            <TextBlock x:Name="StatusSubText"
+                                       Text="zyione/4stoogies-mod-list • main"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,1,0,0" />
+                        </StackPanel>
+
+                        <!-- Mod Count Badge -->
+                        <Border Grid.Column="2"
+                                Background="{DynamicResource SecondaryButtonBrush}"
+                                CornerRadius="8"
+                                Padding="10,4"
+                                VerticalAlignment="Center">
+                            <TextBlock x:Name="ModCountBadgeText"
+                                       Text="-- mods"
+                                       FontSize="12"
+                                       FontWeight="Medium"
+                                       Foreground="{DynamicResource PrimaryTextBrush}" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Main Actions Area -->
+                <StackPanel Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
+                    
+                    <!-- Progress Bar (Visible during active tasks) -->
+                    <StackPanel x:Name="ProgressArea" Visibility="Collapsed" Margin="0,0,0,14">
+                        <TextBlock x:Name="ProgressStatusText"
+                                   Text="Syncing mods..."
+                                   FontSize="13"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,8" />
+                        <ProgressBar x:Name="TaskProgressBar"
+                                     IsIndeterminate="True"
+                                     Height="4"
+                                     Foreground="{DynamicResource AccentBrush}"
+                                     Background="{DynamicResource SecondaryButtonBrush}"
+                                     BorderThickness="0" />
+                    </StackPanel>
+
+                    <!-- Primary Action: Sync Mods -->
+                    <Button x:Name="SyncModsButton"
+                            Content="Sync Mods"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Height="48"
+                            Margin="0,0,0,10"
+                            Click="SyncMods_Click" />
+
+                    <!-- Secondary Action: Push Mods -->
+                    <Button x:Name="PushModsButton"
+                            Content="Push Mods"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="42"
+                            Margin="0,0,0,16"
+                            Click="PushMods_Click" />
+
+                    <!-- Tertiary Actions Row -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Check Status"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Click="CheckStatus_Click" />
+                        
+                        <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                        <Button x:Name="AuthButton"
+                                Content="GitHub Login"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Click="Auth_Click" />
+
+                        <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
+
+                        <Button Content="Repository"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Click="SwitchRepo_Click" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Feedback / Toast Card (Bottom notification area) -->
+                <Border x:Name="FeedbackCard"
+                        Grid.Row="4"
+                        Background="{DynamicResource CardBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="14,10"
+                        Margin="0,12,0,0"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="FeedbackMessageText"
+                                   Text="Mods are up to date."
+                                   FontSize="12"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Content="Dismiss"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Padding="6,2"
+                                FontSize="11"
+                                Click="DismissFeedback_Click" />
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ======================================================== -->
+            <!-- MODAL OVERLAYS (Apple Sheet Style)                       -->
+            <!-- ======================================================== -->
+            <Grid x:Name="ModalBackdrop"
+                  Background="{DynamicResource ModalBackdropBrush}"
+                  Visibility="Collapsed">
+                
+                <!-- Centered Sheet Card -->
+                <Border Background="{DynamicResource CardBackgroundBrush}"
+                        BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="26,22"
+                        Width="440"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center">
+
+                    <Grid>
+                        <!-- ================= 1. PUSH CONFIRMATION MODAL ================= -->
+                        <StackPanel x:Name="PushConfirmSheet" Visibility="Collapsed">
+                            <TextBlock Text="Push Mod Changes?"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,6" />
+                            <TextBlock x:Name="PushConfirmSummaryText"
+                                       Text="Changes detected: +2 added, ~1 updated"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,12" />
+
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    CornerRadius="8"
+                                    Padding="12,10"
+                                    Margin="0,0,0,18">
+                                <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="PushDetailsText"
+                                               FontSize="12"
+                                               FontFamily="Consolas, monospace"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               TextWrapping="Wrap" />
+                                </ScrollViewer>
+                            </Border>
+
+                            <TextBlock Text="These changes will be committed and uploaded to GitHub."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,16" />
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Cancel"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Width="90"
+                                        Margin="0,0,10,0"
+                                        Click="CloseModal_Click" />
+                                <Button Content="Push Changes"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Height="42"
+                                        Width="130"
+                                        Click="ConfirmPush_Click" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- ================= 2. GITHUB LOGIN MODAL ================= -->
+                        <StackPanel x:Name="LoginSheet" Visibility="Collapsed">
+                            <TextBlock Text="GitHub Login"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Enter a Personal Access Token (PAT) with 'repo' scope to push mods."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,14" />
+
+                            <TextBlock Text="Personal Access Token"
+                                       FontSize="11"
+                                       FontWeight="Medium"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <PasswordBox x:Name="TokenInputBox"
+                                         Style="{StaticResource MinimalPasswordBoxStyle}"
+                                         Margin="0,0,0,8" />
+
+                            <TextBlock Text="Tokens are securely encrypted in Windows Credential Manager."
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,16" />
+
+                            <Grid>
+                                <Button x:Name="LogoutButton"
+                                        Content="Sign Out"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        Foreground="{DynamicResource ErrorBrush}"
+                                        Click="Logout_Click" />
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="Cancel"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Width="80"
+                                            Margin="0,0,10,0"
+                                            Click="CloseModal_Click" />
+                                    <Button x:Name="SubmitLoginButton"
+                                            Content="Sign In"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Height="42"
+                                            Width="90"
+                                            Click="SubmitLogin_Click" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ================= 3. SWITCH REPOSITORY MODAL ================= -->
+                        <StackPanel x:Name="SwitchRepoSheet" Visibility="Collapsed">
+                            <TextBlock Text="Switch Repository"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Change the authoritative mod repository URL."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,14" />
+
+                            <TextBlock Text="Repository URL"
+                                       FontSize="11"
+                                       FontWeight="Medium"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBox x:Name="RepoUrlInputBox"
+                                     Style="{StaticResource MinimalTextBoxStyle}"
+                                     Margin="0,0,0,10" />
+
+                            <Button Content="Reset to Default (zyione/4stoogies-mod-list)"
+                                    Style="{StaticResource GhostButtonStyle}"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,0,0,16"
+                                    Click="ResetDefaultRepo_Click" />
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="Cancel"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Width="80"
+                                        Margin="0,0,10,0"
+                                        Click="CloseModal_Click" />
+                                <Button Content="Switch"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Height="42"
+                                        Width="90"
+                                        Click="SubmitSwitchRepo_Click" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- ================= 4. STATUS DETAILS MODAL ================= -->
+                        <StackPanel x:Name="StatusSheet" Visibility="Collapsed">
+                            <TextBlock Text="Status Details"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,14" />
+
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    CornerRadius="10"
+                                    Padding="14,12"
+                                    Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock x:Name="StatusDialogRepoText"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Margin="0,0,0,4" />
+                                    <TextBlock x:Name="StatusDialogBranchText"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Margin="0,0,0,4" />
+                                    <TextBlock x:Name="StatusDialogCommitText"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               Margin="0,0,0,4" />
+                                    <TextBlock x:Name="StatusDialogPathText"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <Button Content="Done"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    Width="80"
+                                    Click="CloseModal_Click" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

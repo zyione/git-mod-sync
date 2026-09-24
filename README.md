@@ -23,7 +23,9 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 ## Key Features
 
-- **Zero-Terminal Experience:** Players run `ModSync.exe` and press `1` to sync. No Git installation, command prompt, or complex setup required.
+- **Apple-Inspired Graphical Interface:** Soft, spacious, minimalist UI featuring clean typography, rounded cards, subtle hover states, and smooth sheet modals.
+- **Automatic Light/Dark Mode:** Adapts seamlessly to your Windows theme with custom Apple dark mode and light mode palettes.
+- **Zero-Terminal Experience:** Players simply click **Sync Mods**. No Git installation, command prompt, or complex setup required.
 - **Self-Contained Single-File Executable:** Compiles to a single standalone `ModSync.exe` with bundled .NET runtime and automated portable Git provisioning (MinGit).
 - **Safe Bidirectional Synchronization:**
   - **Sync (Download):** GitHub Remote $\to$ Internal Repository $\to$ `../mods`
@@ -39,8 +41,6 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 ## Directory Layout
 
-The application is deployed directly beside your Minecraft `mods` folder:
-
 ```text
 MinecraftPack/
 │
@@ -52,12 +52,11 @@ MinecraftPack/
 │   └── disabled-mods/           <-- Protected, untouched by ModSync
 │
 └── ModSync/
-    ├── ModSync.exe              <-- Single executable
+    ├── ModSync.exe              <-- Single standalone GUI executable
     ├── config.json              <-- Configuration file
     │
     ├── repository/              <-- Automatically created internal clone
     │   ├── .git/
-    │   ├── fabric-api-0.92.0+1.20.1.jar
     │   └── ...
     │
     ├── logs/                    <-- Daily operation logs
@@ -79,8 +78,12 @@ git-mod-sync/
 ├── README.md                            # Documentation
 └── src/
     └── ModSync/
-        ├── ModSync.csproj               # .NET 8 Project file
-        ├── Program.cs                   # Interactive console UI and workflow runner
+        ├── ModSync.csproj               # .NET 8 WPF Project file
+        ├── App.xaml / App.xaml.cs       # Application lifecycle and theme setup
+        ├── MainWindow.xaml / .cs        # Apple-inspired minimalist Windows UI
+        │
+        ├── Themes/
+        │   └── ThemeManager.cs          # Windows system Light/Dark theme manager
         │
         ├── Models/
         │   ├── AppConfig.cs             # Configuration schema
@@ -96,13 +99,13 @@ git-mod-sync/
         │   ├── IGitService.cs           # Git operation abstraction
         │   ├── GitService.cs            # Git engine with MinGit auto-fallback
         │   ├── AuthenticationService.cs # Token validation and Windows Credential Manager
-        │   └── ModSyncService.cs        # Core synchronization and atomic file engine
+        │   └── ModSyncService.cs        # Core synchronization, clean reinstall & atomic engine
         │
         └── Utils/
             ├── HashUtils.cs             # Streaming SHA-256 calculations
             ├── PathUtils.cs             # BaseDirectory-relative path resolution
             ├── CredentialUtils.cs       # Windows Credential Manager (Advapi32) + DPAPI
-            └── ConsoleUI.cs             # Formatted terminal UI and prompts
+            └── ConsoleUI.cs             # Styling helpers and text formatting
 ```
 
 ---
