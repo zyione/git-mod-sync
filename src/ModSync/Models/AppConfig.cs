@@ -43,4 +43,13 @@ public class AppConfig
 
     [JsonPropertyName("maxFileSizeMb")]
     public long MaxFileSizeMb { get; set; } = 100;
+
+    [JsonPropertyName("cleanInstallOnFirstRun")]
+    public bool CleanInstallOnFirstRun { get; set; } = true;
+
+    [JsonPropertyName("backupBeforeClean")]
+    public bool BackupBeforeClean { get; set; } = true;
+
+    [JsonPropertyName("firstSyncCompleted")]
+    public bool FirstSyncCompleted { get; set; } = false;
 }

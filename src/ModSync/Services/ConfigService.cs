@@ -156,7 +156,10 @@ public class ConfigService
             AllowedExtensions = new List<string> { ".jar" },
             SyncSubdirectories = false,
             WarnFileSizeMb = 50,
-            MaxFileSizeMb = 100
+            MaxFileSizeMb = 100,
+            CleanInstallOnFirstRun = true,
+            BackupBeforeClean = true,
+            FirstSyncCompleted = false
         };
 
         string json = JsonSerializer.Serialize(defaultConfig, JsonOptions);

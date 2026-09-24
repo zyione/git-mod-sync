@@ -251,6 +251,89 @@ public class ModSyncService
     }
 
     /// <summary>
+    /// Performs a fresh clean install of all repository mods into the local mods folder.
+    /// Safely backs up existing local mods to mods_backup_YYYY-MM-DD_HHmmss.
+    /// </summary>
+    public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(Action<string>? statusCallback = null)
+    {
+        var config = _configService.Config;
+        string modsFolder = _configService.ResolvedModsFolder;
+        string repoFolder = _configService.ResolvedRepositoryFolder;
+        string? token = _authService.GetStoredToken();
+
+        _logger.Info("Starting Clean Reinstall workflow...");
+        statusCallback?.Invoke("Checking running processes...");
+
+        // Check Minecraft running
+        var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
+        if (mcRunning)
+        {
+            ConsoleUI.PrintWarning("Minecraft appears to be running. Close Minecraft before reinstalling mods.");
+            if (!ConsoleUI.Confirm("Continue anyway?", defaultYes: false))
+            {
+                return (false, null, 0, "Operation cancelled: Please close Minecraft.");
+            }
+        }
+
+        // Ensure internal repo is up to date
+        statusCallback?.Invoke("Pulling latest mods from GitHub...");
+        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
+        if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
+        {
+            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
+            if (!cloneResult.Success) return (false, null, 0, cloneResult.Error);
+        }
+        else
+        {
+            var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token);
+            if (!pullResult.Success) return (false, null, 0, pullResult.Error);
+        }
+
+        // Backup existing mods if any exist
+        string? backupDir = null;
+        if (Directory.Exists(modsFolder))
+        {
+            var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
+            if (localMods.Count > 0)
+            {
+                string parentDir = Path.GetDirectoryName(modsFolder) ?? PathUtils.GetAppDirectory();
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                backupDir = Path.Combine(parentDir, $"mods_backup_{timestamp}");
+                PathUtils.EnsureDirectoryExists(backupDir);
+
+                statusCallback?.Invoke($"Backing up {localMods.Count} existing mod(s)...");
+                foreach (var mod in localMods.Values)
+                {
+                    string dest = Path.Combine(backupDir, mod.RelativePath);
+                    string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
+                    PathUtils.EnsureDirectoryExists(destSubdir);
+                    File.Move(mod.FullPath, dest, overwrite: true);
+                }
+                _logger.Info($"Backed up {localMods.Count} mods to {backupDir}");
+            }
+        }
+
+        PathUtils.EnsureDirectoryExists(modsFolder);
+
+        // Copy all repo mods cleanly into ../mods
+        statusCallback?.Invoke("Copying fresh repository mods into mods folder...");
+        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+        int copied = 0;
+
+        foreach (var file in repoFiles.Values)
+        {
+            string dest = Path.Combine(modsFolder, file.RelativePath);
+            string destSubdir = Path.GetDirectoryName(dest) ?? modsFolder;
+            PathUtils.EnsureDirectoryExists(destSubdir);
+            File.Copy(file.FullPath, dest, overwrite: true);
+            copied++;
+        }
+
+        _logger.Info($"Clean reinstall complete: {copied} mods copied.");
+        return (true, backupDir, copied, null);
+    }
+
+    /// <summary>
     /// Gets detailed status comparing local mods folder, internal repo, and remote GitHub.
     /// </summary>
     public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount)> CheckStatusAsync(Action<string>? statusCallback = null)

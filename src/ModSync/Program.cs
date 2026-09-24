@@ -69,7 +69,7 @@ internal class Program
                         await HandleSwitchRepositoryAsync(configService, gitService);
                         break;
                     case "6":
-                        HandleSettings(configService);
+                        await HandleSettingsAsync(configService, syncService);
                         break;
                     case "0":
                         running = false;
@@ -580,7 +580,7 @@ internal class Program
         ConsoleUI.Pause();
     }
 
-    private static void HandleSettings(ConfigService configService)
+    private static async Task HandleSettingsAsync(ConfigService configService, ModSyncService syncService)
     {
         bool inSettings = true;
         while (inSettings)
@@ -599,6 +599,7 @@ internal class Program
             Console.WriteLine($"[5] Confirm before Push:       {(cfg.RequireConfirmationBeforePush ? "Yes" : "No")}");
             Console.WriteLine($"[6] Max File Size Warning:     {cfg.WarnFileSizeMb} MB");
             Console.WriteLine($"[7] Hard File Size Limit:      {cfg.MaxFileSizeMb} MB");
+            Console.WriteLine("[8] Clean Reinstall Mods (Backup old mods & fresh copy from repo)");
             Console.WriteLine("[0] Back to main menu");
             Console.WriteLine();
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -655,6 +656,9 @@ internal class Program
                     configService.Save();
                     ConsoleUI.PrintSuccess($"Confirmation before push set to: {(cfg.RequireConfirmationBeforePush ? "Yes" : "No")}");
                     break;
+                case "8":
+                    await PerformCleanReinstallWorkflowAsync(syncService);
+                    break;
                 case "0":
                     inSettings = false;
                     break;
@@ -664,5 +668,61 @@ internal class Program
                     break;
             }
         }
+    }
+
+    private static async Task PerformCleanReinstallWorkflowAsync(ModSyncService syncService)
+    {
+        ConsoleUI.SafeClear();
+        ConsoleUI.PrintHeader("CLEAN REINSTALL MODS");
+
+        ConsoleUI.PrintWarning("This operation will:");
+        Console.WriteLine("1. Safely move all existing .jar files in your mods folder to a timestamped backup folder.");
+        Console.WriteLine("2. Freshly download and place all authoritative mods from GitHub.");
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("Note: Non-jar files (configs, shaders, resource packs) are preserved and not deleted.");
+        Console.ResetColor();
+        Console.WriteLine();
+
+        if (!ConsoleUI.Confirm("Proceed with clean reinstall?", defaultYes: false))
+        {
+            ConsoleUI.PrintInfo("Clean reinstall cancelled.");
+            ConsoleUI.Pause();
+            return;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Starting clean reinstall...");
+
+        var (success, backupDir, count, error) = await syncService.CleanReinstallAsync(status =>
+        {
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"-> {status}");
+            Console.ResetColor();
+        });
+
+        Console.WriteLine();
+        if (success)
+        {
+            ConsoleUI.PrintSuccess("========================================");
+            ConsoleUI.PrintSuccess("      Clean Reinstall Completed!");
+            ConsoleUI.PrintSuccess("========================================");
+            Console.WriteLine();
+            Console.WriteLine($"Total mods installed: {count}");
+            if (!string.IsNullOrEmpty(backupDir))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"Previous mods backed up to:\n{backupDir}");
+                Console.ResetColor();
+            }
+            Console.WriteLine();
+            ConsoleUI.PrintSuccess("Your mods folder is now completely fresh and in sync with the repository!");
+        }
+        else
+        {
+            ConsoleUI.PrintError($"Clean reinstall failed: {error}");
+        }
+
+        ConsoleUI.Pause();
     }
 }
