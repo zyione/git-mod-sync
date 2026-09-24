@@ -52,4 +52,24 @@ public class AppConfig
 
     [JsonPropertyName("firstSyncCompleted")]
     public bool FirstSyncCompleted { get; set; } = false;
+
+    /// <summary>
+    /// List of mod filenames or wildcard patterns to ignore during sync and push.
+    /// Excluded mods are never deleted during sync, and never uploaded during push.
+    /// Supports exact names (e.g. "optifine.jar") or wildcards (e.g. "*zoom*", "iris-*").
+    /// </summary>
+    [JsonPropertyName("ignoredMods")]
+    public List<string> IgnoredMods { get; set; } = new();
+
+    /// <summary>
+    /// Whether to automatically check for ModSync.exe updates on launch.
+    /// </summary>
+    [JsonPropertyName("autoCheckUpdates")]
+    public bool AutoCheckUpdates { get; set; } = true;
+
+    /// <summary>
+    /// GitHub repository URL used for checking application releases and updates.
+    /// </summary>
+    [JsonPropertyName("appUpdateRepository")]
+    public string AppUpdateRepository { get; set; } = "https://github.com/zyione/git-mod-sync";
 }

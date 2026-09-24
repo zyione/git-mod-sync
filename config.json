@@ -13,5 +13,11 @@
   ],
   "syncSubdirectories": false,
   "warnFileSizeMb": 50,
-  "maxFileSizeMb": 100
+  "maxFileSizeMb": 100,
+  "cleanInstallOnFirstRun": true,
+  "backupBeforeClean": true,
+  "firstSyncCompleted": false,
+  "ignoredMods": [],
+  "autoCheckUpdates": true,
+  "appUpdateRepository": "https://github.com/zyione/git-mod-sync"
 }

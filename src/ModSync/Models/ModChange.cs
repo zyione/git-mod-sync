@@ -5,7 +5,8 @@ public enum ChangeType
     Added,
     Removed,
     Updated,
-    Unchanged
+    Unchanged,
+    Ignored
 }
 
 /// <summary>
@@ -23,6 +24,7 @@ public class ModChange
         ChangeType.Added => "+",
         ChangeType.Removed => "-",
         ChangeType.Updated => "~",
+        ChangeType.Ignored => "🛡️",
         _ => " "
     };
 

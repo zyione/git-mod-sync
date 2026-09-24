@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using ModSync.Models;
@@ -21,10 +22,13 @@ public partial class MainWindow : Window
     private readonly IGitService _gitService;
     private readonly AuthenticationService _authService;
     private readonly MinecraftCheckService _mcCheckService;
+    private readonly ModIgnoreService _ignoreService;
+    private readonly UpdateService _updateService;
     private readonly ModSyncService _syncService;
 
     private bool _isBusy;
     private string? _lastBackupFolder;
+    private UpdateInfo? _latestUpdateInfo;
 
     public MainWindow()
     {
@@ -39,7 +43,9 @@ public partial class MainWindow : Window
         _gitService = new GitService(_logger);
         _authService = new AuthenticationService(_logger);
         _mcCheckService = new MinecraftCheckService(_logger);
-        _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _logger);
+        _ignoreService = new ModIgnoreService(_configService, _logger);
+        _updateService = new UpdateService(_configService, _authService, _logger);
+        _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _ignoreService, _logger);
 
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
@@ -56,6 +62,12 @@ public partial class MainWindow : Window
         UpdateStatusCard();
         await RefreshAuthStatusAsync();
         await RefreshLocalModCountAsync();
+        UpdateIgnoredModsUI();
+
+        if (_configService.Config.AutoCheckUpdates)
+        {
+            _ = CheckForUpdatesBackgroundAsync();
+        }
     }
 
     #region Status & Information
@@ -190,14 +202,20 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                if (modChanges.HasChanges)
+                if (modChanges.HasChanges || modChanges.IgnoredCount > 0)
                 {
-                    SyncConfirmSummaryText.Text = $"Updates detected: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
+                    var parts = new List<string>();
+                    if (modChanges.AddedCount > 0) parts.Add($"+{modChanges.AddedCount} added");
+                    if (modChanges.UpdatedCount > 0) parts.Add($"~{modChanges.UpdatedCount} updated");
+                    if (modChanges.RemovedCount > 0) parts.Add($"-{modChanges.RemovedCount} removed");
+                    if (modChanges.IgnoredCount > 0) parts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+                    SyncConfirmSummaryText.Text = $"Updates detected: {string.Join(", ", parts)}";
 
                     var sb = new System.Text.StringBuilder();
                     foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
                     foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
                     foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
+                    foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept)");
                     SyncDetailsText.Text = sb.ToString().TrimEnd();
                 }
                 else
@@ -343,12 +361,18 @@ public partial class MainWindow : Window
             }
 
             // Show confirmation sheet modal
-            PushConfirmSummaryText.Text = $"Changes to upload: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
+            var pushParts = new List<string>();
+            if (modChanges.AddedCount > 0) pushParts.Add($"+{modChanges.AddedCount} added");
+            if (modChanges.UpdatedCount > 0) pushParts.Add($"~{modChanges.UpdatedCount} updated");
+            if (modChanges.RemovedCount > 0) pushParts.Add($"-{modChanges.RemovedCount} removed");
+            if (modChanges.IgnoredCount > 0) pushParts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+            PushConfirmSummaryText.Text = $"Changes to upload: {string.Join(", ", pushParts)}";
 
             var sb = new System.Text.StringBuilder();
             foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
             foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
             foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
+            foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept local)");
             PushDetailsText.Text = sb.ToString().TrimEnd();
 
             SetBusy(false);
@@ -549,7 +573,10 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         ConfirmSyncToggle.IsChecked = cfg.RequireConfirmationBeforeSync;
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
+        AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
+        SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
+        UpdateIgnoredModsUI();
         ShowModal(SettingsSheet);
     }
 
@@ -558,8 +585,9 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         cfg.RequireConfirmationBeforeSync = ConfirmSyncToggle.IsChecked == true;
         cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
+        cfg.AutoCheckUpdates = AutoCheckUpdatesToggle.IsChecked == true;
         _configService.Save();
-        _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}");
+        _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}");
     }
 
     private void ChangeModsFolder_Click(object sender, RoutedEventArgs e)
@@ -853,6 +881,8 @@ public partial class MainWindow : Window
         SettingsSheet.Visibility = Visibility.Collapsed;
         CleanReinstallConfirmSheet.Visibility = Visibility.Collapsed;
         SyncConfirmSheet.Visibility = Visibility.Collapsed;
+        UpdateSheet.Visibility = Visibility.Collapsed;
+        IgnoredModsSheet.Visibility = Visibility.Collapsed;
 
         sheet.Visibility = Visibility.Visible;
         ModalBackdrop.Visibility = Visibility.Visible;
@@ -867,6 +897,8 @@ public partial class MainWindow : Window
         SettingsSheet.Visibility = Visibility.Collapsed;
         CleanReinstallConfirmSheet.Visibility = Visibility.Collapsed;
         SyncConfirmSheet.Visibility = Visibility.Collapsed;
+        UpdateSheet.Visibility = Visibility.Collapsed;
+        IgnoredModsSheet.Visibility = Visibility.Collapsed;
         ModalBackdrop.Visibility = Visibility.Collapsed;
     }
 
@@ -896,6 +928,345 @@ public partial class MainWindow : Window
     private void ThemeToggle_Click(object sender, RoutedEventArgs e)
     {
         ThemeManager.ToggleTheme();
+    }
+
+    #endregion
+
+    #region App Updates & Mod Exclusions
+
+    private async Task CheckForUpdatesBackgroundAsync()
+    {
+        try
+        {
+            var info = await _updateService.CheckForUpdatesAsync();
+            if (info.IsUpdateAvailable)
+            {
+                _latestUpdateInfo = info;
+                Dispatcher.Invoke(() =>
+                {
+                    UpdateBannerText.Text = $"ModSync v{info.LatestVersion} available!";
+                    UpdateBanner.Visibility = Visibility.Visible;
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Background update check failed: {ex.Message}");
+        }
+    }
+
+    private void OpenUpdateModal_Click(object sender, RoutedEventArgs e)
+    {
+        if (_latestUpdateInfo != null)
+        {
+            ShowUpdateSheet(_latestUpdateInfo);
+        }
+    }
+
+    private void DismissUpdateBanner_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowUpdateSheet(UpdateInfo info)
+    {
+        UpdateSheetVersionText.Text = $"ModSync v{info.LatestVersion} is available (Current: v{info.CurrentVersion})";
+        UpdateSheetReleaseTitle.Text = !string.IsNullOrWhiteSpace(info.ReleaseTitle) ? info.ReleaseTitle : $"ModSync v{info.LatestVersion}";
+        UpdateSheetSizeText.Text = info.FormattedSize;
+        UpdateSheetNotesText.Text = !string.IsNullOrWhiteSpace(info.ReleaseNotes) ? info.ReleaseNotes.Trim() : "No release notes provided.";
+        ShowModal(UpdateSheet);
+    }
+
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        CheckAppUpdatesButton.IsEnabled = false;
+        DismissFeedback();
+
+        try
+        {
+            var info = await _updateService.CheckForUpdatesAsync();
+            if (info.IsUpdateAvailable)
+            {
+                _latestUpdateInfo = info;
+                CloseModal();
+                ShowUpdateSheet(info);
+            }
+            else if (!string.IsNullOrEmpty(info.ErrorMessage))
+            {
+                ShowFeedback($"Update check failed: {info.ErrorMessage}", true);
+            }
+            else
+            {
+                ShowFeedback($"✓ ModSync is up to date (v{info.CurrentVersion}).", false);
+            }
+        }
+        finally
+        {
+            CheckAppUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async void ApplyUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_latestUpdateInfo == null || string.IsNullOrWhiteSpace(_latestUpdateInfo.DownloadUrl))
+        {
+            ShowFeedback("No direct update download asset (.exe) available for this release.", true);
+            return;
+        }
+
+        CloseModal();
+        SetBusy(true, "Downloading ModSync update...");
+
+        try
+        {
+            var (success, error) = await _updateService.DownloadAndApplyUpdateAsync(_latestUpdateInfo.DownloadUrl, UpdateProgress);
+            if (!success)
+            {
+                SetBusy(false);
+                ShowFeedback(error ?? "Update failed.", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetBusy(false);
+            _logger.Error("Update execution failed", ex);
+            ShowFeedback($"Update failed: {ex.Message}", true);
+        }
+    }
+
+    private void OpenReleaseWeb_Click(object sender, RoutedEventArgs e)
+    {
+        if (_latestUpdateInfo != null && !string.IsNullOrWhiteSpace(_latestUpdateInfo.ReleaseHtmlUrl))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _latestUpdateInfo.ReleaseHtmlUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Could not open release URL", ex);
+            }
+        }
+    }
+
+    private void UpdateIgnoredModsUI()
+    {
+        var patterns = _ignoreService.GetEffectivePatterns();
+        SettingsIgnoredModsText.Text = $"{patterns.Count} active exclusion rule{(patterns.Count == 1 ? "" : "s")}";
+    }
+
+    private void OpenIgnoredModsModal_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshIgnoredModsList();
+        PopulateDetectedMods();
+        ShowModal(IgnoredModsSheet);
+    }
+
+    private void RefreshIgnoredModsList()
+    {
+        IgnoredRulesContainer.Children.Clear();
+        var patterns = _ignoreService.GetEffectivePatterns();
+
+        if (patterns.Count == 0)
+        {
+            NoIgnoredRulesText.Visibility = Visibility.Visible;
+            IgnoredRulesContainer.Children.Add(NoIgnoredRulesText);
+            return;
+        }
+
+        NoIgnoredRulesText.Visibility = Visibility.Collapsed;
+
+        foreach (var pattern in patterns)
+        {
+            var cardBorder = new Border
+            {
+                Background = (Brush)FindResource("CardBackgroundBrush"),
+                BorderBrush = (Brush)FindResource("CardBorderBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 6, 8, 6),
+                Margin = new Thickness(0, 2, 0, 2)
+            };
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var leftStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var iconText = new TextBlock
+            {
+                Text = "🛡️",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            leftStack.Children.Add(iconText);
+
+            var nameText = new TextBlock
+            {
+                Text = pattern,
+                FontFamily = (FontFamily)FindResource("SystemFont"),
+                FontSize = 12,
+                FontWeight = FontWeights.Medium,
+                Foreground = (Brush)FindResource("PrimaryTextBrush"),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            leftStack.Children.Add(nameText);
+
+            if (pattern.Contains('*') || pattern.Contains('?'))
+            {
+                var badge = new Border
+                {
+                    Background = (Brush)FindResource("SecondaryButtonBrush"),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(5, 1, 5, 1),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                badge.Child = new TextBlock
+                {
+                    Text = "Pattern",
+                    FontSize = 9.5,
+                    FontWeight = FontWeights.Medium,
+                    Foreground = (Brush)FindResource("SecondaryTextBrush")
+                };
+                leftStack.Children.Add(badge);
+            }
+
+            var deleteButton = new Button
+            {
+                Content = "✕",
+                Style = (Style)FindResource("GhostButtonStyle"),
+                Padding = new Thickness(8, 2, 8, 2),
+                FontSize = 11,
+                Foreground = (Brush)FindResource("ErrorBrush"),
+                Tag = pattern,
+                ToolTip = "Remove this exclusion rule"
+            };
+            deleteButton.Click += (s, args) =>
+            {
+                if (s is Button btn && btn.Tag is string pat)
+                {
+                    _ignoreService.RemovePattern(pat);
+                    RefreshIgnoredModsList();
+                    PopulateDetectedMods();
+                    UpdateIgnoredModsUI();
+                }
+            };
+
+            Grid.SetColumn(leftStack, 0);
+            Grid.SetColumn(deleteButton, 1);
+
+            row.Children.Add(leftStack);
+            row.Children.Add(deleteButton);
+
+            cardBorder.Child = row;
+            IgnoredRulesContainer.Children.Add(cardBorder);
+        }
+    }
+
+    private void PopulateDetectedMods()
+    {
+        DetectedModsComboBox.Items.Clear();
+        var detected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Scan local mods
+        try
+        {
+            string modsDir = _configService.ResolvedModsFolder;
+            if (Directory.Exists(modsDir))
+            {
+                foreach (var file in Directory.GetFiles(modsDir, "*.jar", SearchOption.TopDirectoryOnly))
+                {
+                    detected.Add(Path.GetFileName(file));
+                }
+            }
+        }
+        catch { }
+
+        // Scan repo mods
+        try
+        {
+            string repoDir = _configService.ResolvedRepositoryFolder;
+            if (Directory.Exists(repoDir))
+            {
+                foreach (var file in Directory.GetFiles(repoDir, "*.jar", SearchOption.TopDirectoryOnly))
+                {
+                    detected.Add(Path.GetFileName(file));
+                }
+            }
+        }
+        catch { }
+
+        var sorted = detected.OrderBy(d => d).ToList();
+        int addedCount = 0;
+        foreach (var mod in sorted)
+        {
+            if (!_ignoreService.IsIgnored(mod))
+            {
+                DetectedModsComboBox.Items.Add(mod);
+                addedCount++;
+            }
+        }
+
+        if (addedCount > 0)
+        {
+            DetectedModsComboBox.SelectedIndex = 0;
+            DetectedModsComboBox.IsEnabled = true;
+        }
+        else
+        {
+            DetectedModsComboBox.Items.Add(detected.Count > 0 ? "All detected mods excluded" : "No .jar mods found");
+            DetectedModsComboBox.SelectedIndex = 0;
+            DetectedModsComboBox.IsEnabled = false;
+        }
+    }
+
+    private void AddIgnorePattern_Click(object sender, RoutedEventArgs e)
+    {
+        string pattern = NewIgnorePatternInput.Text.Trim();
+        if (string.IsNullOrWhiteSpace(pattern)) return;
+
+        _ignoreService.AddPattern(pattern);
+        NewIgnorePatternInput.Text = string.Empty;
+        RefreshIgnoredModsList();
+        PopulateDetectedMods();
+        UpdateIgnoredModsUI();
+    }
+
+    private void NewIgnorePatternInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            AddIgnorePattern_Click(sender, e);
+        }
+    }
+
+    private void ExcludeSelectedDetectedMod_Click(object sender, RoutedEventArgs e)
+    {
+        if (DetectedModsComboBox.IsEnabled &&
+            DetectedModsComboBox.SelectedItem is string selectedMod &&
+            !string.IsNullOrWhiteSpace(selectedMod))
+        {
+            _ignoreService.AddPattern(selectedMod);
+            RefreshIgnoredModsList();
+            PopulateDetectedMods();
+            UpdateIgnoredModsUI();
+        }
+    }
+
+    private void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
+    {
+        ShowModal(SettingsSheet);
     }
 
     #endregion

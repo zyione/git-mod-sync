@@ -248,7 +248,10 @@ public class ConfigService
             MaxFileSizeMb = 100,
             CleanInstallOnFirstRun = true,
             BackupBeforeClean = true,
-            FirstSyncCompleted = false
+            FirstSyncCompleted = false,
+            IgnoredMods = new List<string>(),
+            AutoCheckUpdates = true,
+            AppUpdateRepository = "https://github.com/zyione/git-mod-sync"
         };
 
         string json = JsonSerializer.Serialize(defaultConfig, JsonOptions);

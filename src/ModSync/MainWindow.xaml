@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ModSync"
-        Width="600"
-        Height="560"
-        MinWidth="540"
-        MinHeight="520"
+        Width="620"
+        Height="620"
+        MinWidth="580"
+        MinHeight="580"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -79,8 +79,34 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- App Branding -->
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,4,0,18">
+                <!-- App Branding & Optional Update Banner -->
+                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,4,0,16">
+                    <!-- Update Notification Banner (Visible when a new version is detected) -->
+                    <Border x:Name="UpdateBanner"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="12,5"
+                            Margin="0,0,0,10"
+                            HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🚀" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock x:Name="UpdateBannerText" Text="ModSync update available!" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <Button Content="Update"
+                                    Style="{StaticResource CompactPrimaryButtonStyle}"
+                                    Click="OpenUpdateModal_Click"
+                                    Margin="0,0,6,0" />
+                            <Button Content="✕"
+                                    Style="{StaticResource GhostButtonStyle}"
+                                    Padding="4,2"
+                                    FontSize="10"
+                                    Click="DismissUpdateBanner_Click"
+                                    ToolTip="Dismiss" />
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="ModSync"
                                FontSize="30"
                                FontWeight="SemiBold"
@@ -345,9 +371,9 @@
                 <Border Background="{DynamicResource CardBackgroundBrush}"
                         BorderBrush="{DynamicResource CardBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="16"
-                        Padding="26,22"
-                        Width="480"
+                        CornerRadius="18"
+                        Padding="28,24"
+                        Width="510"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center">
 
@@ -535,216 +561,312 @@
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"
                                        Margin="0,0,0,3" />
-                            <TextBlock Text="Preferences, safety confirmations, and maintenance tools."
+                            <TextBlock Text="Preferences, mod exclusions, and maintenance tools."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="0,0,0,14" />
+                                       Margin="0,0,0,12" />
 
-                            <!-- Group 1: Preferences -->
-                            <TextBlock Text="PREFERENCES"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="2,0,0,6" />
-                            <Border Background="{DynamicResource InputBackgroundBrush}"
-                                    CornerRadius="12"
-                                    Padding="16,10"
-                                    Margin="0,0,0,16">
-                                <StackPanel>
-                                    <!-- Confirm Before Sync -->
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="Confirm Before Sync"
-                                                       FontSize="13"
-                                                       FontWeight="Medium"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                                            <TextBlock Text="Prompt with summary before applying changes to mods folder"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Margin="0,2,0,0" />
+                            <ScrollViewer MaxHeight="390" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Margin="0,0,6,0">
+                                    <!-- Group 1: Preferences -->
+                                    <TextBlock Text="PREFERENCES"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="2,0,0,6" />
+                                    <Border Background="{DynamicResource InputBackgroundBrush}"
+                                            CornerRadius="12"
+                                            Padding="16,10"
+                                            Margin="0,0,0,14">
+                                        <StackPanel>
+                                            <!-- Confirm Before Sync -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Confirm Before Sync"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Prompt with summary before applying changes to mods folder"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <CheckBox x:Name="ConfirmSyncToggle"
+                                                          Grid.Column="1"
+                                                          Style="{StaticResource AppleToggleSwitchStyle}"
+                                                          VerticalAlignment="Center"
+                                                          HorizontalAlignment="Right"
+                                                          Margin="0,0,2,0"
+                                                          Click="SettingToggle_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Confirm Before Push -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Confirm Before Push"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Review modified files before uploading to GitHub"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <CheckBox x:Name="ConfirmPushToggle"
+                                                          Grid.Column="1"
+                                                          Style="{StaticResource AppleToggleSwitchStyle}"
+                                                          VerticalAlignment="Center"
+                                                          HorizontalAlignment="Right"
+                                                          Margin="0,0,2,0"
+                                                          Click="SettingToggle_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Auto-Check Updates -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Check for App Updates"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Automatically check for new ModSync.exe versions on launch"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <CheckBox x:Name="AutoCheckUpdatesToggle"
+                                                          Grid.Column="1"
+                                                          Style="{StaticResource AppleToggleSwitchStyle}"
+                                                          VerticalAlignment="Center"
+                                                          HorizontalAlignment="Right"
+                                                          Margin="0,0,2,0"
+                                                          Click="SettingToggle_Click" />
+                                            </Grid>
                                         </StackPanel>
-                                        <CheckBox x:Name="ConfirmSyncToggle"
-                                                  Grid.Column="1"
-                                                  Style="{StaticResource AppleToggleSwitchStyle}"
-                                                  VerticalAlignment="Center"
-                                                  HorizontalAlignment="Right"
-                                                  Margin="0,0,2,0"
-                                                  Click="SettingToggle_Click" />
-                                    </Grid>
+                                    </Border>
 
-                                    <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+                                    <!-- Group 2: Ignored Mods & Exclusions -->
+                                    <TextBlock Text="IGNORED MODS &amp; EXCLUSIONS"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="2,0,0,6" />
+                                    <Border Background="{DynamicResource InputBackgroundBrush}"
+                                            CornerRadius="12"
+                                            Padding="16,10"
+                                            Margin="0,0,0,14">
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <TextBlock Text="Excluded Mods"
+                                                           FontSize="13"
+                                                           FontWeight="Medium"
+                                                           Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <TextBlock x:Name="SettingsIgnoredModsText"
+                                                           Text="0 active exclusion rules"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <Button Content="Manage..."
+                                                    Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                    Grid.Column="1"
+                                                    VerticalAlignment="Center"
+                                                    Click="OpenIgnoredModsModal_Click" />
+                                        </Grid>
+                                    </Border>
 
-                                    <!-- Confirm Before Push -->
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="Confirm Before Push"
-                                                       FontSize="13"
-                                                       FontWeight="Medium"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                                            <TextBlock Text="Review modified files before uploading to GitHub"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Margin="0,2,0,0" />
+                                    <!-- Group 3: Mods Folder Location -->
+                                    <TextBlock Text="MINECRAFT MODS FOLDER"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="2,0,0,6" />
+                                    <Border Background="{DynamicResource InputBackgroundBrush}"
+                                            CornerRadius="12"
+                                            Padding="16,10"
+                                            Margin="0,0,0,14">
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                                                <TextBlock Text="Target Folder"
+                                                           FontSize="13"
+                                                           FontWeight="Medium"
+                                                           Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                <TextBlock x:Name="SettingsModsFolderPathText"
+                                                           Text="C:\...\mods"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxWidth="240"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Content="Change..."
+                                                        Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                        Click="ChangeModsFolder_Click"
+                                                        Margin="0,0,6,0" />
+                                                <Button Content="Reset"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        Padding="6,4"
+                                                        FontSize="11"
+                                                        Click="ResetModsFolder_Click"
+                                                        ToolTip="Reset to default (./mods)" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Group 4: Maintenance & Troubleshooting -->
+                                    <TextBlock Text="MAINTENANCE &amp; TOOLS"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="2,0,0,6" />
+                                    <Border Background="{DynamicResource InputBackgroundBrush}"
+                                            CornerRadius="12"
+                                            Padding="16,10"
+                                            Margin="0,0,0,18">
+                                        <StackPanel>
+                                            <!-- ModSync App Updates Row -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="ModSync Application Updates"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock x:Name="SettingsAppVersionText"
+                                                               Text="ModSync v1.0.0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button x:Name="CheckAppUpdatesButton"
+                                                        Grid.Column="1"
+                                                        Content="Check Updates"
+                                                        Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalAlignment="Right"
+                                                        Click="CheckForUpdates_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Clean Reinstall Mods Row -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Clean Reinstall Mods"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Safely backup existing mods &amp; restore fresh from repo"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Content="Reinstall..."
+                                                        Style="{StaticResource CompactDangerButtonStyle}"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalAlignment="Right"
+                                                        Click="OpenCleanReinstallConfirm_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Application Logs Row -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Application Logs"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Open debug logs in Windows File Explorer"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Content="Open Logs"
+                                                        Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalAlignment="Right"
+                                                        Click="OpenLogs_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- View Repository on Web -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="View on GitHub"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Open mod repository page in web browser"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Content="Open Web"
+                                                        Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalAlignment="Right"
+                                                        Click="OpenWebRepo_Click" />
+                                            </Grid>
                                         </StackPanel>
-                                        <CheckBox x:Name="ConfirmPushToggle"
-                                                  Grid.Column="1"
-                                                  Style="{StaticResource AppleToggleSwitchStyle}"
-                                                  VerticalAlignment="Center"
-                                                  HorizontalAlignment="Right"
-                                                  Margin="0,0,2,0"
-                                                  Click="SettingToggle_Click" />
-                                    </Grid>
+                                    </Border>
                                 </StackPanel>
-                            </Border>
-
-                            <!-- Group 2: Mods Folder Location -->
-                            <TextBlock Text="MINECRAFT MODS FOLDER"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="2,0,0,6" />
-                            <Border Background="{DynamicResource InputBackgroundBrush}"
-                                    CornerRadius="12"
-                                    Padding="16,10"
-                                    Margin="0,0,0,14">
-                                <Grid Margin="0,3">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                                        <TextBlock Text="Target Folder"
-                                                   FontSize="13"
-                                                   FontWeight="Medium"
-                                                   Foreground="{DynamicResource PrimaryTextBrush}" />
-                                        <TextBlock x:Name="SettingsModsFolderPathText"
-                                                   Text="C:\...\mods"
-                                                   FontSize="11"
-                                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   MaxWidth="240"
-                                                   Margin="0,2,0,0" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button Content="Change..."
-                                                Style="{StaticResource CompactSecondaryButtonStyle}"
-                                                Click="ChangeModsFolder_Click"
-                                                Margin="0,0,6,0" />
-                                        <Button Content="Reset"
-                                                Style="{StaticResource GhostButtonStyle}"
-                                                Padding="6,4"
-                                                FontSize="11"
-                                                Click="ResetModsFolder_Click"
-                                                ToolTip="Reset to default (./mods)" />
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-
-                            <!-- Group 3: Maintenance & Troubleshooting -->
-                            <TextBlock Text="MAINTENANCE &amp; TOOLS"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="2,0,0,6" />
-                            <Border Background="{DynamicResource InputBackgroundBrush}"
-                                    CornerRadius="12"
-                                    Padding="16,10"
-                                    Margin="0,0,0,18">
-                                <StackPanel>
-                                    <!-- Clean Reinstall Mods Row -->
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="Clean Reinstall Mods"
-                                                       FontSize="13"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                                            <TextBlock Text="Safely backup existing mods &amp; restore fresh from repo"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Margin="0,2,0,0" />
-                                        </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Content="Reinstall..."
-                                                Style="{StaticResource CompactDangerButtonStyle}"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right"
-                                                Click="OpenCleanReinstallConfirm_Click" />
-                                    </Grid>
-
-                                    <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
-
-                                    <!-- Application Logs Row -->
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="Application Logs"
-                                                       FontSize="13"
-                                                       FontWeight="Medium"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                                            <TextBlock Text="Open debug logs in Windows File Explorer"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Margin="0,2,0,0" />
-                                        </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Content="Open Logs"
-                                                Style="{StaticResource CompactSecondaryButtonStyle}"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right"
-                                                Click="OpenLogs_Click" />
-                                    </Grid>
-
-                                    <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
-
-                                    <!-- View Repository on Web -->
-                                    <Grid Margin="0,5">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="View on GitHub"
-                                                       FontSize="13"
-                                                       FontWeight="Medium"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                                            <TextBlock Text="Open mod repository page in web browser"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Margin="0,2,0,0" />
-                                        </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Content="Open Web"
-                                                Style="{StaticResource CompactSecondaryButtonStyle}"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right"
-                                                Click="OpenWebRepo_Click" />
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
+                            </ScrollViewer>
 
                             <Button Content="Done"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     HorizontalAlignment="Right"
                                     Width="84"
                                     Height="36"
+                                    Margin="0,8,0,0"
                                     Click="CloseModal_Click" />
                         </StackPanel>
 
@@ -867,6 +989,209 @@
                                         Width="130"
                                         Click="ConfirmSync_Click" />
                             </StackPanel>
+                        </StackPanel>
+
+                        <!-- ================= 8. APPLICATION UPDATE MODAL ================= -->
+                        <StackPanel x:Name="UpdateSheet" Visibility="Collapsed">
+                            <TextBlock Text="New ModSync Update Available"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock x:Name="UpdateSheetVersionText"
+                                       Text="ModSync v1.1.0 is available"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,12" />
+
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    CornerRadius="10"
+                                    Padding="14,12"
+                                    Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="UpdateSheetReleaseTitle"
+                                                   Text="ModSync Release"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}" />
+                                        <TextBlock x:Name="UpdateSheetSizeText"
+                                                   Grid.Column="1"
+                                                   Text="~68 MB"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    </Grid>
+
+                                    <TextBlock Text="Release Notes:"
+                                               FontSize="11"
+                                               FontWeight="Medium"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="0,0,0,4" />
+
+                                    <ScrollViewer MaxHeight="130" VerticalScrollBarVisibility="Auto">
+                                        <TextBlock x:Name="UpdateSheetNotesText"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="ModSync will download the update, replace the executable, and restart."
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,16" />
+
+                            <Grid>
+                                <Button Content="View on Web"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        Click="OpenReleaseWeb_Click" />
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="Later"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Width="80"
+                                            Margin="0,0,10,0"
+                                            Click="CloseModal_Click" />
+                                    <Button x:Name="ApplyUpdateButton"
+                                            Content="Update &amp; Restart"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Height="42"
+                                            Width="160"
+                                            Click="ApplyUpdate_Click" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ================= 9. IGNORED MODS & EXCLUSIONS MODAL ================= -->
+                        <StackPanel x:Name="IgnoredModsSheet" Visibility="Collapsed">
+                            <TextBlock Text="Ignored Mods &amp; Exclusions"
+                                       FontSize="19"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Personal mods won't be deleted on sync. Unwanted repo mods won't be downloaded."
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       LineHeight="17"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,16" />
+
+                            <!-- Add Rule Input Card -->
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="14,12"
+                                    Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="ADD NEW EXCLUSION"
+                                               FontSize="10.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Margin="1,0,0,8" />
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="NewIgnorePatternInput"
+                                                 Style="{StaticResource MinimalTextBoxStyle}"
+                                                 Height="34"
+                                                 Padding="10,0"
+                                                 ToolTip="Enter mod filename or pattern (e.g. *zoom*, optifine*.jar, mymod.jar)"
+                                                 KeyDown="NewIgnorePatternInput_KeyDown"
+                                                 Margin="0,0,8,0" />
+                                        <Button Content="+ Add Rule"
+                                                Style="{StaticResource CompactPrimaryButtonStyle}"
+                                                Grid.Column="1"
+                                                Height="34"
+                                                Padding="14,0"
+                                                Click="AddIgnorePattern_Click" />
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,0,0,10" />
+
+                                    <!-- Quick Add from Detected Mods -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Quick Exclude:"
+                                                   FontSize="11.5"
+                                                   FontWeight="Medium"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="1,0,10,0" />
+                                        <ComboBox x:Name="DetectedModsComboBox"
+                                                  Grid.Column="1"
+                                                  Height="32"
+                                                  FontSize="11.5"
+                                                  Margin="0,0,8,0" />
+                                        <Button Content="Exclude"
+                                                Style="{StaticResource CompactSecondaryButtonStyle}"
+                                                Grid.Column="2"
+                                                Height="32"
+                                                MinWidth="76"
+                                                Padding="12,0"
+                                                Click="ExcludeSelectedDetectedMod_Click"
+                                                ToolTip="Exclude the selected detected mod from sync" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Active Ignored Rules List -->
+                            <TextBlock Text="ACTIVE EXCLUSION RULES"
+                                       FontSize="10.5"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="1,0,0,6" />
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="10,8"
+                                    Margin="0,0,0,16">
+                                <ScrollViewer MaxHeight="135" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="IgnoredRulesContainer">
+                                        <TextBlock x:Name="NoIgnoredRulesText"
+                                                   Text="No mods excluded. All mods in repository will sync."
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   Margin="0,14" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- Footer Actions -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="💡 Tip: Wildcards like *zoom* or replaymod*.jar are supported."
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,12,0" />
+
+                                <Button Grid.Column="1"
+                                        Content="Done"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Height="36"
+                                        Width="84"
+                                        Click="CloseIgnoredMods_Click" />
+                            </Grid>
                         </StackPanel>
                     </Grid>
                 </Border>

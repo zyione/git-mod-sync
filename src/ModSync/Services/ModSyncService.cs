@@ -15,19 +15,24 @@ public class ModSyncService
     private readonly IGitService _gitService;
     private readonly AuthenticationService _authService;
     private readonly MinecraftCheckService _mcCheckService;
+    private readonly ModIgnoreService _ignoreService;
     private readonly LoggingService _logger;
+
+    public ModIgnoreService IgnoreService => _ignoreService;
 
     public ModSyncService(
         ConfigService configService,
         IGitService gitService,
         AuthenticationService authService,
         MinecraftCheckService mcCheckService,
+        ModIgnoreService ignoreService,
         LoggingService logger)
     {
         _configService = configService;
         _gitService = gitService;
         _authService = authService;
         _mcCheckService = mcCheckService;
+        _ignoreService = ignoreService;
         _logger = logger;
     }
 
@@ -250,6 +255,9 @@ public class ModSyncService
         // Check for oversized files (GitHub limits)
         foreach (var file in localFiles.Values)
         {
+            if (_ignoreService.IsIgnored(file.RelativePath))
+                continue;
+
             long sizeMb = file.SizeBytes / (1024 * 1024);
             if (sizeMb >= config.MaxFileSizeMb)
             {
@@ -415,6 +423,12 @@ public class ModSyncService
                     int i = 0;
                     foreach (var mod in localMods.Values)
                     {
+                        if (_ignoreService.IsIgnored(mod.RelativePath))
+                        {
+                            _logger.Info($"Preserving local personal mod during clean reinstall: {mod.RelativePath}");
+                            continue;
+                        }
+
                         double pct = ((double)i / localMods.Count) * 40.0;
                         int remaining = localMods.Count - i;
                         string speedEta = $"{remaining} item{(remaining > 1 ? "s" : "")} left";
@@ -448,6 +462,12 @@ public class ModSyncService
 
             foreach (var file in repoFiles.Values)
             {
+                if (_ignoreService.IsIgnored(file.RelativePath))
+                {
+                    _logger.Info($"Skipping excluded repository mod during clean reinstall: {file.RelativePath}");
+                    continue;
+                }
+
                 double elapsedSec = stopwatch.Elapsed.TotalSeconds;
                 double speed = elapsedSec > 0.2 ? bytesCopied / elapsedSec : 0;
                 long remainingBytes = Math.Max(0, totalBytes - bytesCopied);
@@ -615,6 +635,7 @@ public class ModSyncService
 
     /// <summary>
     /// Compares two sets of files (source vs target) and builds a categorized SyncSummary.
+    /// Excluded/ignored mods are marked as ChangeType.Ignored so they are never copied or deleted.
     /// </summary>
     private SyncSummary CalculateDifferences(
         Dictionary<string, ModFileItem> sourceFiles,
@@ -622,9 +643,11 @@ public class ModSyncService
     {
         var summary = new SyncSummary();
 
-        // 1. Check all source files (either Added, Updated, or Unchanged)
+        // 1. Check all source files (either Added, Updated, Unchanged, or Ignored)
         foreach (var (relPath, sourceItem) in sourceFiles)
         {
+            bool isIgnored = _ignoreService.IsIgnored(relPath);
+
             if (targetFiles.TryGetValue(relPath, out var targetItem))
             {
                 // File exists in both - compare hashes
@@ -633,7 +656,7 @@ public class ModSyncService
                     summary.Changes.Add(new ModChange
                     {
                         RelativePath = relPath,
-                        Type = ChangeType.Unchanged,
+                        Type = isIgnored ? ChangeType.Ignored : ChangeType.Unchanged,
                         SourceItem = sourceItem,
                         TargetItem = targetItem
                     });
@@ -643,7 +666,7 @@ public class ModSyncService
                     summary.Changes.Add(new ModChange
                     {
                         RelativePath = relPath,
-                        Type = ChangeType.Updated,
+                        Type = isIgnored ? ChangeType.Ignored : ChangeType.Updated,
                         SourceItem = sourceItem,
                         TargetItem = targetItem
                     });
@@ -651,11 +674,11 @@ public class ModSyncService
             }
             else
             {
-                // In source but not in target -> Added
+                // In source but not in target -> Added (or Ignored)
                 summary.Changes.Add(new ModChange
                 {
                     RelativePath = relPath,
-                    Type = ChangeType.Added,
+                    Type = isIgnored ? ChangeType.Ignored : ChangeType.Added,
                     SourceItem = sourceItem,
                     TargetItem = null
                 });
@@ -667,10 +690,11 @@ public class ModSyncService
         {
             if (!sourceFiles.ContainsKey(relPath))
             {
+                bool isIgnored = _ignoreService.IsIgnored(relPath);
                 summary.Changes.Add(new ModChange
                 {
                     RelativePath = relPath,
-                    Type = ChangeType.Removed,
+                    Type = isIgnored ? ChangeType.Ignored : ChangeType.Removed,
                     SourceItem = null,
                     TargetItem = targetItem
                 });
