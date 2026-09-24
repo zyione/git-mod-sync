@@ -4,7 +4,7 @@
     "https://github.com/zyione/4stoogies-mod-list.git"
   ],
   "branch": "main",
-  "modsFolder": "../mods",
+  "modsFolder": "./mods",
   "repositoryFolder": "./repository",
   "requireConfirmationBeforePush": true,
   "requireConfirmationBeforeSync": true,

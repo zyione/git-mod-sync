@@ -6,7 +6,8 @@ namespace ModSync.Services;
 
 /// <summary>
 /// Service responsible for loading, validating, creating, and updating config.json.
-/// All relative paths are resolved against the ModSync.exe directory.
+/// All relative paths are resolved against the ModSync.exe directory with intelligent
+/// detection when ModSync is located directly inside the .minecraft directory.
 /// </summary>
 public class ConfigService
 {
@@ -24,8 +25,10 @@ public class ConfigService
 
     /// <summary>
     /// Absolute path to the user's Minecraft mods folder.
+    /// Intelligently resolves relative paths, ensuring that if ModSync is running directly
+    /// inside .minecraft, mods are placed in .minecraft/mods and not outside.
     /// </summary>
-    public string ResolvedModsFolder => PathUtils.ResolveAppPath(Config.ModsFolder);
+    public string ResolvedModsFolder => ResolveIntelligentModsFolder(Config.ModsFolder);
 
     /// <summary>
     /// Absolute path to the internal Git repository folder.
@@ -70,6 +73,16 @@ public class ConfigService
             }
 
             Config = loaded;
+
+            // Auto-heal old "../mods" if running directly inside .minecraft
+            string appDir = PathUtils.GetAppDirectory();
+            if (Config.ModsFolder == "../mods" && IsMinecraftDirectory(appDir))
+            {
+                _logger.Info("Detected ModSync running directly inside .minecraft directory. Automatically updating modsFolder from '../mods' to './mods'.");
+                Config.ModsFolder = "./mods";
+                Save();
+            }
+
             if (Config.SavedRepositories == null || Config.SavedRepositories.Count == 0)
             {
                 Config.SavedRepositories = new List<string> { Config.Repository };
@@ -79,7 +92,7 @@ public class ConfigService
                 Config.SavedRepositories.Insert(0, Config.Repository);
             }
 
-            _logger.Info($"Loaded configuration successfully. Repo: {Config.Repository}, Branch: {Config.Branch}");
+            _logger.Info($"Loaded configuration successfully. Repo: {Config.Repository}, Branch: {Config.Branch}, Mods: {ResolvedModsFolder}");
 
             return (true, false, null);
         }
@@ -124,6 +137,31 @@ public class ConfigService
     }
 
     /// <summary>
+    /// Updates the configured mods folder path and saves config.json.
+    /// </summary>
+    public bool SetModsFolder(string newPath)
+    {
+        if (string.IsNullOrWhiteSpace(newPath)) return false;
+
+        string appDir = PathUtils.GetAppDirectory();
+        string normalized = Path.GetFullPath(newPath.Trim());
+
+        // Store relative path if inside or beside app directory for portability
+        string relative = Path.GetRelativePath(appDir, normalized);
+        if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative))
+        {
+            Config.ModsFolder = "./" + relative.Replace('\\', '/');
+        }
+        else
+        {
+            Config.ModsFolder = normalized;
+        }
+
+        _logger.Info($"Updated mods folder to: {Config.ModsFolder} (Resolved: {ResolvedModsFolder})");
+        return Save();
+    }
+
+    /// <summary>
     /// Saves the current configuration to config.json.
     /// </summary>
     public bool Save()
@@ -142,6 +180,57 @@ public class ConfigService
         }
     }
 
+    /// <summary>
+    /// Intelligently resolves the mods folder path.
+    /// If ModSync.exe is running directly inside .minecraft (or instance with saves/versions/mods),
+    /// relative paths like "../mods" are automatically corrected to "./mods".
+    /// </summary>
+    public static string ResolveIntelligentModsFolder(string configuredPath)
+    {
+        if (string.IsNullOrWhiteSpace(configuredPath))
+            configuredPath = "./mods";
+
+        string appDir = PathUtils.GetAppDirectory();
+
+        // If explicitly absolute, return as-is
+        if (Path.IsPathRooted(configuredPath))
+            return Path.GetFullPath(configuredPath);
+
+        // If configured as "../mods" or going up a directory, check if app is already inside .minecraft
+        if (configuredPath.StartsWith("..", StringComparison.Ordinal))
+        {
+            if (IsMinecraftDirectory(appDir))
+            {
+                // Running directly in .minecraft! Place mods in ./mods (.minecraft/mods)
+                return Path.GetFullPath(Path.Combine(appDir, "mods"));
+            }
+        }
+
+        return PathUtils.ResolveAppPath(configuredPath);
+    }
+
+    /// <summary>
+    /// Checks if a directory appears to be the root of a Minecraft installation (e.g. .minecraft).
+    /// </summary>
+    public static bool IsMinecraftDirectory(string dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+            return false;
+
+        string dirName = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (dirName.Equals(".minecraft", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Check common Minecraft root markers
+        if (Directory.Exists(Path.Combine(dir, "mods"))) return true;
+        if (Directory.Exists(Path.Combine(dir, "saves"))) return true;
+        if (Directory.Exists(Path.Combine(dir, "versions"))) return true;
+        if (File.Exists(Path.Combine(dir, "options.txt"))) return true;
+        if (File.Exists(Path.Combine(dir, "launcher_profiles.json"))) return true;
+
+        return false;
+    }
+
     private void CreateDefaultConfig()
     {
         var defaultConfig = new AppConfig
@@ -149,7 +238,7 @@ public class ConfigService
             Repository = AppConfig.DefaultRepositoryUrl,
             SavedRepositories = new List<string> { AppConfig.DefaultRepositoryUrl },
             Branch = "main",
-            ModsFolder = "../mods",
+            ModsFolder = "./mods",
             RepositoryFolder = "./repository",
             RequireConfirmationBeforePush = true,
             RequireConfirmationBeforeSync = true,

@@ -495,6 +495,7 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         ConfirmSyncToggle.IsChecked = cfg.RequireConfirmationBeforeSync;
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
+        SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         ShowModal(SettingsSheet);
     }
 
@@ -507,10 +508,41 @@ public partial class MainWindow : Window
         _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}");
     }
 
+    private void ChangeModsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select Minecraft mods Folder",
+            InitialDirectory = _configService.ResolvedModsFolder
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            string chosenPath = dialog.FolderName;
+            if (!string.IsNullOrWhiteSpace(chosenPath) && Directory.Exists(chosenPath))
+            {
+                _configService.SetModsFolder(chosenPath);
+                SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
+                UpdateStatusCard();
+                _ = RefreshLocalModCountAsync();
+                ShowFeedback($"✓ Mods folder set to: {_configService.ResolvedModsFolder}", false);
+            }
+        }
+    }
+
+    private void ResetModsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        _configService.SetModsFolder("./mods");
+        SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
+        UpdateStatusCard();
+        _ = RefreshLocalModCountAsync();
+        ShowFeedback("✓ Mods folder reset to default (./mods)", false);
+    }
+
     private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e)
     {
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        CleanReinstallBackupPreviewText.Text = $"../mods_backup_{timestamp}/";
+        CleanReinstallBackupPreviewText.Text = $"mods_backup_{timestamp}/";
         ShowModal(CleanReinstallConfirmSheet);
     }
 

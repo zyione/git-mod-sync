@@ -21,7 +21,7 @@ public class AppConfig
     public string Branch { get; set; } = "main";
 
     [JsonPropertyName("modsFolder")]
-    public string ModsFolder { get; set; } = "../mods";
+    public string ModsFolder { get; set; } = "./mods";
 
     [JsonPropertyName("repositoryFolder")]
     public string RepositoryFolder { get; set; } = "./repository";
