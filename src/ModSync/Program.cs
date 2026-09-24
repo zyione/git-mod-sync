@@ -66,6 +66,9 @@ internal class Program
                         await HandleGitHubLoginAsync(authService);
                         break;
                     case "5":
+                        await HandleSwitchRepositoryAsync(configService, gitService);
+                        break;
+                    case "6":
                         HandleSettings(configService);
                         break;
                     case "0":
@@ -440,6 +443,138 @@ internal class Program
         else
         {
             ConsoleUI.PrintError($"Login failed: {error}");
+        }
+
+        ConsoleUI.Pause();
+    }
+
+    private static async Task HandleSwitchRepositoryAsync(ConfigService configService, IGitService gitService)
+    {
+        bool inSwitchMenu = true;
+        while (inSwitchMenu)
+        {
+            ConsoleUI.SafeClear();
+            ConsoleUI.PrintHeader("SWITCH GIT REPOSITORY");
+
+            var cfg = configService.Config;
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("Active Repository:");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine($"  {cfg.Repository}");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine($"  Branch: {cfg.Branch}");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            Console.WriteLine($"[1] Reset to Default Repository ({AppConfig.DefaultRepositoryUrl})");
+            Console.WriteLine("[2] Enter New Repository URL");
+            if (cfg.SavedRepositories != null && cfg.SavedRepositories.Count > 1)
+            {
+                Console.WriteLine($"[3] Choose from Saved Repositories ({cfg.SavedRepositories.Count} available)");
+            }
+            Console.WriteLine("[0] Back to main menu");
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write("Select: ");
+            Console.ResetColor();
+
+            string? rawChoice = Console.ReadLine();
+            if (rawChoice == null)
+            {
+                inSwitchMenu = false;
+                break;
+            }
+
+            string choice = rawChoice.Trim();
+            switch (choice)
+            {
+                case "1":
+                    await ApplyRepoSwitchAsync(configService, gitService, AppConfig.DefaultRepositoryUrl, "main");
+                    inSwitchMenu = false;
+                    break;
+                case "2":
+                    Console.WriteLine();
+                    Console.Write("Enter new GitHub repository URL (e.g. https://github.com/user/repo.git): ");
+                    string? newUrl = Console.ReadLine()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(newUrl))
+                    {
+                        Console.Write("Enter branch name (press ENTER for 'main'): ");
+                        string? branch = Console.ReadLine()?.Trim();
+                        if (string.IsNullOrWhiteSpace(branch)) branch = "main";
+
+                        await ApplyRepoSwitchAsync(configService, gitService, newUrl, branch);
+                        inSwitchMenu = false;
+                    }
+                    else
+                    {
+                        ConsoleUI.PrintWarning("Repository URL cannot be empty.");
+                        Thread.Sleep(800);
+                    }
+                    break;
+                case "3" when cfg.SavedRepositories != null && cfg.SavedRepositories.Count > 1:
+                    await HandleSelectSavedRepoAsync(configService, gitService);
+                    inSwitchMenu = false;
+                    break;
+                case "0":
+                    inSwitchMenu = false;
+                    break;
+                default:
+                    ConsoleUI.PrintWarning("Invalid option.");
+                    Thread.Sleep(600);
+                    break;
+            }
+        }
+    }
+
+    private static async Task HandleSelectSavedRepoAsync(ConfigService configService, IGitService gitService)
+    {
+        ConsoleUI.SafeClear();
+        ConsoleUI.PrintHeader("SAVED REPOSITORIES");
+
+        var repos = configService.Config.SavedRepositories;
+        for (int i = 0; i < repos.Count; i++)
+        {
+            bool isCurrent = string.Equals(repos[i], configService.Config.Repository, StringComparison.OrdinalIgnoreCase);
+            string marker = isCurrent ? " (Active)" : "";
+            Console.WriteLine($"[{i + 1}] {repos[i]}{marker}");
+        }
+        Console.WriteLine("[0] Cancel");
+        Console.WriteLine();
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.Write("Select repository: ");
+        Console.ResetColor();
+
+        string? input = Console.ReadLine()?.Trim();
+        if (int.TryParse(input, out int index) && index >= 1 && index <= repos.Count)
+        {
+            string selectedUrl = repos[index - 1];
+            await ApplyRepoSwitchAsync(configService, gitService, selectedUrl, null);
+        }
+    }
+
+    private static async Task ApplyRepoSwitchAsync(ConfigService configService, IGitService gitService, string newUrl, string? branch)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Switching repository configuration...");
+
+        bool saved = configService.SwitchRepository(newUrl, branch);
+        if (saved)
+        {
+            // Reset internal repository clone so next sync clones the new repository cleanly
+            await gitService.VerifyOrResetRemoteAsync(configService.ResolvedRepositoryFolder, newUrl);
+
+            ConsoleUI.PrintSuccess("========================================");
+            ConsoleUI.PrintSuccess("    Repository Switched Successfully!");
+            ConsoleUI.PrintSuccess("========================================");
+            Console.WriteLine();
+            Console.WriteLine($"Active Repository: {newUrl}");
+            Console.WriteLine($"Branch:            {configService.Config.Branch}");
+            Console.WriteLine();
+            ConsoleUI.PrintInfo("Select [1] Sync Mods on the main menu to download mods from this repository.");
+        }
+        else
+        {
+            ConsoleUI.PrintError("Failed to save new repository configuration.");
         }
 
         ConsoleUI.Pause();

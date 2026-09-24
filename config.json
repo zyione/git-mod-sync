@@ -1,5 +1,8 @@
 {
-  "repository": "https://github.com/zyione/git-mod-sync.git",
+  "repository": "https://github.com/zyione/4stoogies-mod-list.git",
+  "savedRepositories": [
+    "https://github.com/zyione/4stoogies-mod-list.git"
+  ],
   "branch": "main",
   "modsFolder": "../mods",
   "repositoryFolder": "./repository",

@@ -70,13 +70,16 @@ public class ConfigService
             }
 
             Config = loaded;
-            _logger.Info($"Loaded configuration successfully. Repo: {Config.Repository}, Branch: {Config.Branch}");
-
-            // Validate placeholder
-            if (Config.Repository.Contains("USERNAME/MinecraftMods") || Config.Repository.Contains("USERNAME/REPOSITORY"))
+            if (Config.SavedRepositories == null || Config.SavedRepositories.Count == 0)
             {
-                return (false, false, "config.json still contains the template repository URL.\nPlease edit config.json and set your real GitHub repository URL.");
+                Config.SavedRepositories = new List<string> { Config.Repository };
             }
+            else if (!Config.SavedRepositories.Contains(Config.Repository, StringComparer.OrdinalIgnoreCase))
+            {
+                Config.SavedRepositories.Insert(0, Config.Repository);
+            }
+
+            _logger.Info($"Loaded configuration successfully. Repo: {Config.Repository}, Branch: {Config.Branch}");
 
             return (true, false, null);
         }
@@ -92,6 +95,32 @@ public class ConfigService
             _logger.Error(err, ex);
             return (false, false, err);
         }
+    }
+
+    /// <summary>
+    /// Switches the active repository to a new repository URL and saves config.json.
+    /// </summary>
+    public bool SwitchRepository(string newRepoUrl, string? newBranch = null)
+    {
+        if (string.IsNullOrWhiteSpace(newRepoUrl)) return false;
+
+        string trimmedUrl = newRepoUrl.Trim();
+        Config.Repository = trimmedUrl;
+
+        if (!string.IsNullOrWhiteSpace(newBranch))
+        {
+            Config.Branch = newBranch.Trim();
+        }
+
+        if (Config.SavedRepositories == null)
+            Config.SavedRepositories = new List<string>();
+
+        if (!Config.SavedRepositories.Contains(trimmedUrl, StringComparer.OrdinalIgnoreCase))
+        {
+            Config.SavedRepositories.Add(trimmedUrl);
+        }
+
+        return Save();
     }
 
     /// <summary>
@@ -117,7 +146,8 @@ public class ConfigService
     {
         var defaultConfig = new AppConfig
         {
-            Repository = "https://github.com/USERNAME/MinecraftMods.git",
+            Repository = AppConfig.DefaultRepositoryUrl,
+            SavedRepositories = new List<string> { AppConfig.DefaultRepositoryUrl },
             Branch = "main",
             ModsFolder = "../mods",
             RepositoryFolder = "./repository",

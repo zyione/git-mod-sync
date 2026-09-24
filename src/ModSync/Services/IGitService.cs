@@ -41,4 +41,10 @@ public interface IGitService
     /// Pushes the local branch commits to the remote repository.
     /// </summary>
     Task<(bool Success, string? Error)> PushAsync(string repoDir, string branch, string? token = null);
+
+    /// <summary>
+    /// Verifies that an existing cloned repository's origin matches the expected repository URL.
+    /// If it does not match (e.g. user switched repositories), the folder is safely cleared for re-cloning.
+    /// </summary>
+    Task<bool> VerifyOrResetRemoteAsync(string repoDir, string expectedUrl);
 }

@@ -465,6 +465,47 @@ public class GitService : IGitService
         }
     }
 
+    public async Task<bool> VerifyOrResetRemoteAsync(string repoDir, string expectedUrl)
+    {
+        if (!Directory.Exists(Path.Combine(repoDir, ".git")))
+            return true;
+
+        if (!await EnsureGitAvailableAsync())
+            return false;
+
+        try
+        {
+            var res = await RunGitCommandAsync(repoDir, "remote get-url origin");
+            if (res.ExitCode == 0)
+            {
+                string currentOrigin = res.StdOut.Trim();
+                if (!UrlsMatch(currentOrigin, expectedUrl))
+                {
+                    _logger.Warning($"Internal repository remote origin '{currentOrigin}' does not match expected '{expectedUrl}'. Clearing for fresh clone.");
+                    Directory.Delete(repoDir, true);
+                    return false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Could not verify remote origin in {repoDir}: {ex.Message}");
+        }
+
+        return true;
+    }
+
+    private static bool UrlsMatch(string url1, string url2)
+    {
+        static string Clean(string u)
+        {
+            string s = u.Trim().ToLowerInvariant();
+            if (s.EndsWith(".git")) s = s[..^4];
+            return s.TrimEnd('/');
+        }
+        return Clean(url1) == Clean(url2);
+    }
+
     private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandWithTokenAsync(string workingDir, string gitArgs, string? token)
     {
         if (string.IsNullOrWhiteSpace(token))

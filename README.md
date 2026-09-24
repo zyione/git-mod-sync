@@ -141,11 +141,14 @@ Users only need these two files.
 
 ## Configuration (`config.json`)
 
-If `config.json` is missing, `ModSync.exe` will automatically generate it on startup:
+If `config.json` is missing, `ModSync.exe` will automatically generate it on startup with the default repository:
 
 ```json
 {
-  "repository": "https://github.com/zyione/git-mod-sync.git",
+  "repository": "https://github.com/zyione/4stoogies-mod-list.git",
+  "savedRepositories": [
+    "https://github.com/zyione/4stoogies-mod-list.git"
+  ],
   "branch": "main",
   "modsFolder": "../mods",
   "repositoryFolder": "./repository",
@@ -164,7 +167,8 @@ If `config.json` is missing, `ModSync.exe` will automatically generate it on sta
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `repository` | string | `""` | HTTPS Git clone URL of the mod repository |
+| `repository` | string | `"https://github.com/zyione/4stoogies-mod-list.git"` | HTTPS Git clone URL of the mod repository |
+| `savedRepositories` | array | `["..."]` | List of previously used / saved repository URLs for easy switching |
 | `branch` | string | `"main"` | Target Git branch to track |
 | `modsFolder` | string | `"../mods"` | Path to the Minecraft `mods` directory (relative to `ModSync.exe`) |
 | `repositoryFolder` | string | `"./repository"` | Path to internal Git clone directory |

@@ -68,6 +68,7 @@ public class ModSyncService
         statusCallback?.Invoke("Checking repository updates from GitHub...");
         string? token = _authService.GetStoredToken();
 
+        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
         bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
         if (!repoExists)
         {
@@ -148,7 +149,8 @@ public class ModSyncService
             return (false, null, "GitHub authentication is required to push mod updates.\n\nPlease select [4] GitHub Login first.");
         }
 
-        // Step 2: Ensure internal repository exists and is clean
+        // Step 2: Ensure internal repository exists and matches configured repository
+        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
         if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
         {
             statusCallback?.Invoke("Cloning repository first...");

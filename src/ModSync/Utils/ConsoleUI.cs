@@ -65,7 +65,8 @@ public static class ConsoleUI
         Console.WriteLine("[2] Push Mods");
         Console.WriteLine("[3] Check Status");
         Console.WriteLine("[4] GitHub Login");
-        Console.WriteLine("[5] Settings / Config");
+        Console.WriteLine("[5] Switch / Change Repository");
+        Console.WriteLine("[6] Settings / Config");
         Console.WriteLine("[0] Exit");
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Yellow;

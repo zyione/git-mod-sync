@@ -9,8 +9,13 @@ namespace ModSync.Models;
 /// </summary>
 public class AppConfig
 {
+    public const string DefaultRepositoryUrl = "https://github.com/zyione/4stoogies-mod-list.git";
+
     [JsonPropertyName("repository")]
-    public string Repository { get; set; } = "https://github.com/USERNAME/MinecraftMods.git";
+    public string Repository { get; set; } = DefaultRepositoryUrl;
+
+    [JsonPropertyName("savedRepositories")]
+    public List<string> SavedRepositories { get; set; } = new() { DefaultRepositoryUrl };
 
     [JsonPropertyName("branch")]
     public string Branch { get; set; } = "main";
