@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/zyione/git-mod-sync.git",
+  "branch": "main",
+  "modsFolder": "../mods",
+  "repositoryFolder": "./repository",
+  "requireConfirmationBeforePush": true,
+  "requireConfirmationBeforeSync": true,
+  "allowedExtensions": [
+    ".jar"
+  ],
+  "syncSubdirectories": false,
+  "warnFileSizeMb": 50,
+  "maxFileSizeMb": 100
+}

@@ -1,0 +1,27 @@
+# .NET build outputs
+bin/
+obj/
+publish/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ModSync runtime folders
+repository/
+logs/
+tools/
+*.tmp
+*.dat
+
+# Operating system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# IDE configs
+.vs/
+.vscode/
+.idea/
