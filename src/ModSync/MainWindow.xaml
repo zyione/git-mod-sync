@@ -285,7 +285,7 @@
                         BorderThickness="1"
                         CornerRadius="16"
                         Padding="26,22"
-                        Width="460"
+                        Width="480"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center">
 
@@ -476,63 +476,69 @@
                             <TextBlock Text="Preferences, safety confirmations, and maintenance tools."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="0,0,0,12" />
+                                       Margin="0,0,0,14" />
 
                             <!-- Group 1: Preferences -->
                             <TextBlock Text="PREFERENCES"
                                        FontSize="11"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="2,0,0,5" />
+                                       Margin="2,0,0,6" />
                             <Border Background="{DynamicResource InputBackgroundBrush}"
-                                    CornerRadius="10"
-                                    Padding="14,8"
-                                    Margin="0,0,0,12">
+                                    CornerRadius="12"
+                                    Padding="16,10"
+                                    Margin="0,0,0,16">
                                 <StackPanel>
                                     <!-- Confirm Before Sync -->
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,5">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="Confirm Before Sync"
                                                        FontSize="13"
                                                        FontWeight="Medium"
                                                        Foreground="{DynamicResource PrimaryTextBrush}" />
                                             <TextBlock Text="Prompt with summary before applying changes to mods folder"
                                                        FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Margin="0,2,0,0" />
                                         </StackPanel>
                                         <CheckBox x:Name="ConfirmSyncToggle"
                                                   Grid.Column="1"
                                                   Style="{StaticResource AppleToggleSwitchStyle}"
                                                   VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right"
+                                                  Margin="0,0,2,0"
                                                   Click="SettingToggle_Click" />
                                     </Grid>
 
                                     <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,6" />
+                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
 
                                     <!-- Confirm Before Push -->
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,5">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="Confirm Before Push"
                                                        FontSize="13"
                                                        FontWeight="Medium"
                                                        Foreground="{DynamicResource PrimaryTextBrush}" />
                                             <TextBlock Text="Review modified files before uploading to GitHub"
                                                        FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Margin="0,2,0,0" />
                                         </StackPanel>
                                         <CheckBox x:Name="ConfirmPushToggle"
                                                   Grid.Column="1"
                                                   Style="{StaticResource AppleToggleSwitchStyle}"
                                                   VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right"
+                                                  Margin="0,0,2,0"
                                                   Click="SettingToggle_Click" />
                                     </Grid>
                                 </StackPanel>
@@ -543,88 +549,87 @@
                                        FontSize="11"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="2,0,0,5" />
+                                       Margin="2,0,0,6" />
                             <Border Background="{DynamicResource InputBackgroundBrush}"
-                                    CornerRadius="10"
-                                    Padding="14,8"
-                                    Margin="0,0,0,14">
+                                    CornerRadius="12"
+                                    Padding="16,10"
+                                    Margin="0,0,0,18">
                                 <StackPanel>
                                     <!-- Clean Reinstall Mods Row -->
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,5">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="Clean Reinstall Mods"
                                                        FontSize="13"
                                                        FontWeight="SemiBold"
                                                        Foreground="{DynamicResource PrimaryTextBrush}" />
                                             <TextBlock Text="Safely backup existing mods &amp; restore fresh from repo"
                                                        FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Margin="0,2,0,0" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
                                                 Content="Reinstall..."
-                                                Style="{StaticResource DangerButtonStyle}"
-                                                Height="30"
-                                                FontSize="11"
-                                                Padding="12,0"
+                                                Style="{StaticResource CompactDangerButtonStyle}"
                                                 VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
                                                 Click="OpenCleanReinstallConfirm_Click" />
                                     </Grid>
 
                                     <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,6" />
+                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
 
                                     <!-- Application Logs Row -->
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,5">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="Application Logs"
                                                        FontSize="13"
                                                        FontWeight="Medium"
                                                        Foreground="{DynamicResource PrimaryTextBrush}" />
                                             <TextBlock Text="Open debug logs in Windows File Explorer"
                                                        FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Margin="0,2,0,0" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
                                                 Content="Open Logs"
-                                                Style="{StaticResource GhostButtonStyle}"
-                                                FontSize="11"
-                                                Padding="10,4"
+                                                Style="{StaticResource CompactSecondaryButtonStyle}"
                                                 VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
                                                 Click="OpenLogs_Click" />
                                     </Grid>
 
                                     <!-- Divider -->
-                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,6" />
+                                    <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
 
                                     <!-- View Repository on Web -->
-                                    <Grid Margin="0,3">
+                                    <Grid Margin="0,5">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                             <TextBlock Text="View on GitHub"
                                                        FontSize="13"
                                                        FontWeight="Medium"
                                                        Foreground="{DynamicResource PrimaryTextBrush}" />
                                             <TextBlock Text="Open mod repository page in web browser"
                                                        FontSize="11"
-                                                       Foreground="{DynamicResource SecondaryTextBrush}" />
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Margin="0,2,0,0" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
                                                 Content="Open Web"
-                                                Style="{StaticResource GhostButtonStyle}"
-                                                FontSize="11"
-                                                Padding="10,4"
+                                                Style="{StaticResource CompactSecondaryButtonStyle}"
                                                 VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
                                                 Click="OpenWebRepo_Click" />
                                     </Grid>
                                 </StackPanel>
@@ -633,7 +638,8 @@
                             <Button Content="Done"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     HorizontalAlignment="Right"
-                                    Width="80"
+                                    Width="84"
+                                    Height="36"
                                     Click="CloseModal_Click" />
                         </StackPanel>
 
