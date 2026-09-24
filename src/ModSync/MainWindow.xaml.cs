@@ -57,6 +57,26 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         string repoName = GetShortRepoName(cfg.Repository);
         StatusSubText.Text = $"{repoName} • {cfg.Branch}";
+        ModsFolderPathText.Text = _configService.ResolvedModsFolder;
+    }
+
+    private void OpenModsFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string modsDir = _configService.ResolvedModsFolder;
+            PathUtils.EnsureDirectoryExists(modsDir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = modsDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Could not open mods folder in File Explorer", ex);
+            ShowFeedback($"Could not open folder: {ex.Message}", true);
+        }
     }
 
     private async Task RefreshLocalModCountAsync()
