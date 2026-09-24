@@ -25,15 +25,16 @@ $RepoRoot = Resolve-Path "$ScriptDir\.."
 Set-Location $RepoRoot
 
 # 2. Locate dotnet executable
-$DotnetCmd = "dotnet"
-if (-not (Get-Command "dotnet" -ErrorAction SilentlyContinue)) {
-    $LocalDotnet = "$env:LocalAppData\Microsoft\dotnet\dotnet.exe"
-    if (Test-Path $LocalDotnet) {
-        $DotnetCmd = $LocalDotnet
-    } else {
-        Write-Error ".NET SDK was not found on PATH or in $LocalDotnet. Please install .NET 8 SDK."
-        exit 1
-    }
+$LocalDotnetDir = "$env:LocalAppData\Microsoft\dotnet"
+$LocalDotnetExe = "$LocalDotnetDir\dotnet.exe"
+if (Test-Path $LocalDotnetExe) {
+    $env:PATH = "$LocalDotnetDir;$env:PATH"
+    $DotnetCmd = $LocalDotnetExe
+} elseif (Get-Command "dotnet" -ErrorAction SilentlyContinue) {
+    $DotnetCmd = "dotnet"
+} else {
+    Write-Error ".NET SDK was not found on PATH or in $LocalDotnetExe. Please install .NET 8 SDK."
+    exit 1
 }
 
 # 3. Read current version from src/ModSync/ModSync.csproj
@@ -154,17 +155,16 @@ Write-Host "--> Creating Git commit & tag..." -ForegroundColor Cyan
 git add "$RepoRoot\src\ModSync\ModSync.csproj"
 git commit -m "release: v$NewVersion - $ReleaseNotes" --allow-empty
 
-# Delete existing local/remote tag if re-running
+# Create git tag
 $TagName = "v$NewVersion"
-git tag -d $TagName 2>$null | Out-Null
+$ExistingTag = git tag -l $TagName
+if ($ExistingTag) {
+    git tag -d $TagName | Out-Null
+}
 git tag -a $TagName -m "$ReleaseNotes"
 
 Write-Host "--> Pushing commits and tag to GitHub..." -ForegroundColor Cyan
 git push origin main --tags
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to push to GitHub. Check your git credentials and network connection."
-    exit 1
-}
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
