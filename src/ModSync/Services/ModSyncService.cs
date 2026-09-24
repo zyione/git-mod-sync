@@ -33,7 +33,10 @@ public class ModSyncService
     /// Synchronizes mods from GitHub repository down into the local Minecraft mods folder.
     /// (GitHub -> Internal Repo -> ../mods)
     /// </summary>
-    public async Task<(bool Success, SyncSummary? Summary, string? Message)> SyncModsAsync(Action<string>? statusCallback = null)
+    public async Task<(bool Success, SyncSummary? Summary, string? Message)> SyncModsAsync(
+        Action<string>? statusCallback = null,
+        bool forceIfMinecraftRunning = false,
+        bool skipConfirmation = false)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -44,23 +47,30 @@ public class ModSyncService
 
         // Step 1: Minecraft running check
         var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
-        if (mcRunning)
+        if (mcRunning && !forceIfMinecraftRunning)
         {
-            Console.WriteLine();
-            ConsoleUI.PrintWarning("========================================");
-            ConsoleUI.PrintWarning("                WARNING");
-            ConsoleUI.PrintWarning(" Minecraft appears to currently be running!");
-            if (!string.IsNullOrEmpty(mcDetails))
-                ConsoleUI.PrintWarning($" Detected: {mcDetails}");
-            ConsoleUI.PrintWarning(" Modifying mods while Minecraft is running may cause crashes or file lock errors.");
-            ConsoleUI.PrintWarning(" Close Minecraft before syncing.");
-            ConsoleUI.PrintWarning("========================================");
-            Console.WriteLine();
-
-            if (!ConsoleUI.Confirm("Continue anyway?", defaultYes: false))
+            if (Environment.UserInteractive && !Console.IsInputRedirected)
             {
-                _logger.Info("Sync cancelled by user due to running Minecraft.");
-                return (false, null, "Sync cancelled: Please close Minecraft and try again.");
+                Console.WriteLine();
+                ConsoleUI.PrintWarning("========================================");
+                ConsoleUI.PrintWarning("                WARNING");
+                ConsoleUI.PrintWarning(" Minecraft appears to currently be running!");
+                if (!string.IsNullOrEmpty(mcDetails))
+                    ConsoleUI.PrintWarning($" Detected: {mcDetails}");
+                ConsoleUI.PrintWarning(" Modifying mods while Minecraft is running may cause crashes or file lock errors.");
+                ConsoleUI.PrintWarning(" Close Minecraft before syncing.");
+                ConsoleUI.PrintWarning("========================================");
+                Console.WriteLine();
+
+                if (!ConsoleUI.Confirm("Continue anyway?", defaultYes: false))
+                {
+                    _logger.Info("Sync cancelled by user due to running Minecraft.");
+                    return (false, null, "Sync cancelled: Please close Minecraft and try again.");
+                }
+            }
+            else
+            {
+                return (false, null, $"Minecraft is currently running ({mcDetails}). Please close Minecraft and try again.");
             }
         }
 
@@ -108,12 +118,15 @@ public class ModSyncService
         // Step 5: Display summary and ask confirmation if required
         ConsoleUI.PrintChangesSummary(summary, "Checking for updates...");
 
-        if (config.RequireConfirmationBeforeSync)
+        if (config.RequireConfirmationBeforeSync && !skipConfirmation)
         {
-            if (!ConsoleUI.Confirm("Apply these changes?", defaultYes: true))
+            if (Environment.UserInteractive && !Console.IsInputRedirected)
             {
-                _logger.Info("Sync cancelled by user at confirmation prompt.");
-                return (false, null, "Sync cancelled: No files were changed.");
+                if (!ConsoleUI.Confirm("Apply these changes?", defaultYes: true))
+                {
+                    _logger.Info("Sync cancelled by user at confirmation prompt.");
+                    return (false, null, "Sync cancelled: No files were changed.");
+                }
             }
         }
 
@@ -124,6 +137,9 @@ public class ModSyncService
         {
             return (false, summary, applyResult.Error);
         }
+
+        config.FirstSyncCompleted = true;
+        _configService.Save();
 
         _logger.Info($"Sync complete: +{summary.AddedCount}, ~{summary.UpdatedCount}, -{summary.RemovedCount}");
         return (true, summary, null);
@@ -254,83 +270,103 @@ public class ModSyncService
     /// Performs a fresh clean install of all repository mods into the local mods folder.
     /// Safely backs up existing local mods to mods_backup_YYYY-MM-DD_HHmmss.
     /// </summary>
-    public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(Action<string>? statusCallback = null)
+    public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(
+        Action<string>? statusCallback = null,
+        bool forceIfMinecraftRunning = false)
     {
-        var config = _configService.Config;
-        string modsFolder = _configService.ResolvedModsFolder;
-        string repoFolder = _configService.ResolvedRepositoryFolder;
-        string? token = _authService.GetStoredToken();
-
-        _logger.Info("Starting Clean Reinstall workflow...");
-        statusCallback?.Invoke("Checking running processes...");
-
-        // Check Minecraft running
-        var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
-        if (mcRunning)
+        try
         {
-            ConsoleUI.PrintWarning("Minecraft appears to be running. Close Minecraft before reinstalling mods.");
-            if (!ConsoleUI.Confirm("Continue anyway?", defaultYes: false))
+            var config = _configService.Config;
+            string modsFolder = _configService.ResolvedModsFolder;
+            string repoFolder = _configService.ResolvedRepositoryFolder;
+            string? token = _authService.GetStoredToken();
+
+            _logger.Info("Starting Clean Reinstall workflow...");
+            statusCallback?.Invoke("Checking running processes...");
+
+            // Check Minecraft running
+            var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
+            if (mcRunning && !forceIfMinecraftRunning)
             {
-                return (false, null, 0, "Operation cancelled: Please close Minecraft.");
-            }
-        }
-
-        // Ensure internal repo is up to date
-        statusCallback?.Invoke("Pulling latest mods from GitHub...");
-        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-        if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
-        {
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
-            if (!cloneResult.Success) return (false, null, 0, cloneResult.Error);
-        }
-        else
-        {
-            var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token);
-            if (!pullResult.Success) return (false, null, 0, pullResult.Error);
-        }
-
-        // Backup existing mods if any exist
-        string? backupDir = null;
-        if (Directory.Exists(modsFolder))
-        {
-            var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
-            if (localMods.Count > 0)
-            {
-                string parentDir = Path.GetDirectoryName(modsFolder) ?? PathUtils.GetAppDirectory();
-                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-                backupDir = Path.Combine(parentDir, $"mods_backup_{timestamp}");
-                PathUtils.EnsureDirectoryExists(backupDir);
-
-                statusCallback?.Invoke($"Backing up {localMods.Count} existing mod(s)...");
-                foreach (var mod in localMods.Values)
+                if (Environment.UserInteractive && !Console.IsInputRedirected)
                 {
-                    string dest = Path.Combine(backupDir, mod.RelativePath);
-                    string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
-                    PathUtils.EnsureDirectoryExists(destSubdir);
-                    File.Move(mod.FullPath, dest, overwrite: true);
+                    ConsoleUI.PrintWarning("Minecraft appears to be running. Close Minecraft before reinstalling mods.");
+                    if (!ConsoleUI.Confirm("Continue anyway?", defaultYes: false))
+                    {
+                        return (false, null, 0, "Operation cancelled: Please close Minecraft.");
+                    }
                 }
-                _logger.Info($"Backed up {localMods.Count} mods to {backupDir}");
+                else
+                {
+                    return (false, null, 0, $"Minecraft is currently running ({mcDetails}). Please close Minecraft and try again.");
+                }
             }
+
+            // Ensure internal repo is up to date
+            statusCallback?.Invoke("Pulling latest mods from GitHub...");
+            await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
+            if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
+            {
+                var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
+                if (!cloneResult.Success) return (false, null, 0, cloneResult.Error);
+            }
+            else
+            {
+                var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token);
+                if (!pullResult.Success) return (false, null, 0, pullResult.Error);
+            }
+
+            // Backup existing mods if any exist
+            string? backupDir = null;
+            if (Directory.Exists(modsFolder))
+            {
+                var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
+                if (localMods.Count > 0)
+                {
+                    string parentDir = Path.GetDirectoryName(modsFolder) ?? PathUtils.GetAppDirectory();
+                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                    backupDir = Path.Combine(parentDir, $"mods_backup_{timestamp}");
+                    PathUtils.EnsureDirectoryExists(backupDir);
+
+                    statusCallback?.Invoke($"Backing up {localMods.Count} existing mod(s)...");
+                    foreach (var mod in localMods.Values)
+                    {
+                        string dest = Path.Combine(backupDir, mod.RelativePath);
+                        string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
+                        PathUtils.EnsureDirectoryExists(destSubdir);
+                        File.Move(mod.FullPath, dest, overwrite: true);
+                    }
+                    _logger.Info($"Backed up {localMods.Count} mods to {backupDir}");
+                }
+            }
+
+            PathUtils.EnsureDirectoryExists(modsFolder);
+
+            // Copy all repo mods cleanly into ../mods
+            statusCallback?.Invoke("Copying fresh repository mods into mods folder...");
+            var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+            int copied = 0;
+
+            foreach (var file in repoFiles.Values)
+            {
+                string dest = Path.Combine(modsFolder, file.RelativePath);
+                string destSubdir = Path.GetDirectoryName(dest) ?? modsFolder;
+                PathUtils.EnsureDirectoryExists(destSubdir);
+                File.Copy(file.FullPath, dest, overwrite: true);
+                copied++;
+            }
+
+            config.FirstSyncCompleted = true;
+            _configService.Save();
+
+            _logger.Info($"Clean reinstall complete: {copied} mods copied.");
+            return (true, backupDir, copied, null);
         }
-
-        PathUtils.EnsureDirectoryExists(modsFolder);
-
-        // Copy all repo mods cleanly into ../mods
-        statusCallback?.Invoke("Copying fresh repository mods into mods folder...");
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
-        int copied = 0;
-
-        foreach (var file in repoFiles.Values)
+        catch (Exception ex)
         {
-            string dest = Path.Combine(modsFolder, file.RelativePath);
-            string destSubdir = Path.GetDirectoryName(dest) ?? modsFolder;
-            PathUtils.EnsureDirectoryExists(destSubdir);
-            File.Copy(file.FullPath, dest, overwrite: true);
-            copied++;
+            _logger.Error("Clean reinstall failed", ex);
+            return (false, null, 0, $"Clean reinstall failed: {ex.Message}");
         }
-
-        _logger.Info($"Clean reinstall complete: {copied} mods copied.");
-        return (true, backupDir, copied, null);
     }
 
     /// <summary>

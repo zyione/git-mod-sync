@@ -195,5 +195,73 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Apple Toggle Switch Style for CheckBox -->
+        <Style x:Key="AppleToggleSwitchStyle" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Border x:Name="track"
+                                    Width="42"
+                                    Height="24"
+                                    CornerRadius="12"
+                                    Background="{DynamicResource SecondaryButtonBrush}">
+                                <Ellipse x:Name="thumb"
+                                         Width="18"
+                                         Height="18"
+                                         Margin="3,0,0,0"
+                                         HorizontalAlignment="Left"
+                                         Fill="#FFFFFF" />
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="thumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="thumb" Property="Margin" Value="0,0,3,0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Apple Destructive / Danger Button Style -->
+        <Style x:Key="DangerButtonStyle" TargetType="Button">
+            <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+            <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="12"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="False" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.88" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Application.Resources>
 </Application>

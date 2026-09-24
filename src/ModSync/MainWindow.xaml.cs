@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly ModSyncService _syncService;
 
     private bool _isBusy;
+    private string? _lastBackupFolder;
 
     public MainWindow()
     {
@@ -148,17 +149,91 @@ public partial class MainWindow : Window
     private async void SyncMods_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy) return;
-        SetBusy(true, "Syncing mods...");
 
+        if (_configService.Config.RequireConfirmationBeforeSync)
+        {
+            SetBusy(true, "Checking updates from GitHub...");
+            DismissFeedback();
+
+            try
+            {
+                var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync());
+                if (!modChanges.HasChanges)
+                {
+                    ShowFeedback("✓ Mods are up to date.", false);
+                    SetBusy(false);
+                    return;
+                }
+
+                SyncConfirmSummaryText.Text = $"Updates detected: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
+
+                var sb = new System.Text.StringBuilder();
+                foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
+                foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
+                foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
+                SyncDetailsText.Text = sb.ToString().TrimEnd();
+
+                SetBusy(false);
+                ShowModal(SyncConfirmSheet);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Error checking sync diffs", ex);
+                // Fall through to regular sync if diff precheck failed
+                SetBusy(false);
+            }
+        }
+
+        await PerformSyncAsync();
+    }
+
+    private async void ConfirmSync_Click(object sender, RoutedEventArgs e)
+    {
+        CloseModal();
+        await PerformSyncAsync(skipConfirmation: true);
+    }
+
+    private async Task PerformSyncAsync(bool skipConfirmation = false)
+    {
+        SetBusy(true, "Syncing mods...");
         DismissFeedback();
 
         try
         {
             var (success, summary, message) = await Task.Run(() =>
                 _syncService.SyncModsAsync(status =>
-                    Dispatcher.Invoke(() => ProgressStatusText.Text = status)
+                    Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                    forceIfMinecraftRunning: false,
+                    skipConfirmation: skipConfirmation
                 )
             );
+
+            if (!success && message != null && message.Contains("Minecraft is currently running", StringComparison.OrdinalIgnoreCase))
+            {
+                var result = MessageBox.Show(
+                    $"{message}\n\nModifying mods while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
+                    "Minecraft Running Warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    SetBusy(true, "Forcing mod sync...");
+                    (success, summary, message) = await Task.Run(() =>
+                        _syncService.SyncModsAsync(status =>
+                            Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                            forceIfMinecraftRunning: true,
+                            skipConfirmation: true
+                        )
+                    );
+                }
+                else
+                {
+                    ShowFeedback("Sync cancelled: Close Minecraft and try again.", true);
+                    return;
+                }
+            }
 
             if (success)
             {
@@ -415,6 +490,176 @@ public partial class MainWindow : Window
 
     #endregion
 
+    #region Settings & Clean Reinstall
+
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        var cfg = _configService.Config;
+        ConfirmSyncToggle.IsChecked = cfg.RequireConfirmationBeforeSync;
+        ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
+        ShowModal(SettingsSheet);
+    }
+
+    private void SettingToggle_Click(object sender, RoutedEventArgs e)
+    {
+        var cfg = _configService.Config;
+        cfg.RequireConfirmationBeforeSync = ConfirmSyncToggle.IsChecked == true;
+        cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
+        _configService.Save();
+        _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}");
+    }
+
+    private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e)
+    {
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+        CleanReinstallBackupPreviewText.Text = $"../mods_backup_{timestamp}/";
+        ShowModal(CleanReinstallConfirmSheet);
+    }
+
+    private void BackToSettings_Click(object sender, RoutedEventArgs e)
+    {
+        ShowModal(SettingsSheet);
+    }
+
+    private async void ConfirmCleanReinstall_Click(object sender, RoutedEventArgs e)
+    {
+        CloseModal();
+        DismissFeedback();
+        SetBusy(true, "Backing up old mods and performing clean reinstall...");
+
+        try
+        {
+            var (success, backupDir, count, error) = await Task.Run(() =>
+                _syncService.CleanReinstallAsync(status =>
+                    Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                    forceIfMinecraftRunning: false
+                )
+            );
+
+            if (!success && error != null && error.Contains("Minecraft is currently running", StringComparison.OrdinalIgnoreCase))
+            {
+                var result = MessageBox.Show(
+                    $"{error}\n\nModifying mods while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
+                    "Minecraft Running Warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    SetBusy(true, "Forcing clean reinstall...");
+                    (success, backupDir, count, error) = await Task.Run(() =>
+                        _syncService.CleanReinstallAsync(status =>
+                            Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                            forceIfMinecraftRunning: true
+                        )
+                    );
+                }
+                else
+                {
+                    ShowFeedback("Clean reinstall cancelled: Close Minecraft and try again.", true);
+                    return;
+                }
+            }
+
+            if (success)
+            {
+                SetStatusDot(true);
+                _lastBackupFolder = backupDir;
+
+                if (!string.IsNullOrEmpty(backupDir))
+                {
+                    string backupFolderName = Path.GetFileName(backupDir);
+                    ShowFeedback($"✓ Clean Reinstall Complete! {count} mods restored. Backup: {backupFolderName}", false, showBackupAction: true);
+                }
+                else
+                {
+                    ShowFeedback($"✓ Clean Reinstall Complete! {count} mods installed fresh.", false);
+                }
+            }
+            else
+            {
+                SetStatusDot(false);
+                ShowFeedback(error ?? "Clean reinstall failed.", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("GUI Clean Reinstall exception", ex);
+            ShowFeedback($"Clean reinstall error: {ex.Message}", true);
+            SetStatusDot(false);
+        }
+        finally
+        {
+            await RefreshLocalModCountAsync();
+            UpdateStatusCard();
+            SetBusy(false);
+        }
+    }
+
+    private void FeedbackAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(_lastBackupFolder) && Directory.Exists(_lastBackupFolder))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _lastBackupFolder,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Could not open backup directory", ex);
+                ShowFeedback($"Could not open backup directory: {ex.Message}", true);
+            }
+        }
+    }
+
+    private void OpenLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string logsDir = Path.Combine(PathUtils.GetAppDirectory(), "logs");
+            PathUtils.EnsureDirectoryExists(logsDir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = logsDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Could not open logs folder", ex);
+            ShowFeedback($"Could not open logs folder: {ex.Message}", true);
+        }
+    }
+
+    private void OpenWebRepo_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string repo = _configService.Config.Repository;
+            if (string.IsNullOrWhiteSpace(repo)) return;
+            if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+            {
+                repo = repo[..^4];
+            }
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = repo,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Could not open repository URL", ex);
+            ShowFeedback($"Could not open browser: {ex.Message}", true);
+        }
+    }
+
+    #endregion
+
     #region Helpers & Window Controls
 
     private void SetBusy(bool busy, string? message = null)
@@ -441,19 +686,21 @@ public partial class MainWindow : Window
             : (Brush)FindResource("ErrorBrush");
     }
 
-    private void ShowFeedback(string message, bool isError)
+    private void ShowFeedback(string message, bool isError, bool showBackupAction = false)
     {
         FeedbackMessageText.Text = message;
         FeedbackMessageText.Foreground = isError
             ? (Brush)FindResource("ErrorBrush")
             : (Brush)FindResource("PrimaryTextBrush");
 
+        FeedbackActionButton.Visibility = showBackupAction ? Visibility.Visible : Visibility.Collapsed;
         FeedbackCard.Visibility = Visibility.Visible;
     }
 
     private void DismissFeedback()
     {
         FeedbackCard.Visibility = Visibility.Collapsed;
+        FeedbackActionButton.Visibility = Visibility.Collapsed;
     }
 
     private void DismissFeedback_Click(object sender, RoutedEventArgs e)
@@ -467,6 +714,9 @@ public partial class MainWindow : Window
         LoginSheet.Visibility = Visibility.Collapsed;
         SwitchRepoSheet.Visibility = Visibility.Collapsed;
         StatusSheet.Visibility = Visibility.Collapsed;
+        SettingsSheet.Visibility = Visibility.Collapsed;
+        CleanReinstallConfirmSheet.Visibility = Visibility.Collapsed;
+        SyncConfirmSheet.Visibility = Visibility.Collapsed;
 
         sheet.Visibility = Visibility.Visible;
         ModalBackdrop.Visibility = Visibility.Visible;

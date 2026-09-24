@@ -198,8 +198,21 @@ Normal players who only download/synchronize mods **do not need a GitHub account
        └── config.json
    ```
 3. Double-click `ModSync.exe`.
-4. Press `1` to **Sync Mods**.
-5. ModSync will inspect your mods, show any added/updated/removed files, and bring your folder in sync with the server.
+4. Click **Sync Mods**:
+   - ModSync inspects your mods folder, compares cryptographic SHA-256 hashes against GitHub, and brings your folder in sync with the repository.
+   - If confirmation is enabled, an Apple-inspired review sheet displays the exact added, updated, and removed files before applying.
+
+### Fresh "Clean Reinstall" (For Messed-Up Folders)
+
+If a player's folder has broken, outdated, or conflicting jars and they want a 100% clean reset:
+1. In ModSync, click **Settings** (or the `⚙` gear icon in the header).
+2. Under **Maintenance & Tools**, click **Reinstall...** next to **Clean Reinstall Mods**.
+3. Review the confirmation sheet:
+   - Existing `.jar` files are automatically moved into a safety backup: `../mods_backup_YYYY-MM-DD_HHmmss/`.
+   - The `.jar` files in `../mods/` are cleared.
+   - Authoritative mods are freshly downloaded and copied from the repository.
+   - Non-mod files (personal configs, shaders, options) are preserved and never deleted.
+4. Click **Reinstall & Backup**. A notification will confirm completion, with an **Open Backup** button to jump directly to your backed-up files in Windows File Explorer.
 
 ---
 
