@@ -42,6 +42,13 @@ public partial class MainWindow : Window
         _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _logger);
 
         Loaded += MainWindow_Loaded;
+        Activated += async (_, _) =>
+        {
+            if (!_isBusy)
+            {
+                await RefreshLocalModCountAsync();
+            }
+        };
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -85,20 +92,33 @@ public partial class MainWindow : Window
         try
         {
             string modsDir = _configService.ResolvedModsFolder;
+            var allowedExts = _configService.Config.AllowedExtensions;
+            bool syncSubdirs = _configService.Config.SyncSubdirectories;
+            var searchOpt = syncSubdirs ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+
             int count = await Task.Run(() =>
             {
-                if (Directory.Exists(modsDir))
+                if (!Directory.Exists(modsDir)) return 0;
+                var extSet = new HashSet<string>(allowedExts, StringComparer.OrdinalIgnoreCase);
+                int found = 0;
+                foreach (var f in Directory.GetFiles(modsDir, "*.*", searchOpt))
                 {
-                    return Directory.GetFiles(modsDir, "*.jar", SearchOption.TopDirectoryOnly).Length;
+                    if (extSet.Contains(Path.GetExtension(f))) found++;
                 }
-                return 0;
+                return found;
             });
 
-            ModCountBadgeText.Text = $"{count} mod{(count == 1 ? "" : "s")}";
+            Dispatcher.Invoke(() =>
+            {
+                ModCountBadgeText.Text = $"{count} mod{(count == 1 ? "" : "s")}";
+            });
         }
         catch
         {
-            ModCountBadgeText.Text = "-- mods";
+            Dispatcher.Invoke(() =>
+            {
+                ModCountBadgeText.Text = "-- mods";
+            });
         }
     }
 
@@ -282,12 +302,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        await RefreshLocalModCountAsync();
         SetBusy(true, "Checking local modifications...");
         DismissFeedback();
 
         try
         {
-            var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+            var (success, modChanges, error) = await Task.Run(() => _syncService.GetPushChangesAsync(UpdateProgress));
+            if (!success || modChanges == null)
+            {
+                ShowFeedback(error ?? "Failed to inspect modifications.", true);
+                SetBusy(false);
+                return;
+            }
 
             if (!modChanges.HasChanges)
             {
@@ -297,7 +324,7 @@ public partial class MainWindow : Window
             }
 
             // Show confirmation sheet modal
-            PushConfirmSummaryText.Text = $"Changes detected: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
+            PushConfirmSummaryText.Text = $"Changes to upload: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
 
             var sb = new System.Text.StringBuilder();
             foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
@@ -343,6 +370,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            await RefreshLocalModCountAsync();
             SetBusy(false);
         }
     }

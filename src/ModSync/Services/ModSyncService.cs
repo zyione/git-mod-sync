@@ -314,6 +314,43 @@ public class ModSyncService
     }
 
     /// <summary>
+    /// Computes differences from the perspective of pushing local mods up to GitHub.
+    /// (Local mods = source, Repository = target: new local files are Added, deleted local files are Removed).
+    /// </summary>
+    public async Task<(bool Success, SyncSummary? Summary, string? Message)> GetPushChangesAsync(Action<SyncProgressInfo>? progressCallback = null)
+    {
+        var config = _configService.Config;
+        string modsFolder = _configService.ResolvedModsFolder;
+        string repoFolder = _configService.ResolvedRepositoryFolder;
+        string? token = _authService.GetStoredToken();
+
+        // Ensure internal repo exists and is synced with remote
+        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
+        if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
+        {
+            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
+            if (!cloneResult.Success)
+                return (false, null, cloneResult.Error);
+        }
+        else
+        {
+            var fetchResult = await _gitService.FetchAsync(repoFolder, config.Branch, token, progressCallback);
+            if (!fetchResult.Success)
+                return (false, null, $"Failed to reach GitHub: {fetchResult.Error}");
+        }
+
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods...", "Comparing local mods with repository..."));
+        PathUtils.EnsureDirectoryExists(modsFolder);
+
+        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
+        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+
+        // Source is local mods, Target is repo!
+        var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
+        return (true, summary, null);
+    }
+
+    /// <summary>
     /// Performs a fresh clean install of all repository mods into the local mods folder.
     /// Safely backs up existing local mods to mods_backup_YYYY-MM-DD_HHmmss.
     /// Provides live per-file backup & install progress, transfer speed, and ETA.
