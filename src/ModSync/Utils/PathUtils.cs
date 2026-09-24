@@ -52,6 +52,37 @@ public static class PathUtils
     }
 
     /// <summary>
+    /// Formats transfer speed into a clean human-readable string (e.g. "3.4 MB/s").
+    /// </summary>
+    public static string FormatSpeed(double bytesPerSec)
+    {
+        if (bytesPerSec <= 0) return "-- B/s";
+        return $"{FormatFileSize((long)bytesPerSec)}/s";
+    }
+
+    /// <summary>
+    /// Formats remaining duration into an ETA string (e.g. "ETA 4s", "ETA 1m 20s").
+    /// </summary>
+    public static string FormatEta(double secondsRemaining)
+    {
+        if (double.IsNaN(secondsRemaining) || double.IsInfinity(secondsRemaining) || secondsRemaining <= 0)
+            return "ETA --";
+        if (secondsRemaining < 1)
+            return "ETA < 1s";
+        if (secondsRemaining < 60)
+            return $"ETA {(int)Math.Round(secondsRemaining)}s";
+        if (secondsRemaining < 3600)
+        {
+            int mins = (int)(secondsRemaining / 60);
+            int secs = (int)(secondsRemaining % 60);
+            return secs > 0 ? $"ETA {mins}m {secs}s" : $"ETA {mins}m";
+        }
+        int hours = (int)(secondsRemaining / 3600);
+        int remMins = (int)((secondsRemaining % 3600) / 60);
+        return remMins > 0 ? $"ETA {hours}h {remMins}m" : $"ETA {hours}h";
+    }
+
+    /// <summary>
     /// Ensures that the specified directory exists, creating all parent directories if necessary.
     /// </summary>
     public static void EnsureDirectoryExists(string directoryPath)

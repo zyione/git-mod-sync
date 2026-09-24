@@ -12,6 +12,7 @@ namespace ModSync.Services;
 /// High-reliability Git execution service.
 /// Automatically detects system Git, or provisions portable MinGit if Git is not installed,
 /// completely isolating the user from command-line Git.
+/// Streams real-time transfer progress, speeds, and details to callbacks.
 /// </summary>
 public class GitService : IGitService
 {
@@ -27,7 +28,7 @@ public class GitService : IGitService
     /// <summary>
     /// Finds or provisions a working Git binary.
     /// </summary>
-    public async Task<bool> EnsureGitAvailableAsync(Action<string>? progressCallback = null)
+    public async Task<bool> EnsureGitAvailableAsync(Action<SyncProgressInfo>? progressCallback = null)
     {
         if (!string.IsNullOrEmpty(_cachedGitBinaryPath) && File.Exists(_cachedGitBinaryPath))
             return true;
@@ -42,7 +43,9 @@ public class GitService : IGitService
 
         // Auto-provision portable MinGit
         _logger.Warning("No system Git found. Starting automatic MinGit provisioning...");
-        progressCallback?.Invoke("Git is not installed on this system. Downloading portable Git (MinGit)...");
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
+            "Installing portable Git runtime...",
+            "Git was not detected on this system. Setting up MinGit automatically..."));
 
         bool provisioned = await ProvisionPortableGitAsync(progressCallback);
         if (provisioned)
@@ -112,7 +115,7 @@ public class GitService : IGitService
         return Path.Combine(PathUtils.GetAppDirectory(), "tools", "git", "cmd", "git.exe");
     }
 
-    private async Task<bool> ProvisionPortableGitAsync(Action<string>? progressCallback)
+    private async Task<bool> ProvisionPortableGitAsync(Action<SyncProgressInfo>? progressCallback)
     {
         try
         {
@@ -125,7 +128,7 @@ public class GitService : IGitService
             // MinGit official release URL (x64)
             string minGitUrl = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip";
 
-            progressCallback?.Invoke("Downloading portable Git (~25MB)...");
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Downloading portable Git (~25MB)...", "Connecting to download server..."));
             _logger.Info($"Downloading MinGit from {minGitUrl}");
 
             using (var response = await HttpClient.GetAsync(minGitUrl, HttpCompletionOption.ResponseHeadersRead))
@@ -139,6 +142,7 @@ public class GitService : IGitService
                 byte[] buffer = new byte[8192];
                 long totalRead = 0;
                 int bytesRead;
+                var stopwatch = Stopwatch.StartNew();
 
                 while ((bytesRead = await stream.ReadAsync(buffer)) > 0)
                 {
@@ -147,13 +151,29 @@ public class GitService : IGitService
 
                     if (totalBytes.HasValue && totalBytes.Value > 0)
                     {
-                        int percent = (int)((totalRead * 100) / totalBytes.Value);
-                        progressCallback?.Invoke($"Downloading portable Git: {percent}%");
+                        double percent = (double)totalRead / totalBytes.Value * 100.0;
+                        double elapsedSec = stopwatch.Elapsed.TotalSeconds;
+                        double bytesPerSec = elapsedSec > 0.2 ? totalRead / elapsedSec : 0;
+                        double remainingSec = bytesPerSec > 1024 ? (totalBytes.Value - totalRead) / bytesPerSec : 0;
+
+                        string speedEta = bytesPerSec > 1024
+                            ? $"{PathUtils.FormatSpeed(bytesPerSec)} • {PathUtils.FormatEta(remainingSec)}"
+                            : PathUtils.FormatFileSize(totalRead);
+
+                        string details = $"Downloaded {PathUtils.FormatFileSize(totalRead)} of {PathUtils.FormatFileSize(totalBytes.Value)}";
+
+                        progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                            "Downloading portable Git...",
+                            percent,
+                            details,
+                            speedEta));
                     }
                 }
             }
 
-            progressCallback?.Invoke("Extracting portable Git files...");
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
+                "Extracting portable Git files...",
+                "Unpacking archive into tools/git..."));
             _logger.Info("Extracting MinGit archive...");
 
             if (Directory.Exists(gitDir)) Directory.Delete(gitDir, true);
@@ -161,7 +181,10 @@ public class GitService : IGitService
 
             try { File.Delete(zipFile); } catch { }
 
-            progressCallback?.Invoke("Portable Git setup complete.");
+            progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                "Portable Git ready",
+                100,
+                "Setup complete."));
             return true;
         }
         catch (Exception ex)
@@ -171,14 +194,20 @@ public class GitService : IGitService
         }
     }
 
-    public async Task<(bool Success, string? Error)> CloneAsync(string repositoryUrl, string targetDir, string branch, string? token = null, Action<string>? progressCallback = null)
+    public async Task<(bool Success, string? Error)> CloneAsync(
+        string repositoryUrl,
+        string targetDir,
+        string branch,
+        string? token = null,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
         if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found or initialized.");
 
         try
         {
-            progressCallback?.Invoke("Connecting to GitHub and cloning repository...");
+            const string defaultStatus = "Connecting to GitHub and cloning repository...";
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate(defaultStatus, "Connecting to GitHub..."));
             string authUrl = BuildAuthenticatedUrl(repositoryUrl, token);
 
             // Parent directory of target
@@ -194,14 +223,19 @@ public class GitService : IGitService
                 }
             }
 
-            string args = $"clone --branch {branch} --single-branch \"{authUrl}\" \"{targetDir}\"";
-            var result = await RunGitCommandAsync(parentDir, args);
+            string args = $"clone --progress --branch {branch} --single-branch \"{authUrl}\" \"{targetDir}\"";
+            var result = await RunGitCommandAsync(parentDir, args, line =>
+            {
+                var progress = ParseGitProgressLine(line, defaultStatus);
+                if (progress != null) progressCallback?.Invoke(progress);
+            });
 
             if (result.ExitCode != 0)
             {
                 return (false, FriendlyGitError(result.StdErr, repositoryUrl));
             }
 
+            progressCallback?.Invoke(SyncProgressInfo.Determinate(defaultStatus, 100, "Repository cloned successfully."));
             _logger.Info($"Successfully cloned {repositoryUrl} (branch {branch}) to {targetDir}");
             return (true, null);
         }
@@ -212,15 +246,24 @@ public class GitService : IGitService
         }
     }
 
-    public async Task<(bool Success, string? Error)> FetchAsync(string repoDir, string branch, string? token = null, Action<string>? progressCallback = null)
+    public async Task<(bool Success, string? Error)> FetchAsync(
+        string repoDir,
+        string branch,
+        string? token = null,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
         if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found.");
 
-        progressCallback?.Invoke("Fetching latest updates from GitHub...");
+        const string defaultStatus = "Fetching latest updates from GitHub...";
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate(defaultStatus, "Connecting to remote origin..."));
 
-        string args = $"fetch origin {branch}";
-        var result = await RunGitCommandWithTokenAsync(repoDir, args, token);
+        string args = $"fetch --progress origin {branch}";
+        var result = await RunGitCommandWithTokenAsync(repoDir, args, token, line =>
+        {
+            var progress = ParseGitProgressLine(line, defaultStatus);
+            if (progress != null) progressCallback?.Invoke(progress);
+        });
 
         if (result.ExitCode != 0)
         {
@@ -231,15 +274,21 @@ public class GitService : IGitService
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> PullOrResetToRemoteAsync(string repoDir, string branch, string? token = null)
+    public async Task<(bool Success, string? Error)> PullOrResetToRemoteAsync(
+        string repoDir,
+        string branch,
+        string? token = null,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
-        if (!await EnsureGitAvailableAsync())
+        if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found.");
 
-        // Fetch first
-        var fetchResult = await FetchAsync(repoDir, branch, token);
+        // Fetch first with progress
+        var fetchResult = await FetchAsync(repoDir, branch, token, progressCallback);
         if (!fetchResult.Success)
             return fetchResult;
+
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Synchronizing branch state...", $"Updating to origin/{branch}..."));
 
         // Reset hard to origin/branch to ensure internal repo precisely matches remote authoritative state
         var checkoutResult = await RunGitCommandAsync(repoDir, $"checkout {branch}");
@@ -262,7 +311,12 @@ public class GitService : IGitService
         return (true, null);
     }
 
-    public async Task<GitStatusInfo> GetStatusAsync(string repoDir, string repositoryUrl, string branch, string? token = null)
+    public async Task<GitStatusInfo> GetStatusAsync(
+        string repoDir,
+        string repositoryUrl,
+        string branch,
+        string? token = null,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
         var status = new GitStatusInfo
         {
@@ -279,7 +333,7 @@ public class GitService : IGitService
 
         status.IsCloned = true;
 
-        if (!await EnsureGitAvailableAsync())
+        if (!await EnsureGitAvailableAsync(progressCallback))
         {
             status.StatusMessage = "Git runtime unavailable.";
             return status;
@@ -303,7 +357,7 @@ public class GitService : IGitService
             }
 
             // Fetch remote to check current status
-            var fetch = await FetchAsync(repoDir, branch, token);
+            var fetch = await FetchAsync(repoDir, branch, token, progressCallback);
             if (fetch.Success)
             {
                 status.IsConnected = true;
@@ -359,18 +413,24 @@ public class GitService : IGitService
         return status;
     }
 
-    public async Task<(bool Success, string? Error)> StageAndCommitAsync(string repoDir, string commitMessage)
+    public async Task<(bool Success, string? Error)> StageAndCommitAsync(
+        string repoDir,
+        string commitMessage,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
-        if (!await EnsureGitAvailableAsync())
+        if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found.");
 
         try
         {
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Staging mod changes...", "Configuring Git author identity..."));
+
             // Configure local committer name/email if not configured
             await RunGitCommandAsync(repoDir, "config user.name \"ModSync Admin\"");
             await RunGitCommandAsync(repoDir, "config user.email \"modsync@local\"");
 
             // git add -A
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Staging mod changes...", "Running git add -A..."));
             var addResult = await RunGitCommandAsync(repoDir, "add -A");
             if (addResult.ExitCode != 0)
             {
@@ -385,6 +445,7 @@ public class GitService : IGitService
             }
 
             // git commit -m "..."
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Creating Git commit...", commitMessage));
             string safeMsg = commitMessage.Replace("\"", "\\\"");
             var commitResult = await RunGitCommandAsync(repoDir, $"commit -m \"{safeMsg}\"");
             if (commitResult.ExitCode != 0)
@@ -402,18 +463,23 @@ public class GitService : IGitService
         }
     }
 
-    public async Task<(bool Success, string? Error)> PushAsync(string repoDir, string branch, string? token = null)
+    public async Task<(bool Success, string? Error)> PushAsync(
+        string repoDir,
+        string branch,
+        string? token = null,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
-        if (!await EnsureGitAvailableAsync())
+        if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found.");
 
         try
         {
             _logger.Info($"Pushing branch '{branch}' to origin...");
+            const string defaultStatus = "Pushing mod updates to GitHub...";
 
             // Safety check: Never force push!
             // First check if remote has changes
-            var fetch = await FetchAsync(repoDir, branch, token);
+            var fetch = await FetchAsync(repoDir, branch, token, progressCallback);
             if (!fetch.Success)
             {
                 return (false, $"Unable to check remote branch before push: {fetch.Error}");
@@ -431,9 +497,15 @@ public class GitService : IGitService
                 }
             }
 
-            // Push with credentials
-            string args = $"push origin {branch}";
-            var pushResult = await RunGitCommandWithTokenAsync(repoDir, args, token);
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate(defaultStatus, "Uploading objects to GitHub..."));
+
+            // Push with credentials & progress
+            string args = $"push --progress origin {branch}";
+            var pushResult = await RunGitCommandWithTokenAsync(repoDir, args, token, line =>
+            {
+                var progress = ParseGitProgressLine(line, defaultStatus);
+                if (progress != null) progressCallback?.Invoke(progress);
+            });
 
             if (pushResult.ExitCode != 0)
             {
@@ -455,6 +527,7 @@ public class GitService : IGitService
                 return (false, FriendlyGitError(err));
             }
 
+            progressCallback?.Invoke(SyncProgressInfo.Determinate(defaultStatus, 100, "Push completed successfully!"));
             _logger.Info("Push completed successfully.");
             return (true, null);
         }
@@ -506,21 +579,28 @@ public class GitService : IGitService
         return Clean(url1) == Clean(url2);
     }
 
-    private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandWithTokenAsync(string workingDir, string gitArgs, string? token)
+    private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandWithTokenAsync(
+        string workingDir,
+        string gitArgs,
+        string? token,
+        Action<string>? onStderrLine = null)
     {
         if (string.IsNullOrWhiteSpace(token))
         {
-            return await RunGitCommandAsync(workingDir, gitArgs);
+            return await RunGitCommandAsync(workingDir, gitArgs, onStderrLine);
         }
 
         // Use git -c http.extraHeader to securely pass authorization header without modifying remote URL on disk
         string authHeader = Convert.ToBase64String(Encoding.UTF8.GetBytes($"x-access-token:{token}"));
         string fullArgs = $"-c http.extraHeader=\"Authorization: Basic {authHeader}\" {gitArgs}";
 
-        return await RunGitCommandAsync(workingDir, fullArgs);
+        return await RunGitCommandAsync(workingDir, fullArgs, onStderrLine);
     }
 
-    private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandAsync(string workingDir, string arguments)
+    private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandAsync(
+        string workingDir,
+        string arguments,
+        Action<string>? onStderrLine = null)
     {
         string gitExe = _cachedGitBinaryPath ?? "git.exe";
 
@@ -543,15 +623,132 @@ public class GitService : IGitService
         var stderr = new StringBuilder();
 
         proc.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-        proc.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
 
         proc.Start();
         proc.BeginOutputReadLine();
-        proc.BeginErrorReadLine();
 
-        await proc.WaitForExitAsync();
+        // Asynchronously stream stderr chunk-by-chunk splitting on both \r and \n in real time
+        var errorTask = Task.Run(async () =>
+        {
+            var charBuffer = new char[512];
+            var lineBuffer = new StringBuilder();
+            using var reader = proc.StandardError;
+            int charsRead;
+
+            while ((charsRead = await reader.ReadAsync(charBuffer, 0, charBuffer.Length)) > 0)
+            {
+                for (int i = 0; i < charsRead; i++)
+                {
+                    char c = charBuffer[i];
+                    if (c == '\r' || c == '\n')
+                    {
+                        if (lineBuffer.Length > 0)
+                        {
+                            string line = lineBuffer.ToString();
+                            lineBuffer.Clear();
+                            stderr.AppendLine(line);
+                            onStderrLine?.Invoke(line);
+                        }
+                    }
+                    else
+                    {
+                        lineBuffer.Append(c);
+                    }
+                }
+            }
+
+            if (lineBuffer.Length > 0)
+            {
+                string line = lineBuffer.ToString();
+                stderr.AppendLine(line);
+                onStderrLine?.Invoke(line);
+            }
+        });
+
+        await Task.WhenAll(proc.WaitForExitAsync(), errorTask);
 
         return (proc.ExitCode, stdout.ToString(), stderr.ToString());
+    }
+
+    /// <summary>
+    /// Parses Git progress lines from stderr into rich SyncProgressInfo.
+    /// Handles Counting, Compressing, Receiving, Writing, Resolving deltas, and Updating files.
+    /// </summary>
+    public static SyncProgressInfo? ParseGitProgressLine(string rawLine, string defaultStatus)
+    {
+        if (string.IsNullOrWhiteSpace(rawLine)) return null;
+
+        string line = rawLine.Trim();
+        if (line.StartsWith("remote:", StringComparison.OrdinalIgnoreCase))
+        {
+            line = line["remote:".Length..].Trim();
+        }
+
+        // Example match: Receiving objects:  78% (120/154), 14.20 MiB | 3.45 MiB/s
+        var match = Regex.Match(line, @"([A-Za-z\s]+):\s*(\d+)%\s*\(([^)]+)\)(?:,\s*([0-9.]+\s*[KMGT]?i?B))?(?:\s*\|\s*([0-9.]+\s*[^,\r\n]+))?", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            string phase = match.Groups[1].Value.Trim();
+            double pct = double.TryParse(match.Groups[2].Value, out var p) ? p : 0;
+            string count = match.Groups[3].Value.Trim();
+            string bytesTransferred = match.Groups[4].Success ? match.Groups[4].Value.Trim() : string.Empty;
+            string speed = match.Groups[5].Success ? match.Groups[5].Value.Trim() : string.Empty;
+
+            double overallPct;
+            string detail;
+
+            if (phase.StartsWith("Counting", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = Math.Min(10.0, pct * 0.1);
+                detail = $"Analyzing repository objects: {count}";
+            }
+            else if (phase.StartsWith("Compressing", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = 10.0 + (pct * 0.05);
+                detail = $"Compressing objects: {count}";
+            }
+            else if (phase.StartsWith("Receiving", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = 15.0 + (pct * 0.70); // 15% -> 85%
+                detail = string.IsNullOrEmpty(bytesTransferred)
+                    ? $"Receiving objects: {count}"
+                    : $"Receiving objects: {count} ({bytesTransferred})";
+            }
+            else if (phase.StartsWith("Writing", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = 15.0 + (pct * 0.80); // 15% -> 95%
+                detail = string.IsNullOrEmpty(bytesTransferred)
+                    ? $"Uploading objects: {count}"
+                    : $"Uploading objects: {count} ({bytesTransferred})";
+            }
+            else if (phase.StartsWith("Resolving", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = 85.0 + (pct * 0.10); // 85% -> 95%
+                detail = $"Resolving deltas: {count}";
+            }
+            else if (phase.StartsWith("Updating", StringComparison.OrdinalIgnoreCase))
+            {
+                overallPct = 95.0 + (pct * 0.05); // 95% -> 100%
+                detail = $"Extracting mod files: {count}";
+            }
+            else
+            {
+                overallPct = pct;
+                detail = $"{phase}: {count}";
+            }
+
+            string? speedOrEta = !string.IsNullOrEmpty(speed) ? speed : null;
+
+            return SyncProgressInfo.Determinate(defaultStatus, overallPct, detail, speedOrEta);
+        }
+
+        // Informational lines (e.g. Enumerating objects, Cloning into...)
+        if (line.Length > 3 && line.Length < 75 && !line.Contains("warning:", StringComparison.OrdinalIgnoreCase))
+        {
+            return SyncProgressInfo.Indeterminate(defaultStatus, line);
+        }
+
+        return null;
     }
 
     private static string BuildAuthenticatedUrl(string url, string? token)

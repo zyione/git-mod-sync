@@ -157,7 +157,7 @@ public partial class MainWindow : Window
 
             try
             {
-                var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync());
+                var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
                 if (!modChanges.HasChanges)
                 {
                     ShowFeedback("✓ Mods are up to date.", false);
@@ -202,8 +202,8 @@ public partial class MainWindow : Window
         try
         {
             var (success, summary, message) = await Task.Run(() =>
-                _syncService.SyncModsAsync(status =>
-                    Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                _syncService.SyncModsAsync(
+                    UpdateProgress,
                     forceIfMinecraftRunning: false,
                     skipConfirmation: skipConfirmation
                 )
@@ -221,8 +221,8 @@ public partial class MainWindow : Window
                 {
                     SetBusy(true, "Forcing mod sync...");
                     (success, summary, message) = await Task.Run(() =>
-                        _syncService.SyncModsAsync(status =>
-                            Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                        _syncService.SyncModsAsync(
+                            UpdateProgress,
                             forceIfMinecraftRunning: true,
                             skipConfirmation: true
                         )
@@ -287,7 +287,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync());
+            var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
 
             if (!modChanges.HasChanges)
             {
@@ -324,9 +324,7 @@ public partial class MainWindow : Window
         try
         {
             var (success, summary, message) = await Task.Run(() =>
-                _syncService.PushModsAsync(status =>
-                    Dispatcher.Invoke(() => ProgressStatusText.Text = status)
-                )
+                _syncService.PushModsAsync(UpdateProgress)
             );
 
             if (success)
@@ -360,7 +358,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var (gitStatus, modChanges, localCount) = await Task.Run(() => _syncService.CheckStatusAsync());
+            var (gitStatus, modChanges, localCount) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
 
             StatusDialogRepoText.Text = $"Repository:  {gitStatus.RepositoryUrl}";
             StatusDialogBranchText.Text = $"Branch:      {gitStatus.Branch} ({gitStatus.StatusMessage})";
@@ -530,8 +528,8 @@ public partial class MainWindow : Window
         try
         {
             var (success, backupDir, count, error) = await Task.Run(() =>
-                _syncService.CleanReinstallAsync(status =>
-                    Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                _syncService.CleanReinstallAsync(
+                    UpdateProgress,
                     forceIfMinecraftRunning: false
                 )
             );
@@ -548,8 +546,8 @@ public partial class MainWindow : Window
                 {
                     SetBusy(true, "Forcing clean reinstall...");
                     (success, backupDir, count, error) = await Task.Run(() =>
-                        _syncService.CleanReinstallAsync(status =>
-                            Dispatcher.Invoke(() => ProgressStatusText.Text = status),
+                        _syncService.CleanReinstallAsync(
+                            UpdateProgress,
                             forceIfMinecraftRunning: true
                         )
                     );
@@ -662,6 +660,54 @@ public partial class MainWindow : Window
 
     #region Helpers & Window Controls
 
+    private void UpdateProgress(SyncProgressInfo info)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (ProgressArea.Visibility != Visibility.Visible)
+            {
+                ProgressArea.Visibility = Visibility.Visible;
+            }
+
+            ProgressStatusText.Text = !string.IsNullOrWhiteSpace(info.Status) ? info.Status : "Working...";
+
+            if (info.Percentage.HasValue)
+            {
+                TaskProgressBar.IsIndeterminate = false;
+                TaskProgressBar.Value = Math.Clamp(info.Percentage.Value, 0.0, 100.0);
+                ProgressPercentageText.Text = $"{(int)Math.Round(info.Percentage.Value)}%";
+                ProgressPercentageText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                TaskProgressBar.IsIndeterminate = true;
+                ProgressPercentageText.Visibility = Visibility.Collapsed;
+            }
+
+            if (!string.IsNullOrWhiteSpace(info.Details))
+            {
+                ProgressDetailsText.Text = info.Details;
+                ProgressDetailsText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ProgressDetailsText.Text = string.Empty;
+                ProgressDetailsText.Visibility = Visibility.Collapsed;
+            }
+
+            if (!string.IsNullOrWhiteSpace(info.SpeedOrEta))
+            {
+                ProgressSpeedEtaText.Text = info.SpeedOrEta;
+                ProgressSpeedEtaText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ProgressSpeedEtaText.Text = string.Empty;
+                ProgressSpeedEtaText.Visibility = Visibility.Collapsed;
+            }
+        });
+    }
+
     private void SetBusy(bool busy, string? message = null)
     {
         _isBusy = busy;
@@ -672,6 +718,10 @@ public partial class MainWindow : Window
         {
             ProgressArea.Visibility = Visibility.Visible;
             ProgressStatusText.Text = message ?? "Working...";
+            TaskProgressBar.IsIndeterminate = true;
+            ProgressPercentageText.Visibility = Visibility.Collapsed;
+            ProgressDetailsText.Visibility = Visibility.Collapsed;
+            ProgressSpeedEtaText.Visibility = Visibility.Collapsed;
         }
         else
         {

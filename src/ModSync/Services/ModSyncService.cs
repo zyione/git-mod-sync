@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ModSync.Models;
 using ModSync.Utils;
 
@@ -6,6 +7,7 @@ namespace ModSync.Services;
 /// <summary>
 /// Core synchronization engine between Minecraft mods folder,
 /// internal Git repository, and remote GitHub.
+/// Fully supports real-time progress callbacks for streaming download/upload percentages, details, speeds, and ETA.
 /// </summary>
 public class ModSyncService
 {
@@ -34,7 +36,7 @@ public class ModSyncService
     /// (GitHub -> Internal Repo -> ../mods)
     /// </summary>
     public async Task<(bool Success, SyncSummary? Summary, string? Message)> SyncModsAsync(
-        Action<string>? statusCallback = null,
+        Action<SyncProgressInfo>? progressCallback = null,
         bool forceIfMinecraftRunning = false,
         bool skipConfirmation = false)
     {
@@ -43,7 +45,9 @@ public class ModSyncService
         string repoFolder = _configService.ResolvedRepositoryFolder;
 
         _logger.Info("Starting Sync Mods workflow...");
-        statusCallback?.Invoke("Checking environment and Minecraft status...");
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
+            "Checking environment...",
+            "Verifying Minecraft process status..."));
 
         // Step 1: Minecraft running check
         var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
@@ -75,15 +79,16 @@ public class ModSyncService
         }
 
         // Step 2: Ensure internal repository is up-to-date with remote branch
-        statusCallback?.Invoke("Checking repository updates from GitHub...");
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
+            "Checking repository updates...",
+            "Connecting to GitHub..."));
         string? token = _authService.GetStoredToken();
 
         await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
         bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
         if (!repoExists)
         {
-            statusCallback?.Invoke("Cloning mod repository for the first time...");
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
+            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
             if (!cloneResult.Success)
             {
                 return (false, null, cloneResult.Error);
@@ -91,8 +96,7 @@ public class ModSyncService
         }
         else
         {
-            statusCallback?.Invoke("Pulling latest updates from GitHub...");
-            var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token);
+            var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
             if (!pullResult.Success)
             {
                 return (false, null, pullResult.Error);
@@ -100,18 +104,47 @@ public class ModSyncService
         }
 
         // Step 3: Scan both directories
-        statusCallback?.Invoke("Comparing repository files with local mods folder...");
         PathUtils.EnsureDirectoryExists(modsFolder);
 
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
-        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
+        var repoFiles = ScanFolder(
+            repoFolder,
+            config.AllowedExtensions,
+            config.SyncSubdirectories,
+            isRepoFolder: true,
+            onProgress: (i, total, file) =>
+            {
+                double pct = ((double)i / Math.Max(1, total)) * 100.0;
+                progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                    "Verifying repository mods...",
+                    pct,
+                    $"{file} ({i} of {total})"));
+            });
+
+        var localFiles = ScanFolder(
+            modsFolder,
+            config.AllowedExtensions,
+            config.SyncSubdirectories,
+            isRepoFolder: false,
+            onProgress: (i, total, file) =>
+            {
+                double pct = ((double)i / Math.Max(1, total)) * 100.0;
+                progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                    "Verifying local mods...",
+                    pct,
+                    $"{file} ({i} of {total})"));
+            });
 
         // Step 4: Calculate differences
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
+            "Comparing mods...",
+            "Calculating checksum differences..."));
+
         var summary = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
 
         if (!summary.HasChanges)
         {
             _logger.Info("Sync check completed: No changes detected. Mods are up to date.");
+            progressCallback?.Invoke(SyncProgressInfo.Determinate("Mods up to date", 100, "All mods match GitHub repository."));
             return (true, summary, "Your mods are already up to date.");
         }
 
@@ -130,9 +163,8 @@ public class ModSyncService
             }
         }
 
-        // Step 6: Safely apply changes to ../mods
-        statusCallback?.Invoke("Applying mod changes safely to mods folder...");
-        var applyResult = ApplyChanges(summary, sourceDir: repoFolder, targetDir: modsFolder);
+        // Step 6: Safely apply changes to ../mods with progress, speeds, and ETA
+        var applyResult = ApplyChanges(summary, sourceDir: repoFolder, targetDir: modsFolder, progressCallback);
         if (!applyResult.Success)
         {
             return (false, summary, applyResult.Error);
@@ -149,7 +181,7 @@ public class ModSyncService
     /// Pushes local mod modifications to the GitHub repository.
     /// (../mods -> Internal Repo -> GitHub)
     /// </summary>
-    public async Task<(bool Success, SyncSummary? Summary, string? Message)> PushModsAsync(Action<string>? statusCallback = null)
+    public async Task<(bool Success, SyncSummary? Summary, string? Message)> PushModsAsync(Action<SyncProgressInfo>? progressCallback = null)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -169,22 +201,20 @@ public class ModSyncService
         await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
         if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
         {
-            statusCallback?.Invoke("Cloning repository first...");
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
+            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
             if (!cloneResult.Success)
                 return (false, null, cloneResult.Error);
         }
 
         // Step 3: Fetch remote changes FIRST before doing anything
-        statusCallback?.Invoke("Checking remote repository status...");
-        var fetchResult = await _gitService.FetchAsync(repoFolder, config.Branch, token, statusCallback);
+        var fetchResult = await _gitService.FetchAsync(repoFolder, config.Branch, token, progressCallback);
         if (!fetchResult.Success)
         {
             return (false, null, $"Failed to connect to GitHub remote: {fetchResult.Error}");
         }
 
         // Check if remote is ahead
-        var status = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token);
+        var status = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token, progressCallback);
         if (status.BehindCount > 0)
         {
             _logger.Warning($"Push aborted: Remote contains {status.BehindCount} newer commits.");
@@ -192,11 +222,30 @@ public class ModSyncService
         }
 
         // Step 4: Scan and compare local mods with internal repo
-        statusCallback?.Invoke("Comparing local mods folder with repository...");
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Comparing mods...", "Scanning local mods folder..."));
         PathUtils.EnsureDirectoryExists(modsFolder);
 
-        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+        var localFiles = ScanFolder(
+            modsFolder,
+            config.AllowedExtensions,
+            config.SyncSubdirectories,
+            isRepoFolder: false,
+            onProgress: (i, total, file) =>
+            {
+                double pct = ((double)i / Math.Max(1, total)) * 100.0;
+                progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning local mods...", pct, $"{file} ({i} of {total})"));
+            });
+
+        var repoFiles = ScanFolder(
+            repoFolder,
+            config.AllowedExtensions,
+            config.SyncSubdirectories,
+            isRepoFolder: true,
+            onProgress: (i, total, file) =>
+            {
+                double pct = ((double)i / Math.Max(1, total)) * 100.0;
+                progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning repository files...", pct, $"{file} ({i} of {total})"));
+            });
 
         // Check for oversized files (GitHub limits)
         foreach (var file in localFiles.Values)
@@ -220,6 +269,7 @@ public class ModSyncService
         if (!summary.HasChanges)
         {
             _logger.Info("Push check completed: No changes detected. Nothing to push.");
+            progressCallback?.Invoke(SyncProgressInfo.Determinate("No changes detected", 100, "Mods match GitHub repository."));
             return (true, summary, "No mod changes detected.\n\nNothing to push.");
         }
 
@@ -236,8 +286,7 @@ public class ModSyncService
         }
 
         // Step 6: Apply changes from ../mods to internal repo
-        statusCallback?.Invoke("Synchronizing changes to internal repository...");
-        var applyResult = ApplyChanges(summary, sourceDir: modsFolder, targetDir: repoFolder);
+        var applyResult = ApplyChanges(summary, sourceDir: modsFolder, targetDir: repoFolder, progressCallback);
         if (!applyResult.Success)
         {
             return (false, summary, applyResult.Error);
@@ -247,16 +296,14 @@ public class ModSyncService
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
         string commitMessage = $"Mods update: +{summary.AddedCount} added, -{summary.RemovedCount} removed, ~{summary.UpdatedCount} updated - {timestamp}";
 
-        statusCallback?.Invoke("Committing mod changes...");
-        var commitResult = await _gitService.StageAndCommitAsync(repoFolder, commitMessage);
+        var commitResult = await _gitService.StageAndCommitAsync(repoFolder, commitMessage, progressCallback);
         if (!commitResult.Success)
         {
             return (false, summary, $"Commit failed: {commitResult.Error}");
         }
 
         // Step 8: Push to GitHub
-        statusCallback?.Invoke("Pushing mod updates to GitHub...");
-        var pushResult = await _gitService.PushAsync(repoFolder, config.Branch, token);
+        var pushResult = await _gitService.PushAsync(repoFolder, config.Branch, token, progressCallback);
         if (!pushResult.Success)
         {
             return (false, summary, pushResult.Error);
@@ -269,9 +316,10 @@ public class ModSyncService
     /// <summary>
     /// Performs a fresh clean install of all repository mods into the local mods folder.
     /// Safely backs up existing local mods to mods_backup_YYYY-MM-DD_HHmmss.
+    /// Provides live per-file backup & install progress, transfer speed, and ETA.
     /// </summary>
     public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(
-        Action<string>? statusCallback = null,
+        Action<SyncProgressInfo>? progressCallback = null,
         bool forceIfMinecraftRunning = false)
     {
         try
@@ -282,7 +330,7 @@ public class ModSyncService
             string? token = _authService.GetStoredToken();
 
             _logger.Info("Starting Clean Reinstall workflow...");
-            statusCallback?.Invoke("Checking running processes...");
+            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking running processes...", "Verifying Minecraft state..."));
 
             // Check Minecraft running
             var (mcRunning, mcDetails) = _mcCheckService.CheckIfMinecraftRunning();
@@ -303,20 +351,19 @@ public class ModSyncService
             }
 
             // Ensure internal repo is up to date
-            statusCallback?.Invoke("Pulling latest mods from GitHub...");
             await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
             if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
             {
-                var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, statusCallback);
+                var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
                 if (!cloneResult.Success) return (false, null, 0, cloneResult.Error);
             }
             else
             {
-                var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token);
+                var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
                 if (!pullResult.Success) return (false, null, 0, pullResult.Error);
             }
 
-            // Backup existing mods if any exist
+            // Step 1: Backup existing mods if any exist (0% -> 40%)
             string? backupDir = null;
             if (Directory.Exists(modsFolder))
             {
@@ -328,13 +375,24 @@ public class ModSyncService
                     backupDir = Path.Combine(parentDir, $"mods_backup_{timestamp}");
                     PathUtils.EnsureDirectoryExists(backupDir);
 
-                    statusCallback?.Invoke($"Backing up {localMods.Count} existing mod(s)...");
+                    int i = 0;
                     foreach (var mod in localMods.Values)
                     {
+                        double pct = ((double)i / localMods.Count) * 40.0;
+                        int remaining = localMods.Count - i;
+                        string speedEta = $"{remaining} item{(remaining > 1 ? "s" : "")} left";
+
+                        progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                            "Creating safety backup...",
+                            pct,
+                            $"Backing up: {mod.RelativePath} ({i + 1} of {localMods.Count})",
+                            speedEta));
+
                         string dest = Path.Combine(backupDir, mod.RelativePath);
                         string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
                         PathUtils.EnsureDirectoryExists(destSubdir);
                         File.Move(mod.FullPath, dest, overwrite: true);
+                        i++;
                     }
                     _logger.Info($"Backed up {localMods.Count} mods to {backupDir}");
                 }
@@ -342,19 +400,49 @@ public class ModSyncService
 
             PathUtils.EnsureDirectoryExists(modsFolder);
 
-            // Copy all repo mods cleanly into ../mods
-            statusCallback?.Invoke("Copying fresh repository mods into mods folder...");
+            // Step 2: Copy all repo mods cleanly into ../mods with Speed & ETA (40% -> 100%)
             var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+            long totalBytes = repoFiles.Values.Sum(f => f.SizeBytes);
+            int totalFiles = repoFiles.Count;
+
+            var stopwatch = Stopwatch.StartNew();
+            long bytesCopied = 0;
             int copied = 0;
 
             foreach (var file in repoFiles.Values)
             {
+                double elapsedSec = stopwatch.Elapsed.TotalSeconds;
+                double speed = elapsedSec > 0.2 ? bytesCopied / elapsedSec : 0;
+                long remainingBytes = Math.Max(0, totalBytes - bytesCopied);
+                double etaSec = speed > 1024 ? (double)remainingBytes / speed : 0;
+
+                double pct = 40.0 + (totalBytes > 0
+                    ? ((double)bytesCopied / totalBytes) * 60.0
+                    : ((double)copied / Math.Max(1, totalFiles)) * 60.0);
+
+                string speedEta = speed > 1024
+                    ? $"{PathUtils.FormatSpeed(speed)} • {PathUtils.FormatEta(etaSec)}"
+                    : $"{totalFiles - copied} item{(totalFiles - copied > 1 ? "s" : "")} left";
+
+                progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                    "Installing fresh repository mods...",
+                    pct,
+                    $"{file.RelativePath} ({copied + 1} of {totalFiles})",
+                    speedEta));
+
                 string dest = Path.Combine(modsFolder, file.RelativePath);
                 string destSubdir = Path.GetDirectoryName(dest) ?? modsFolder;
                 PathUtils.EnsureDirectoryExists(destSubdir);
                 File.Copy(file.FullPath, dest, overwrite: true);
+
+                bytesCopied += file.SizeBytes;
                 copied++;
             }
+
+            progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                "Clean reinstall complete",
+                100,
+                $"Restored {copied} mods fresh from repository."));
 
             config.FirstSyncCompleted = true;
             _configService.Save();
@@ -372,22 +460,23 @@ public class ModSyncService
     /// <summary>
     /// Gets detailed status comparing local mods folder, internal repo, and remote GitHub.
     /// </summary>
-    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount)> CheckStatusAsync(Action<string>? statusCallback = null)
+    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
         string repoFolder = _configService.ResolvedRepositoryFolder;
         string? token = _authService.GetStoredToken();
 
-        statusCallback?.Invoke("Querying GitHub repository status...");
-        var gitStatus = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token);
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking repository...", "Querying GitHub status..."));
+        var gitStatus = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token, progressCallback);
 
-        statusCallback?.Invoke("Scanning local mods folder...");
+        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
         var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
         var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
 
+        progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
         return (gitStatus, modChanges, localFiles.Count);
     }
 
@@ -395,7 +484,12 @@ public class ModSyncService
     /// Scans a directory for managed files matching allowedExtensions, computing SHA-256 hashes.
     /// Never touches unrelated files or .git internals.
     /// </summary>
-    private Dictionary<string, ModFileItem> ScanFolder(string folderPath, List<string> allowedExtensions, bool searchSubdirs, bool isRepoFolder)
+    private Dictionary<string, ModFileItem> ScanFolder(
+        string folderPath,
+        List<string> allowedExtensions,
+        bool searchSubdirs,
+        bool isRepoFolder,
+        Action<int, int, string>? onProgress = null)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
 
@@ -406,16 +500,15 @@ public class ModSyncService
 
         try
         {
-            var files = Directory.GetFiles(folderPath, "*.*", searchOption);
+            var allFiles = Directory.GetFiles(folderPath, "*.*", searchOption);
             var extensionSet = new HashSet<string>(allowedExtensions, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var file in files)
+            var candidateFiles = new List<string>();
+            foreach (var file in allFiles)
             {
-                // Never include .git directory or files inside .git
                 if (isRepoFolder && file.Contains(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar))
                     continue;
 
-                // Also ignore .tmp files created during atomic transfers
                 if (file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
                     continue;
 
@@ -423,9 +516,19 @@ public class ModSyncService
                 if (!extensionSet.Contains(ext))
                     continue;
 
-                string relative = Path.GetRelativePath(folderPath, file);
-                var fi = new FileInfo(file);
+                candidateFiles.Add(file);
+            }
 
+            int index = 0;
+            int total = candidateFiles.Count;
+
+            foreach (var file in candidateFiles)
+            {
+                index++;
+                string relative = Path.GetRelativePath(folderPath, file);
+                onProgress?.Invoke(index, total, relative);
+
+                var fi = new FileInfo(file);
                 string hash = string.Empty;
                 try
                 {
@@ -503,8 +606,6 @@ public class ModSyncService
         }
 
         // 2. Check for Removed (in target but no longer in source)
-        // Note: targetFiles ONLY contains files with allowedExtensions (*.jar),
-        // so unrelated files like README.txt are NEVER marked as Removed!
         foreach (var (relPath, targetItem) in targetFiles)
         {
             if (!sourceFiles.ContainsKey(relPath))
@@ -523,16 +624,50 @@ public class ModSyncService
     }
 
     /// <summary>
-    /// Safely applies file modifications with atomic copying (.tmp + rename)
-    /// and retry logic for locked files.
+    /// Safely applies file modifications with atomic copying (.tmp + rename),
+    /// retry logic for locked files, and real-time progress callbacks with Speed & ETA.
     /// </summary>
-    private (bool Success, string? Error) ApplyChanges(SyncSummary summary, string sourceDir, string targetDir)
+    private (bool Success, string? Error) ApplyChanges(
+        SyncSummary summary,
+        string sourceDir,
+        string targetDir,
+        Action<SyncProgressInfo>? progressCallback = null)
     {
         try
         {
+            var itemsToCopy = summary.Changes.Where(c => c.Type == ChangeType.Added || c.Type == ChangeType.Updated).ToList();
+            var itemsToRemove = summary.Changes.Where(c => c.Type == ChangeType.Removed).ToList();
+
+            int totalOps = itemsToCopy.Count + itemsToRemove.Count;
+            long totalBytes = itemsToCopy.Sum(c => c.SourceItem?.SizeBytes ?? 0);
+
+            var stopwatch = Stopwatch.StartNew();
+            long bytesCopied = 0;
+            int opsCompleted = 0;
+
             // 1. Process Added and Updated files first
-            foreach (var change in summary.Changes.Where(c => c.Type == ChangeType.Added || c.Type == ChangeType.Updated))
+            foreach (var change in itemsToCopy)
             {
+                double elapsedSec = stopwatch.Elapsed.TotalSeconds;
+                double speed = elapsedSec > 0.2 ? bytesCopied / elapsedSec : 0;
+                long remainingBytes = Math.Max(0, totalBytes - bytesCopied);
+                double etaSec = speed > 1024 ? (double)remainingBytes / speed : 0;
+
+                double pct = totalBytes > 0
+                    ? ((double)bytesCopied / totalBytes) * 100.0
+                    : ((double)opsCompleted / Math.Max(1, totalOps)) * 100.0;
+
+                string speedEta = speed > 1024
+                    ? $"{PathUtils.FormatSpeed(speed)} • {PathUtils.FormatEta(etaSec)}"
+                    : $"{totalOps - opsCompleted} item{(totalOps - opsCompleted > 1 ? "s" : "")} left";
+
+                string actionLabel = change.Type == ChangeType.Added ? "Adding" : "Updating";
+                progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                    "Synchronizing mods...",
+                    pct,
+                    $"{actionLabel}: {change.RelativePath} ({opsCompleted + 1} of {totalOps})",
+                    speedEta));
+
                 string sourcePath = Path.Combine(sourceDir, change.RelativePath);
                 string targetPath = Path.Combine(targetDir, change.RelativePath);
                 string tempPath = targetPath + ".tmp";
@@ -587,11 +722,23 @@ public class ModSyncService
                     _logger.Error(err, lastEx!);
                     return (false, err);
                 }
+
+                bytesCopied += change.SourceItem?.SizeBytes ?? 0;
+                opsCompleted++;
             }
 
             // 2. Process Removed files
-            foreach (var change in summary.Changes.Where(c => c.Type == ChangeType.Removed))
+            foreach (var change in itemsToRemove)
             {
+                opsCompleted++;
+                double pct = ((double)opsCompleted / Math.Max(1, totalOps)) * 100.0;
+
+                progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                    "Cleaning obsolete mods...",
+                    pct,
+                    $"Removing: {change.RelativePath} ({opsCompleted} of {totalOps})",
+                    $"{totalOps - opsCompleted} item{(totalOps - opsCompleted > 1 ? "s" : "")} left"));
+
                 string targetPath = Path.Combine(targetDir, change.RelativePath);
                 if (File.Exists(targetPath))
                 {
@@ -627,6 +774,11 @@ public class ModSyncService
                     }
                 }
             }
+
+            progressCallback?.Invoke(SyncProgressInfo.Determinate(
+                "Sync complete",
+                100,
+                $"Applied {totalOps} change{(totalOps > 1 ? "s" : "")} successfully."));
 
             return (true, null);
         }

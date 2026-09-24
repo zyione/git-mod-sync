@@ -173,21 +173,83 @@
                 <!-- Main Actions Area -->
                 <StackPanel Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
                     
-                    <!-- Progress Bar (Visible during active tasks) -->
-                    <StackPanel x:Name="ProgressArea" Visibility="Collapsed" Margin="0,0,0,14">
-                        <TextBlock x:Name="ProgressStatusText"
-                                   Text="Syncing mods..."
-                                   FontSize="13"
-                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,8" />
-                        <ProgressBar x:Name="TaskProgressBar"
-                                     IsIndeterminate="True"
-                                     Height="4"
-                                     Foreground="{DynamicResource AccentBrush}"
-                                     Background="{DynamicResource SecondaryButtonBrush}"
-                                     BorderThickness="0" />
-                    </StackPanel>
+                    <!-- Progress Card (Visible during active tasks) -->
+                    <Border x:Name="ProgressArea"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="14,11"
+                            Margin="0,0,0,16">
+                        <StackPanel>
+                            <!-- Top Row: Status Title (Left) + Percentage Badge (Right) -->
+                            <Grid Margin="0,0,0,7">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock x:Name="ProgressStatusText"
+                                           Text="Syncing mods..."
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource PrimaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+
+                                <TextBlock x:Name="ProgressPercentageText"
+                                           Grid.Column="1"
+                                           Text="100%"
+                                           FontSize="12"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0"
+                                           Visibility="Collapsed" />
+                            </Grid>
+
+                            <!-- Progress Bar (Track & Fill) -->
+                            <Border CornerRadius="3"
+                                    ClipToBounds="True"
+                                    Background="{DynamicResource SecondaryButtonBrush}"
+                                    Height="6"
+                                    Margin="0,0,0,7">
+                                <ProgressBar x:Name="TaskProgressBar"
+                                             IsIndeterminate="True"
+                                             Height="6"
+                                             Foreground="{DynamicResource AccentBrush}"
+                                             Background="Transparent"
+                                             BorderThickness="0" />
+                            </Border>
+
+                            <!-- Bottom Row: Item Details (Left) + Speed / ETA (Right) -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock x:Name="ProgressDetailsText"
+                                           Text="Preparing sync..."
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="210"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed" />
+
+                                <TextBlock x:Name="ProgressSpeedEtaText"
+                                           Grid.Column="1"
+                                           Text="ETA --"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0"
+                                           Visibility="Collapsed" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Primary Action: Sync Mods -->
                     <Button x:Name="SyncModsButton"
