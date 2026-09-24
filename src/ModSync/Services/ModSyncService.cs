@@ -164,7 +164,7 @@ public class ModSyncService
         }
 
         // Step 6: Safely apply changes to ../mods with progress, speeds, and ETA
-        var applyResult = ApplyChanges(summary, sourceDir: repoFolder, targetDir: modsFolder, progressCallback);
+        var applyResult = await ApplyChangesAsync(summary, sourceDir: repoFolder, targetDir: modsFolder, progressCallback);
         if (!applyResult.Success)
         {
             return (false, summary, applyResult.Error);
@@ -286,7 +286,7 @@ public class ModSyncService
         }
 
         // Step 6: Apply changes from ../mods to internal repo
-        var applyResult = ApplyChanges(summary, sourceDir: modsFolder, targetDir: repoFolder, progressCallback);
+        var applyResult = await ApplyChangesAsync(summary, sourceDir: modsFolder, targetDir: repoFolder, progressCallback);
         if (!applyResult.Success)
         {
             return (false, summary, applyResult.Error);
@@ -505,7 +505,27 @@ public class ModSyncService
         string? token = _authService.GetStoredToken();
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking repository...", "Querying GitHub status..."));
+        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
+
         var gitStatus = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token, progressCallback);
+
+        bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
+        if (!repoExists)
+        {
+            await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
+        }
+        else if (gitStatus.HasUpdates && gitStatus.IsConnected)
+        {
+            try
+            {
+                // Synchronize internal repo so file scanning reflects the actual remote state
+                await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not update internal repository during status check: {ex.Message}");
+            }
+        }
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
         var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
@@ -664,7 +684,7 @@ public class ModSyncService
     /// Safely applies file modifications with atomic copying (.tmp + rename),
     /// retry logic for locked files, and real-time progress callbacks with Speed & ETA.
     /// </summary>
-    private (bool Success, string? Error) ApplyChanges(
+    private async Task<(bool Success, string? Error)> ApplyChangesAsync(
         SyncSummary summary,
         string sourceDir,
         string targetDir,
@@ -739,7 +759,7 @@ public class ModSyncService
                     catch (IOException ioEx)
                     {
                         lastEx = ioEx;
-                        Thread.Sleep(500); // Retry delay
+                        await Task.Delay(500); // Async retry delay
                     }
                     catch (Exception ex)
                     {
@@ -794,7 +814,7 @@ public class ModSyncService
                         catch (IOException ioEx)
                         {
                             lastEx = ioEx;
-                            Thread.Sleep(500);
+                            await Task.Delay(500); // Async retry delay
                         }
                         catch (Exception ex)
                         {

@@ -60,19 +60,52 @@ public class MinecraftCheckService
                             return (true, $"Process '{processName}' with window: \"{windowTitle}\"");
                         }
 
-                        // Direct Minecraft executables
+                        // Direct Minecraft executables and launchers
                         if (string.Equals(processName, "MinecraftLauncher", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "Minecraft", StringComparison.OrdinalIgnoreCase))
+                            string.Equals(processName, "Minecraft", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(processName, "PrismLauncher", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(processName, "MultiMC", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(processName, "ModrinthApp", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(processName, "CurseForge", StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.Warning($"Minecraft launcher process detected: {processName} (PID: {process.Id})");
-                            return (true, $"Minecraft process: {processName}");
+                            return (true, $"Minecraft launcher: {processName}");
                         }
 
-                        // For javaw running in background or without title, best-effort check
-                        if (string.Equals(processName, "javaw", StringComparison.OrdinalIgnoreCase))
+                        // For java / javaw, only flag if there is supporting evidence that it is Minecraft
+                        if (string.Equals(processName, "javaw", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(processName, "java", StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.Info($"javaw process detected (PID: {process.Id}, Title: '{windowTitle}')");
-                            return (true, $"Java runtime: {processName} (PID {process.Id})");
+                            if (!string.IsNullOrWhiteSpace(windowTitle) &&
+                                (windowTitle.Contains("MultiMC", StringComparison.OrdinalIgnoreCase) ||
+                                 windowTitle.Contains("Prism", StringComparison.OrdinalIgnoreCase) ||
+                                 windowTitle.Contains("Fabric", StringComparison.OrdinalIgnoreCase) ||
+                                 windowTitle.Contains("Forge", StringComparison.OrdinalIgnoreCase) ||
+                                 windowTitle.Contains("NeoForge", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                _logger.Warning($"Minecraft Java process detected via window title '{windowTitle}' (PID {process.Id})");
+                                return (true, $"Minecraft (Java): \"{windowTitle}\" (PID {process.Id})");
+                            }
+
+                            try
+                            {
+                                string? modulePath = process.MainModule?.FileName;
+                                if (!string.IsNullOrWhiteSpace(modulePath) &&
+                                    (modulePath.Contains(".minecraft", StringComparison.OrdinalIgnoreCase) ||
+                                     modulePath.Contains("minecraft", StringComparison.OrdinalIgnoreCase) ||
+                                     modulePath.Contains("prism", StringComparison.OrdinalIgnoreCase) ||
+                                     modulePath.Contains("multimc", StringComparison.OrdinalIgnoreCase) ||
+                                     modulePath.Contains("modrinth", StringComparison.OrdinalIgnoreCase) ||
+                                     modulePath.Contains("curseforge", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    _logger.Warning($"Minecraft Java process detected via path: {modulePath} (PID {process.Id})");
+                                    return (true, $"Minecraft Java runtime (PID {process.Id})");
+                                }
+                            }
+                            catch
+                            {
+                                // Access denied reading MainModule, safe to ignore
+                            }
                         }
                     }
                 }

@@ -20,6 +20,11 @@ public class GitService : IGitService
     private string? _cachedGitBinaryPath;
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromMinutes(3) };
 
+    static GitService()
+    {
+        HttpClient.DefaultRequestHeaders.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("ModSync", "1.0"));
+    }
+
     public GitService(LoggingService logger)
     {
         _logger = logger;
@@ -117,23 +122,68 @@ public class GitService : IGitService
 
     private async Task<bool> ProvisionPortableGitAsync(Action<SyncProgressInfo>? progressCallback)
     {
+        string toolsDir = Path.Combine(PathUtils.GetAppDirectory(), "tools");
+        string gitDir = Path.Combine(toolsDir, "git");
+        string zipFile = Path.Combine(toolsDir, "mingit.zip");
+
+        PathUtils.EnsureDirectoryExists(toolsDir);
+
+        // Build candidate list: try GitHub API for latest MinGit, followed by known stable mirrors
+        var candidateUrls = new List<string>();
+
         try
         {
-            string toolsDir = Path.Combine(PathUtils.GetAppDirectory(), "tools");
-            string gitDir = Path.Combine(toolsDir, "git");
-            string zipFile = Path.Combine(toolsDir, "mingit.zip");
-
-            PathUtils.EnsureDirectoryExists(toolsDir);
-
-            // MinGit official release URL (x64)
-            string minGitUrl = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip";
-
-            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Downloading portable Git (~25MB)...", "Connecting to download server..."));
-            _logger.Info($"Downloading MinGit from {minGitUrl}");
-
-            using (var response = await HttpClient.GetAsync(minGitUrl, HttpCompletionOption.ResponseHeadersRead))
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/git-for-windows/git/releases/latest");
+            using var res = await HttpClient.SendAsync(req);
+            if (res.IsSuccessStatusCode)
             {
-                response.EnsureSuccessStatusCode();
+                string json = await res.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("assets", out var assets) && assets.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var asset in assets.EnumerateArray())
+                    {
+                        string name = asset.GetProperty("name").GetString() ?? "";
+                        if (name.StartsWith("MinGit-", StringComparison.OrdinalIgnoreCase) &&
+                            name.EndsWith("-64-bit.zip", StringComparison.OrdinalIgnoreCase) &&
+                            !name.Contains("busybox", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                            if (!string.IsNullOrEmpty(downloadUrl))
+                            {
+                                candidateUrls.Add(downloadUrl);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Could not fetch latest MinGit release metadata from GitHub API: {ex.Message}");
+        }
+
+        // Add known stable fallback URLs
+        candidateUrls.Add("https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.zip");
+        candidateUrls.Add("https://github.com/git-for-windows/git/releases/download/v2.45.0.windows.1/MinGit-2.45.0-64-bit.zip");
+        candidateUrls.Add("https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/MinGit-2.43.0-64-bit.zip");
+
+        bool downloaded = false;
+        foreach (string minGitUrl in candidateUrls.Distinct())
+        {
+            try
+            {
+                progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Downloading portable Git (~25MB)...", "Connecting to download server..."));
+                _logger.Info($"Attempting to download MinGit from {minGitUrl}");
+
+                using var response = await HttpClient.GetAsync(minGitUrl, HttpCompletionOption.ResponseHeadersRead);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Warning($"Failed to download MinGit from {minGitUrl}: {response.StatusCode}");
+                    continue;
+                }
+
                 long? totalBytes = response.Content.Headers.ContentLength;
 
                 await using var stream = await response.Content.ReadAsStreamAsync();
@@ -169,8 +219,25 @@ public class GitService : IGitService
                             speedEta));
                     }
                 }
-            }
 
+                downloaded = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Download error from {minGitUrl}: {ex.Message}");
+                try { if (File.Exists(zipFile)) File.Delete(zipFile); } catch { }
+            }
+        }
+
+        if (!downloaded || !File.Exists(zipFile))
+        {
+            _logger.Error("All portable Git download sources failed. Please install Git manually from https://git-scm.com/download/win");
+            return false;
+        }
+
+        try
+        {
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
                 "Extracting portable Git files...",
                 "Unpacking archive into tools/git..."));
@@ -189,7 +256,7 @@ public class GitService : IGitService
         }
         catch (Exception ex)
         {
-            _logger.Error("Failed to provision portable MinGit", ex);
+            _logger.Error("Failed to extract MinGit archive", ex);
             return false;
         }
     }
@@ -202,13 +269,12 @@ public class GitService : IGitService
         Action<SyncProgressInfo>? progressCallback = null)
     {
         if (!await EnsureGitAvailableAsync(progressCallback))
-            return (false, "Git executable could not be found or initialized.");
+            return (false, "Git executable could not be found or initialized.\n\nPlease install Git manually from https://git-scm.com/download/win and restart ModSync.");
 
         try
         {
             const string defaultStatus = "Connecting to GitHub and cloning repository...";
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate(defaultStatus, "Connecting to GitHub..."));
-            string authUrl = BuildAuthenticatedUrl(repositoryUrl, token);
 
             // Parent directory of target
             string parentDir = Path.GetDirectoryName(targetDir) ?? PathUtils.GetAppDirectory();
@@ -223,8 +289,9 @@ public class GitService : IGitService
                 }
             }
 
-            string args = $"clone --progress --branch {branch} --single-branch \"{authUrl}\" \"{targetDir}\"";
-            var result = await RunGitCommandAsync(parentDir, args, line =>
+            // Secure clone: pass clean repositoryUrl so git does not persist plain-text credentials to .git/config
+            string args = $"clone --progress --branch {branch} --single-branch \"{repositoryUrl}\" \"{targetDir}\"";
+            var result = await RunGitCommandWithTokenAsync(parentDir, args, token, line =>
             {
                 var progress = ParseGitProgressLine(line, defaultStatus);
                 if (progress != null) progressCallback?.Invoke(progress);
@@ -751,18 +818,6 @@ public class GitService : IGitService
         return null;
     }
 
-    private static string BuildAuthenticatedUrl(string url, string? token)
-    {
-        if (string.IsNullOrWhiteSpace(token)) return url;
-
-        if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            string hostAndPath = url["https://".Length..];
-            return $"https://oauth2:{token}@{hostAndPath}";
-        }
-
-        return url;
-    }
 
     private static string FriendlyGitError(string rawStderr, string? repoUrl = null)
     {

@@ -73,8 +73,8 @@ public class AuthenticationService
         }
         catch (Exception ex)
         {
-            _logger.Error("Failed to verify GitHub token", ex);
-            return (true, username ?? "Offline Admin", "Offline (saved credentials present).");
+            _logger.Warning($"Failed to reach GitHub to verify credentials: {ex.Message}");
+            return (false, username, $"Offline: Unable to reach GitHub ({ex.Message}).");
         }
     }
 

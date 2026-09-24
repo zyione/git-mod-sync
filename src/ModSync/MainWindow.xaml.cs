@@ -124,10 +124,15 @@ public partial class MainWindow : Window
 
     private async Task RefreshAuthStatusAsync()
     {
-        var (isValid, username, _) = await _authService.CheckAuthStatusAsync();
+        var (isValid, username, message) = await _authService.CheckAuthStatusAsync();
         if (isValid && !string.IsNullOrEmpty(username))
         {
             AuthButton.Content = $"@{username}";
+            LogoutButton.Visibility = Visibility.Visible;
+        }
+        else if (!string.IsNullOrEmpty(username) && message != null && message.Contains("Offline", StringComparison.OrdinalIgnoreCase))
+        {
+            AuthButton.Content = $"@{username} (Offline)";
             LogoutButton.Visibility = Visibility.Visible;
         }
         else
@@ -177,21 +182,29 @@ public partial class MainWindow : Window
 
             try
             {
-                var (_, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
-                if (!modChanges.HasChanges)
+                var (gitStatus, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+                if (!modChanges.HasChanges && !gitStatus.HasUpdates)
                 {
                     ShowFeedback("✓ Mods are up to date.", false);
                     SetBusy(false);
                     return;
                 }
 
-                SyncConfirmSummaryText.Text = $"Updates detected: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
+                if (modChanges.HasChanges)
+                {
+                    SyncConfirmSummaryText.Text = $"Updates detected: +{modChanges.AddedCount} added, ~{modChanges.UpdatedCount} updated, -{modChanges.RemovedCount} removed";
 
-                var sb = new System.Text.StringBuilder();
-                foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
-                foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
-                foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
-                SyncDetailsText.Text = sb.ToString().TrimEnd();
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
+                    foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
+                    foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
+                    SyncDetailsText.Text = sb.ToString().TrimEnd();
+                }
+                else
+                {
+                    SyncConfirmSummaryText.Text = $"Updates detected: Remote repository has {gitStatus.BehindCount} new commit(s).";
+                    SyncDetailsText.Text = "Metadata or repository configuration update.";
+                }
 
                 SetBusy(false);
                 ShowModal(SyncConfirmSheet);
@@ -295,9 +308,15 @@ public partial class MainWindow : Window
         if (_isBusy) return;
 
         // Check authentication first
-        var (isValid, _, _) = await _authService.CheckAuthStatusAsync();
+        var (isValid, _, authMsg) = await _authService.CheckAuthStatusAsync();
         if (!isValid)
         {
+            if (authMsg != null && authMsg.Contains("Offline", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowFeedback("Push unavailable: Cannot connect to GitHub. Please check your internet connection.", true);
+                return;
+            }
+
             ShowLoginModal();
             return;
         }
@@ -393,7 +412,14 @@ public partial class MainWindow : Window
 
             if (!string.IsNullOrEmpty(gitStatus.LocalCommitHash))
             {
-                StatusDialogCommitText.Text = $"Commit:      {gitStatus.LocalCommitHash} ({gitStatus.LocalCommitDate:yyyy-MM-dd HH:mm})";
+                if (gitStatus.BehindCount > 0 && !string.IsNullOrEmpty(gitStatus.RemoteCommitHash))
+                {
+                    StatusDialogCommitText.Text = $"Local:       {gitStatus.LocalCommitHash} ({gitStatus.LocalCommitDate:yyyy-MM-dd HH:mm})\nRemote:      {gitStatus.RemoteCommitHash} ({gitStatus.RemoteCommitDate:yyyy-MM-dd HH:mm}) [Behind by {gitStatus.BehindCount}]";
+                }
+                else
+                {
+                    StatusDialogCommitText.Text = $"Commit:      {gitStatus.LocalCommitHash} ({gitStatus.LocalCommitDate:yyyy-MM-dd HH:mm})";
+                }
             }
             else
             {
@@ -834,6 +860,13 @@ public partial class MainWindow : Window
 
     private void CloseModal()
     {
+        PushConfirmSheet.Visibility = Visibility.Collapsed;
+        LoginSheet.Visibility = Visibility.Collapsed;
+        SwitchRepoSheet.Visibility = Visibility.Collapsed;
+        StatusSheet.Visibility = Visibility.Collapsed;
+        SettingsSheet.Visibility = Visibility.Collapsed;
+        CleanReinstallConfirmSheet.Visibility = Visibility.Collapsed;
+        SyncConfirmSheet.Visibility = Visibility.Collapsed;
         ModalBackdrop.Visibility = Visibility.Collapsed;
     }
 
