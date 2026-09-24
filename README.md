@@ -146,6 +146,20 @@ publish/
 
 Users only need these two files.
 
+### 1-Click Release Publisher (`release.bat`)
+
+To deploy a new update for all players to receive automatically:
+1. Double-click `release.bat` in the repository root (or run `.\scripts\release.ps1`).
+2. Press **Enter** to accept the auto-incremented patch version (e.g., `1.0.1` $\to$ `1.0.2`), or type a custom version.
+3. The script automatically:
+   - Updates version metadata across project files.
+   - Runs unit tests to ensure stability.
+   - Compiles the self-contained `ModSync.exe`.
+   - Creates a Git commit and annotated tag (e.g. `v1.0.2`).
+   - Pushes commits and tags to GitHub.
+4. **GitHub Actions** (`.github/workflows/release.yml`) automatically detects the tag, packages the release, and attaches `ModSync.exe` to GitHub Releases.
+5. All connected ModSync clients immediately see the update banner on startup and can update in one click!
+
 ---
 
 ## Configuration (`config.json`)
