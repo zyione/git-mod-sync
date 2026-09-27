@@ -102,35 +102,68 @@ public partial class MainWindow : Window
     {
         try
         {
-            string modsDir = _configService.ResolvedModsFolder;
-            var allowedExts = _configService.Config.AllowedExtensions;
-            bool syncSubdirs = _configService.Config.SyncSubdirectories;
-            var searchOpt = syncSubdirs ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-
-            int count = await Task.Run(() =>
-            {
-                if (!Directory.Exists(modsDir)) return 0;
-                var extSet = new HashSet<string>(allowedExts, StringComparer.OrdinalIgnoreCase);
-                int found = 0;
-                foreach (var f in Directory.GetFiles(modsDir, "*.*", searchOpt))
-                {
-                    if (extSet.Contains(Path.GetExtension(f))) found++;
-                }
-                return found;
-            });
-
-            Dispatcher.Invoke(() =>
-            {
-                ModCountBadgeText.Text = $"{count} mod{(count == 1 ? "" : "s")}";
-            });
+            var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync());
+            UpdateModCountBadge(localCount, expectedCount);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.Warning($"Could not refresh mod counts: {ex.Message}");
             Dispatcher.Invoke(() =>
             {
                 ModCountBadgeText.Text = "-- mods";
+                ModCountStatusIcon.Visibility = Visibility.Collapsed;
             });
         }
+    }
+
+    private void UpdateModCountBadge(int localCount, int? expectedCount)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var cfg = _configService.Config;
+            string repoName = GetShortRepoName(cfg.Repository);
+
+            if (expectedCount.HasValue)
+            {
+                int expected = expectedCount.Value;
+                ModCountBadgeText.Text = $"{localCount} / {expected} mods";
+
+                if (localCount == expected)
+                {
+                    ModCountStatusIcon.Visibility = Visibility.Visible;
+                    ModCountBadgeBorder.ToolTip = $"All mods synchronized ({localCount} of {expected} installed)";
+                    StatusHeadingText.Text = "All Mods Synchronized";
+                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+                }
+                else if (localCount < expected)
+                {
+                    ModCountStatusIcon.Visibility = Visibility.Collapsed;
+                    int missing = expected - localCount;
+                    ModCountBadgeBorder.ToolTip = $"{localCount} installed, {expected} expected in repository ({missing} missing - click Sync Mods)";
+                    StatusHeadingText.Text = $"{missing} Mod Update{(missing == 1 ? "" : "s")} Available";
+                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("AccentBrush");
+                }
+                else
+                {
+                    ModCountStatusIcon.Visibility = Visibility.Collapsed;
+                    int extra = localCount - expected;
+                    ModCountBadgeBorder.ToolTip = $"{localCount} installed, {expected} expected in repository ({extra} extra local mod{(extra == 1 ? "" : "s")})";
+                    StatusHeadingText.Text = $"{extra} Custom Mod{(extra == 1 ? "" : "s")} Present";
+                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+                }
+            }
+            else
+            {
+                ModCountStatusIcon.Visibility = Visibility.Collapsed;
+                ModCountBadgeText.Text = $"{localCount} mod{(localCount == 1 ? "" : "s")}";
+                ModCountBadgeBorder.ToolTip = $"{localCount} local mods installed";
+                StatusHeadingText.Text = "Connected to GitHub";
+                StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+            }
+
+            StatusSubText.Text = $"{repoName} • {cfg.Branch}";
+            ModsFolderPathText.Text = _configService.ResolvedModsFolder;
+        });
     }
 
     private async Task RefreshAuthStatusAsync()
@@ -193,7 +226,7 @@ public partial class MainWindow : Window
 
             try
             {
-                var (gitStatus, modChanges, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+                var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
                 if (!modChanges.HasChanges && !gitStatus.HasUpdates)
                 {
                     ShowFeedback("✓ Mods are up to date.", false);
@@ -428,7 +461,8 @@ public partial class MainWindow : Window
 
         try
         {
-            var (gitStatus, modChanges, localCount) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+            var (gitStatus, modChanges, localCount, repoCount) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+            UpdateModCountBadge(localCount, repoCount);
 
             StatusDialogRepoText.Text = $"Repository:  {gitStatus.RepositoryUrl}";
             StatusDialogBranchText.Text = $"Branch:      {gitStatus.Branch} ({gitStatus.StatusMessage})";
@@ -449,7 +483,10 @@ public partial class MainWindow : Window
                 StatusDialogCommitText.Text = "Commit:      (not cloned yet)";
             }
 
-            StatusDialogPathText.Text = $"Mods Folder: {_configService.ResolvedModsFolder} ({localCount} installed)";
+            string syncComp = localCount == repoCount
+                ? "Synchronized"
+                : localCount < repoCount ? $"{repoCount - localCount} missing" : $"{localCount - repoCount} extra";
+            StatusDialogPathText.Text = $"Mods Folder: {_configService.ResolvedModsFolder}\nInstalled:   {localCount} of {repoCount} mods ({syncComp})";
 
             SetBusy(false);
             ShowModal(StatusSheet);

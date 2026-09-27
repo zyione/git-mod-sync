@@ -305,22 +305,7 @@ start """" ""%TARGET%""
 
     private static (string Owner, string Repo) ParseGitHubOwnerAndRepo(string url)
     {
-        if (string.IsNullOrWhiteSpace(url)) return ("", "");
-
-        string clean = url.Trim().TrimEnd('/');
-        if (clean.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-        {
-            clean = clean[..^4];
-        }
-
-        // e.g. https://github.com/owner/repo or github.com/owner/repo
-        var parts = clean.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-        {
-            return (parts[^2], parts[^1]);
-        }
-
-        return ("", "");
+        return PathUtils.ParseGitHubOwnerAndRepo(url);
     }
 
     private static bool IsNewerVersion(string latestStr, string currentStr)

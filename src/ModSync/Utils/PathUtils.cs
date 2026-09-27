@@ -92,4 +92,26 @@ public static class PathUtils
             Directory.CreateDirectory(directoryPath);
         }
     }
+
+    /// <summary>
+    /// Parses owner and repository name from a GitHub URL.
+    /// </summary>
+    public static (string Owner, string Repo) ParseGitHubOwnerAndRepo(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return ("", "");
+
+        string clean = url.Trim().TrimEnd('/');
+        if (clean.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            clean = clean[..^4];
+        }
+
+        var parts = clean.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return (parts[^2], parts[^1]);
+        }
+
+        return ("", "");
+    }
 }

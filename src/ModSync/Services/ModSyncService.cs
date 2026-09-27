@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using ModSync.Models;
 using ModSync.Utils;
 
@@ -17,6 +20,7 @@ public class ModSyncService
     private readonly MinecraftCheckService _mcCheckService;
     private readonly ModIgnoreService _ignoreService;
     private readonly LoggingService _logger;
+    private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     public ModIgnoreService IgnoreService => _ignoreService;
 
@@ -514,10 +518,7 @@ public class ModSyncService
         }
     }
 
-    /// <summary>
-    /// Gets detailed status comparing local mods folder, internal repo, and remote GitHub.
-    /// </summary>
-    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null)
+    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount, int RepoModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -544,9 +545,119 @@ public class ModSyncService
         var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
+        int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
 
         progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
-        return (gitStatus, modChanges, localFiles.Count);
+        return (gitStatus, modChanges, localFiles.Count, repoCount);
+    }
+
+    /// <summary>
+    /// Gets the count of local mods installed in the mods folder, and the count of expected
+    /// mods configured in the repository (either from local cloned repo or remote GitHub tree).
+    /// </summary>
+    public async Task<(int LocalCount, int? ExpectedCount)> GetModCountsAsync()
+    {
+        var config = _configService.Config;
+        string modsFolder = _configService.ResolvedModsFolder;
+        string repoFolder = _configService.ResolvedRepositoryFolder;
+        var allowedExts = config.AllowedExtensions;
+        bool syncSubdirs = config.SyncSubdirectories;
+
+        // 1. Local count
+        int localCount = 0;
+        if (Directory.Exists(modsFolder))
+        {
+            var searchOpt = syncSubdirs ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            var extSet = new HashSet<string>(allowedExts, StringComparer.OrdinalIgnoreCase);
+            foreach (var f in Directory.GetFiles(modsFolder, "*.*", searchOpt))
+            {
+                if (extSet.Contains(Path.GetExtension(f)))
+                {
+                    localCount++;
+                }
+            }
+        }
+
+        // 2. Expected repository count
+        int? expectedCount = null;
+
+        // Case A: Cloned repo exists locally
+        if (Directory.Exists(repoFolder) && Directory.Exists(Path.Combine(repoFolder, ".git")))
+        {
+            try
+            {
+                var repoFiles = ScanFolder(repoFolder, allowedExts, syncSubdirs, isRepoFolder: true);
+                expectedCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not scan local repository folder for mod count: {ex.Message}");
+            }
+        }
+
+        // Case B: Repo not cloned yet locally -> Query GitHub Tree API
+        if (!expectedCount.HasValue && !string.IsNullOrWhiteSpace(config.Repository))
+        {
+            try
+            {
+                expectedCount = await FetchRemoteModCountFromGitHubAsync(config.Repository, config.Branch, allowedExts);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not fetch remote mod count via GitHub API: {ex.Message}");
+            }
+        }
+
+        return (localCount, expectedCount);
+    }
+
+    private async Task<int?> FetchRemoteModCountFromGitHubAsync(string repoUrl, string branch, List<string> allowedExtensions)
+    {
+        var (owner, repo) = PathUtils.ParseGitHubOwnerAndRepo(repoUrl);
+        if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)) return null;
+
+        string branchName = string.IsNullOrWhiteSpace(branch) ? "main" : branch;
+        string apiUrl = $"https://api.github.com/repos/{owner}/{repo}/git/trees/{branchName}?recursive=1";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+        request.Headers.Add("User-Agent", "ModSync-App");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
+
+        string? token = _authService.GetStoredToken();
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        using var response = await HttpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        string json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("tree", out var treeProp) || treeProp.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var extSet = new HashSet<string>(allowedExtensions, StringComparer.OrdinalIgnoreCase);
+        int count = 0;
+        foreach (var item in treeProp.EnumerateArray())
+        {
+            string type = item.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
+            if (!string.Equals(type, "blob", StringComparison.OrdinalIgnoreCase)) continue;
+
+            string path = item.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
+            string ext = Path.GetExtension(path);
+            if (extSet.Contains(ext) && !_ignoreService.IsIgnored(path))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     /// <summary>
