@@ -534,18 +534,10 @@ public class ModSyncService
         {
             await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
         }
-        else if (gitStatus.HasUpdates && gitStatus.IsConnected)
-        {
-            try
-            {
-                // Synchronize internal repo so file scanning reflects the actual remote state
-                await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"Could not update internal repository during status check: {ex.Message}");
-            }
-        }
+        // NOTE: Do NOT pull here. CheckStatusAsync is read-only and must never mutate the
+        // internal repo. Pulling here was the bug: SyncModsAsync would then see an already-
+        // updated repo and report "up to date" even though new mods had not been copied to
+        // the mods folder yet. The actual pull happens inside SyncModsAsync.
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
         var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
