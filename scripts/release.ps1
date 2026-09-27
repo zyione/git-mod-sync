@@ -152,7 +152,7 @@ Write-Host "    Executable built successfully ($ExeSizeMb MB)." -ForegroundColor
 
 # 8. Git Commit, Tag, and Push
 Write-Host "--> Creating Git commit & tag..." -ForegroundColor Cyan
-git add "$RepoRoot\src\ModSync\ModSync.csproj"
+git add -A
 git commit -m "release: v$NewVersion - $ReleaseNotes" --allow-empty
 
 # Create git tag
