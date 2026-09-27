@@ -621,11 +621,32 @@ public partial class MainWindow : Window
         ShowFeedback("✓ Mods folder reset to default (./mods)", false);
     }
 
+    private bool _reinstallOpenedFromSettings = false;
+
     private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e)
     {
+        _reinstallOpenedFromSettings = true;
+        ReinstallBackButton.Visibility = Visibility.Visible;
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
         CleanReinstallBackupPreviewText.Text = $"mods_backup_{timestamp}/";
         ShowModal(CleanReinstallConfirmSheet);
+    }
+
+    private void OpenCleanReinstallFromMain_Click(object sender, RoutedEventArgs e)
+    {
+        _reinstallOpenedFromSettings = false;
+        ReinstallBackButton.Visibility = Visibility.Collapsed;
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+        CleanReinstallBackupPreviewText.Text = $"mods_backup_{timestamp}/";
+        ShowModal(CleanReinstallConfirmSheet);
+    }
+
+    private void BackFromReinstall_Click(object sender, RoutedEventArgs e)
+    {
+        if (_reinstallOpenedFromSettings)
+            ShowModal(SettingsSheet);
+        else
+            CloseModal();
     }
 
     private void BackToSettings_Click(object sender, RoutedEventArgs e)

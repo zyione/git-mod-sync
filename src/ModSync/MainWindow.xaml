@@ -318,6 +318,17 @@
                                 Style="{StaticResource GhostButtonStyle}"
                                 Click="Settings_Click" />
                     </StackPanel>
+
+                    <!-- Destructive Tertiary Action: Clean Reinstall (surfaced in main UI, Apple-style subtle danger) -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <Button Content="Clean Reinstall..."
+                                Style="{StaticResource GhostButtonStyle}"
+                                Foreground="{DynamicResource ErrorBrush}"
+                                FontSize="11"
+                                Opacity="0.75"
+                                Click="OpenCleanReinstallFromMain_Click"
+                                ToolTip="Backup existing mods and restore a fresh copy from the repository" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Feedback / Toast Card (Bottom notification area) -->
@@ -925,10 +936,11 @@
                             </Border>
 
                             <Grid>
-                                <Button Content="← Back"
+                                <Button x:Name="ReinstallBackButton"
+                                        Content="← Back"
                                         Style="{StaticResource GhostButtonStyle}"
                                         HorizontalAlignment="Left"
-                                        Click="BackToSettings_Click" />
+                                        Click="BackFromReinstall_Click" />
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Button Content="Cancel"
