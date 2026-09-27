@@ -82,6 +82,13 @@ public class UpdateService
             using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
             request.Headers.Add("User-Agent", "ModSync-App-Updater");
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
+            request.Headers.CacheControl = new CacheControlHeaderValue
+            {
+                NoCache = true,
+                NoStore = true,
+                MustRevalidate = true
+            };
+            request.Headers.Pragma.Add(new NameValueHeaderValue("no-cache"));
 
             string? token = _authService.GetStoredToken();
             if (!string.IsNullOrWhiteSpace(token))

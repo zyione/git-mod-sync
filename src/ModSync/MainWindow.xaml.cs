@@ -60,14 +60,13 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateStatusCard();
+
+        // Force check for application updates on every startup
+        _ = CheckForUpdatesOnStartupAsync();
+
         await RefreshAuthStatusAsync();
         await RefreshLocalModCountAsync();
         UpdateIgnoredModsUI();
-
-        if (_configService.Config.AutoCheckUpdates)
-        {
-            _ = CheckForUpdatesBackgroundAsync();
-        }
     }
 
     #region Status & Information
@@ -955,10 +954,11 @@ public partial class MainWindow : Window
 
     #region App Updates & Mod Exclusions
 
-    private async Task CheckForUpdatesBackgroundAsync()
+    private async Task CheckForUpdatesOnStartupAsync()
     {
         try
         {
+            _logger.Info("Performing startup force check for updates...");
             var info = await _updateService.CheckForUpdatesAsync();
             if (info.IsUpdateAvailable)
             {
@@ -967,12 +967,18 @@ public partial class MainWindow : Window
                 {
                     UpdateBannerText.Text = $"ModSync v{info.LatestVersion} available!";
                     UpdateBanner.Visibility = Visibility.Visible;
+
+                    // If no other modal is currently active, surface the update sheet so the user can update immediately
+                    if (ModalBackdrop.Visibility != Visibility.Visible)
+                    {
+                        ShowUpdateSheet(info);
+                    }
                 });
             }
         }
         catch (Exception ex)
         {
-            _logger.Warning($"Background update check failed: {ex.Message}");
+            _logger.Warning($"Startup update check failed: {ex.Message}");
         }
     }
 
