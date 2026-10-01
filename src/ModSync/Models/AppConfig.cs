@@ -75,8 +75,15 @@ public class AppConfig
 
     /// <summary>
     /// Target Fabric Loader version to enforce (e.g. "0.16.9").
-    /// If null or whitespace, Fabric Loader sync is disabled.
+    /// If null or whitespace, Fabric Loader sync is pulled from repository fabric-version.txt.
     /// </summary>
     [JsonPropertyName("fabricLoaderVersion")]
     public string? FabricLoaderVersion { get; set; } = null;
+
+    /// <summary>
+    /// Whether to automatically sync the Fabric Loader version when syncing mods.
+    /// Default is true.
+    /// </summary>
+    [JsonPropertyName("syncFabricLoader")]
+    public bool SyncFabricLoader { get; set; } = true;
 }

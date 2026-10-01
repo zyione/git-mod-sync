@@ -46,6 +46,34 @@ public class FabricServiceTests
     }
 
     [TestMethod]
+    public void TestFabricDetectionInstalledEvenWhenTargetNotConfigured()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = null;
+
+        string mcDir = Path.Combine(_tempDir, ".minecraft");
+        string versionsDir = Path.Combine(mcDir, "versions", "fabric-loader-0.16.9-1.21.1");
+        Directory.CreateDirectory(versionsDir);
+
+        string jsonContent = @"{
+            ""id"": ""fabric-loader-0.16.9-1.21.1"",
+            ""inheritsFrom"": ""1.21.1"",
+            ""libraries"": [{ ""name"": ""net.fabricmc:fabric-loader:0.16.9"" }]
+        }";
+        File.WriteAllText(Path.Combine(versionsDir, "fabric-loader-0.16.9-1.21.1.json"), jsonContent);
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir);
+        var status = fabricService.DetectFabricStatus();
+
+        Assert.IsFalse(status.IsConfigured);
+        Assert.IsTrue(status.IsMinecraftFound);
+        Assert.AreEqual("0.16.9", status.InstalledLoaderVersion);
+        Assert.AreEqual("1.21.1", status.MinecraftVersion);
+        Assert.IsFalse(status.IsUpToDate);
+    }
+
+    [TestMethod]
     public void TestFabricDetectionInstalledMismatch()
     {
         var logger = new LoggingService();

@@ -209,12 +209,13 @@
 
                     <!-- Fabric Loader Version Card (Apple Design) -->
                     <Border x:Name="FabricCard"
-                            Visibility="Collapsed"
+                            Visibility="Visible"
                             Background="{DynamicResource CardBackgroundBrush}"
                             BorderBrush="{DynamicResource CardBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="14"
-                            Padding="18,12">
+                            Padding="18,12"
+                            Margin="0,0,0,16">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -768,6 +769,34 @@
                                                                Margin="0,2,0,0" />
                                                 </StackPanel>
                                                 <CheckBox x:Name="AutoCheckUpdatesToggle"
+                                                          Grid.Column="1"
+                                                          Style="{StaticResource AppleToggleSwitchStyle}"
+                                                          VerticalAlignment="Center"
+                                                          HorizontalAlignment="Right"
+                                                          Margin="0,0,2,0"
+                                                          Click="SettingToggle_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Sync Fabric Loader Toggle -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Sync Fabric Loader with Mods"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Automatically install or update Fabric Loader when syncing mods"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <CheckBox x:Name="SyncFabricLoaderToggle"
                                                           Grid.Column="1"
                                                           Style="{StaticResource AppleToggleSwitchStyle}"
                                                           VerticalAlignment="Center"

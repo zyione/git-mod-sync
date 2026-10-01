@@ -20,5 +20,6 @@
   "ignoredMods": [],
   "autoCheckUpdates": true,
   "appUpdateRepository": "https://github.com/zyione/git-mod-sync",
-  "fabricLoaderVersion": null
+  "fabricLoaderVersion": null,
+  "syncFabricLoader": true
 }

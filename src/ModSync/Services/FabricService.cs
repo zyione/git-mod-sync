@@ -241,12 +241,6 @@ public class FabricService
             MinecraftFolderPath = mcDir
         };
 
-        if (!isConfigured)
-        {
-            info.Details = "Fabric Loader version is not set in repository or configuration.";
-            return info;
-        }
-
         if (!mcFound)
         {
             info.Details = $"Local .minecraft folder was not found at '{mcDir}'.";
@@ -395,6 +389,13 @@ public class FabricService
 
             info.InstalledLoaderVersion = installedLoader;
             info.MinecraftVersion = detectedMcVersion;
+
+            if (!isConfigured)
+            {
+                info.IsUpToDate = false;
+                info.Details = "Fabric Loader version is not set in repository or configuration.";
+                return info;
+            }
 
             if (installedLoader != null && targetVersion != null)
             {

@@ -232,34 +232,61 @@ public partial class MainWindow : Window
             try
             {
                 var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
-                if (!modChanges.HasChanges && !gitStatus.HasUpdates)
+
+                // Check if Fabric Loader also needs update
+                bool fabricNeedsUpdate = false;
+                if (_configService.Config.SyncFabricLoader)
                 {
-                    ShowFeedback("✓ Mods are up to date.", false);
+                    _currentFabricStatus = await _fabricService.DetectFabricStatusAsync();
+                    fabricNeedsUpdate = _currentFabricStatus != null &&
+                                        _currentFabricStatus.IsConfigured &&
+                                        !_currentFabricStatus.IsUpToDate;
+                }
+
+                if (!modChanges.HasChanges && !gitStatus.HasUpdates && !fabricNeedsUpdate)
+                {
+                    ShowFeedback("✓ Mods and Fabric Loader are up to date.", false);
                     SetBusy(false);
                     return;
                 }
 
-                if (modChanges.HasChanges || modChanges.IgnoredCount > 0)
+                var parts = new List<string>();
+                if (modChanges.AddedCount > 0) parts.Add($"+{modChanges.AddedCount} added");
+                if (modChanges.UpdatedCount > 0) parts.Add($"~{modChanges.UpdatedCount} updated");
+                if (modChanges.RemovedCount > 0) parts.Add($"-{modChanges.RemovedCount} removed");
+                if (modChanges.IgnoredCount > 0) parts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+                if (fabricNeedsUpdate && _currentFabricStatus != null)
                 {
-                    var parts = new List<string>();
-                    if (modChanges.AddedCount > 0) parts.Add($"+{modChanges.AddedCount} added");
-                    if (modChanges.UpdatedCount > 0) parts.Add($"~{modChanges.UpdatedCount} updated");
-                    if (modChanges.RemovedCount > 0) parts.Add($"-{modChanges.RemovedCount} removed");
-                    if (modChanges.IgnoredCount > 0) parts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
-                    SyncConfirmSummaryText.Text = $"Updates detected: {string.Join(", ", parts)}";
+                    parts.Add($"⚙️ Fabric Loader {_currentFabricStatus.TargetLoaderVersion}");
+                }
 
-                    var sb = new System.Text.StringBuilder();
-                    foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
-                    foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
-                    foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
-                    foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept)");
-                    SyncDetailsText.Text = sb.ToString().TrimEnd();
+                if (parts.Count > 0)
+                {
+                    SyncConfirmSummaryText.Text = $"Updates detected: {string.Join(", ", parts)}";
                 }
                 else
                 {
                     SyncConfirmSummaryText.Text = $"Updates detected: Remote repository has {gitStatus.BehindCount} new commit(s).";
-                    SyncDetailsText.Text = "Metadata or repository configuration update.";
                 }
+
+                var sb = new System.Text.StringBuilder();
+                foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
+                foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
+                foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
+                foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept)");
+
+                if (fabricNeedsUpdate && _currentFabricStatus != null)
+                {
+                    string fromVer = _currentFabricStatus.InstalledLoaderVersion ?? "Not Installed";
+                    sb.AppendLine($"⚙️ Fabric Loader: {fromVer} → {_currentFabricStatus.TargetLoaderVersion} (will update)");
+                }
+
+                if (sb.Length == 0)
+                {
+                    sb.AppendLine("Metadata or repository configuration update.");
+                }
+
+                SyncDetailsText.Text = sb.ToString().TrimEnd();
 
                 SetBusy(false);
                 ShowModal(SyncConfirmSheet);
@@ -325,13 +352,58 @@ public partial class MainWindow : Window
 
             if (success)
             {
+                bool fabricUpdated = false;
+                string? fabricTarget = null;
+
+                if (_configService.Config.SyncFabricLoader)
+                {
+                    try
+                    {
+                        // Refresh status from freshly synced repo
+                        _currentFabricStatus = await _fabricService.DetectFabricStatusAsync();
+                        if (_currentFabricStatus != null && _currentFabricStatus.IsConfigured && !_currentFabricStatus.IsUpToDate)
+                        {
+                            fabricTarget = _currentFabricStatus.TargetLoaderVersion;
+                            string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
+                                ? _currentFabricStatus.MinecraftVersion
+                                : "1.21.1";
+
+                            UpdateProgress(SyncProgressInfo.Indeterminate("Syncing Fabric Loader...", $"Installing Fabric Loader {fabricTarget}..."));
+
+                            var (fSuccess, fError) = await Task.Run(async () =>
+                                await _fabricService.InstallFabricLoaderAsync(mcVer, fabricTarget!, progress => UpdateProgress(progress))
+                            );
+
+                            if (fSuccess)
+                            {
+                                fabricUpdated = true;
+                                _logger.Info($"Fabric Loader {fabricTarget} installed during mod sync.");
+                            }
+                            else
+                            {
+                                _logger.Warning($"Fabric Loader update during sync failed: {fError}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error("Error updating Fabric Loader during mod sync", ex);
+                    }
+                }
+
                 if (summary != null && summary.HasChanges)
                 {
-                    ShowFeedback($"✓ Sync Complete: +{summary.AddedCount} added, ~{summary.UpdatedCount} updated, -{summary.RemovedCount} removed", false);
+                    string fb = $"✓ Sync Complete: +{summary.AddedCount} added, ~{summary.UpdatedCount} updated, -{summary.RemovedCount} removed";
+                    if (fabricUpdated) fb += $" • Fabric Loader {fabricTarget} updated";
+                    ShowFeedback(fb, false);
+                }
+                else if (fabricUpdated)
+                {
+                    ShowFeedback($"✓ Sync Complete: Fabric Loader updated to {fabricTarget}.", false);
                 }
                 else
                 {
-                    ShowFeedback("✓ Mods are up to date.", false);
+                    ShowFeedback("✓ Mods and Fabric Loader are up to date.", false);
                 }
                 SetStatusDot(true);
             }
@@ -616,6 +688,7 @@ public partial class MainWindow : Window
         ConfirmSyncToggle.IsChecked = cfg.RequireConfirmationBeforeSync;
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
         AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
+        SyncFabricLoaderToggle.IsChecked = cfg.SyncFabricLoader;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 
@@ -644,8 +717,10 @@ public partial class MainWindow : Window
         cfg.RequireConfirmationBeforeSync = ConfirmSyncToggle.IsChecked == true;
         cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
         cfg.AutoCheckUpdates = AutoCheckUpdatesToggle.IsChecked == true;
+        cfg.SyncFabricLoader = SyncFabricLoaderToggle.IsChecked == true;
         _configService.Save();
-        _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}");
+        _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}, SyncFabricLoader={cfg.SyncFabricLoader}");
+        RefreshFabricStatusUI();
     }
 
     private void ChangeModsFolder_Click(object sender, RoutedEventArgs e)
@@ -1390,13 +1465,26 @@ public partial class MainWindow : Window
 
     private void ApplyFabricStatusToUI(FabricStatusInfo? status)
     {
-        if (status == null || !status.IsConfigured)
+        if (!_configService.Config.SyncFabricLoader)
         {
             FabricCard.Visibility = Visibility.Collapsed;
             return;
         }
 
         FabricCard.Visibility = Visibility.Visible;
+
+        if (status == null || !status.IsConfigured)
+        {
+            FabricGameVersionText.Text = !string.IsNullOrWhiteSpace(status?.MinecraftVersion)
+                ? $" • Minecraft {status.MinecraftVersion}"
+                : " • Minecraft";
+            FabricInstalledVersionText.Text = status?.InstalledLoaderVersion ?? "Checking...";
+            FabricTargetVersionText.Text = "Checking repo...";
+            FabricStatusDot.Fill = (Brush)FindResource("SecondaryTextBrush");
+            FabricUpToDateBadge.Visibility = Visibility.Collapsed;
+            FabricUpdateButton.Visibility = Visibility.Collapsed;
+            return;
+        }
         string target = status.TargetLoaderVersion ?? "Unknown";
         string installed = status.InstalledLoaderVersion ?? "Not Installed";
         string mcVer = !string.IsNullOrWhiteSpace(status.MinecraftVersion)
