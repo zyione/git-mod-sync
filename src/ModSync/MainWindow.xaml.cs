@@ -48,7 +48,7 @@ public partial class MainWindow : Window
         _ignoreService = new ModIgnoreService(_configService, _logger);
         _updateService = new UpdateService(_configService, _authService, _logger);
         _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _ignoreService, _logger);
-        _fabricService = new FabricService(_configService, _logger);
+        _fabricService = new FabricService(_configService, _logger, _authService);
 
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
@@ -619,10 +619,11 @@ public partial class MainWindow : Window
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 
-        string? fabricVer = cfg.FabricLoaderVersion;
+        string? fabricVer = _currentFabricStatus?.TargetLoaderVersion ?? cfg.FabricLoaderVersion;
+        string? source = _currentFabricStatus?.VersionSource;
         if (!string.IsNullOrWhiteSpace(fabricVer))
         {
-            SettingsFabricStatusText.Text = $"Enforcing v{fabricVer}";
+            SettingsFabricStatusText.Text = !string.IsNullOrWhiteSpace(source) ? source : $"Enforced: v{fabricVer}";
             SettingsFabricVersionBadge.Text = $"v{fabricVer}";
             SettingsFabricVersionBadge.Foreground = (Brush)FindResource("AccentBrush");
         }
@@ -1362,55 +1363,77 @@ public partial class MainWindow : Window
 
     private void RefreshFabricStatusUI()
     {
+        _ = RefreshFabricStatusUIAsync();
+    }
+
+    private async Task RefreshFabricStatusUIAsync()
+    {
         try
         {
-            var cfg = _configService.Config;
-            if (string.IsNullOrWhiteSpace(cfg.FabricLoaderVersion))
-            {
-                FabricCard.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            FabricCard.Visibility = Visibility.Visible;
+            // Initial fast local check
             _currentFabricStatus = _fabricService.DetectFabricStatus();
+            ApplyFabricStatusToUI(_currentFabricStatus);
 
-            string target = _currentFabricStatus.TargetLoaderVersion ?? cfg.FabricLoaderVersion;
-            string installed = _currentFabricStatus.InstalledLoaderVersion ?? "Not Installed";
-            string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
-                ? $" • Minecraft {_currentFabricStatus.MinecraftVersion}"
-                : " • Minecraft";
-
-            FabricGameVersionText.Text = mcVer;
-            FabricInstalledVersionText.Text = installed;
-            FabricTargetVersionText.Text = target;
-
-            if (!_currentFabricStatus.IsMinecraftFound)
+            // Asynchronous check (fetches fabric-version.txt from repository if remote/not yet cloned)
+            var remoteStatus = await _fabricService.DetectFabricStatusAsync();
+            if (remoteStatus.IsConfigured || _currentFabricStatus?.IsConfigured == true)
             {
-                FabricStatusDot.Fill = (Brush)FindResource("SecondaryTextBrush");
-                FabricUpToDateBadge.Visibility = Visibility.Collapsed;
-                FabricUpdateButton.Visibility = Visibility.Visible;
-                FabricUpdateButton.Content = "Install";
-                FabricInstalledVersionText.Foreground = (Brush)FindResource("SecondaryTextBrush");
-            }
-            else if (_currentFabricStatus.IsUpToDate)
-            {
-                FabricStatusDot.Fill = (Brush)FindResource("SuccessBrush");
-                FabricUpToDateBadge.Visibility = Visibility.Visible;
-                FabricUpdateButton.Visibility = Visibility.Collapsed;
-                FabricInstalledVersionText.Foreground = (Brush)FindResource("SuccessBrush");
-            }
-            else
-            {
-                FabricStatusDot.Fill = (Brush)FindResource("WarningBrush");
-                FabricUpToDateBadge.Visibility = Visibility.Collapsed;
-                FabricUpdateButton.Visibility = Visibility.Visible;
-                FabricUpdateButton.Content = _currentFabricStatus.InstalledLoaderVersion == null ? "Install Fabric" : "Update Fabric";
-                FabricInstalledVersionText.Foreground = (Brush)FindResource("WarningBrush");
+                _currentFabricStatus = remoteStatus;
+                ApplyFabricStatusToUI(_currentFabricStatus);
             }
         }
         catch (Exception ex)
         {
             _logger.Error("Error refreshing Fabric status in UI", ex);
+        }
+    }
+
+    private void ApplyFabricStatusToUI(FabricStatusInfo? status)
+    {
+        if (status == null || !status.IsConfigured)
+        {
+            FabricCard.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        FabricCard.Visibility = Visibility.Visible;
+        string target = status.TargetLoaderVersion ?? "Unknown";
+        string installed = status.InstalledLoaderVersion ?? "Not Installed";
+        string mcVer = !string.IsNullOrWhiteSpace(status.MinecraftVersion)
+            ? $" • Minecraft {status.MinecraftVersion}"
+            : " • Minecraft";
+
+        FabricGameVersionText.Text = mcVer;
+        FabricInstalledVersionText.Text = installed;
+        FabricTargetVersionText.Text = target;
+
+        if (!string.IsNullOrWhiteSpace(status.VersionSource))
+        {
+            FabricTargetVersionText.ToolTip = $"Version source: {status.VersionSource}";
+        }
+
+        if (!status.IsMinecraftFound)
+        {
+            FabricStatusDot.Fill = (Brush)FindResource("SecondaryTextBrush");
+            FabricUpToDateBadge.Visibility = Visibility.Collapsed;
+            FabricUpdateButton.Visibility = Visibility.Visible;
+            FabricUpdateButton.Content = "Install";
+            FabricInstalledVersionText.Foreground = (Brush)FindResource("SecondaryTextBrush");
+        }
+        else if (status.IsUpToDate)
+        {
+            FabricStatusDot.Fill = (Brush)FindResource("SuccessBrush");
+            FabricUpToDateBadge.Visibility = Visibility.Visible;
+            FabricUpdateButton.Visibility = Visibility.Collapsed;
+            FabricInstalledVersionText.Foreground = (Brush)FindResource("SuccessBrush");
+        }
+        else
+        {
+            FabricStatusDot.Fill = (Brush)FindResource("WarningBrush");
+            FabricUpToDateBadge.Visibility = Visibility.Collapsed;
+            FabricUpdateButton.Visibility = Visibility.Visible;
+            FabricUpdateButton.Content = status.InstalledLoaderVersion == null ? "Install Fabric" : "Update Fabric";
+            FabricInstalledVersionText.Foreground = (Brush)FindResource("WarningBrush");
         }
     }
 

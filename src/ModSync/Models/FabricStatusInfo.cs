@@ -47,6 +47,11 @@ public class FabricStatusInfo
     public string? Details { get; set; }
 
     /// <summary>
+    /// Source where the target version was determined (e.g. "Repository (fabric-version.txt)" or "Local Configuration").
+    /// </summary>
+    public string? VersionSource { get; set; }
+
+    /// <summary>
     /// Error message if version detection or profile reading encountered an issue.
     /// </summary>
     public string? ErrorMessage { get; set; }

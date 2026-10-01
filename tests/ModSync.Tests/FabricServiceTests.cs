@@ -114,15 +114,58 @@ public class FabricServiceTests
         Assert.IsTrue(status.IsUpToDate);
     }
 
+    [TestMethod]
+    public void TestFabricVersionPulledFromRepoFabricVersionTxt()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = null; // No local config
+
+        string repoDir = Path.Combine(_tempDir, "repository");
+        Directory.CreateDirectory(repoDir);
+        File.WriteAllText(Path.Combine(repoDir, "fabric-version.txt"), "0.19.5\r\n");
+
+        string mcDir = Path.Combine(_tempDir, ".minecraft");
+        string versionsDir = Path.Combine(mcDir, "versions", "fabric-loader-0.15.11-1.21.1");
+        Directory.CreateDirectory(versionsDir);
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir, repoDir);
+        var status = fabricService.DetectFabricStatus();
+
+        Assert.IsTrue(status.IsConfigured);
+        Assert.AreEqual("0.19.5", status.TargetLoaderVersion);
+        Assert.AreEqual("Repository (fabric-version.txt)", status.VersionSource);
+        Assert.AreEqual("0.15.11", status.InstalledLoaderVersion);
+        Assert.IsFalse(status.IsUpToDate);
+    }
+
+    [TestMethod]
+    public void TestFabricVersionCleansPrefixAndNewlines()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = null;
+
+        string repoDir = Path.Combine(_tempDir, "repository");
+        Directory.CreateDirectory(repoDir);
+        File.WriteAllText(Path.Combine(repoDir, "fabric-version.txt"), "  v0.19.5  \n# optional comment");
+
+        string mcDir = Path.Combine(_tempDir, ".minecraft");
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir, repoDir);
+        var (version, source) = fabricService.ResolveTargetFabricLoaderVersionLocalFast();
+
+        Assert.AreEqual("0.19.5", version);
+        Assert.AreEqual("Repository (fabric-version.txt)", source);
+    }
+
     private class TestableFabricService : FabricService
     {
-        private readonly string _customMcDir;
-
-        public TestableFabricService(ConfigService cfg, LoggingService log, string customMcDir)
+        public TestableFabricService(ConfigService cfg, LoggingService log, string customMcDir, string? customRepoDir = null)
             : base(cfg, log)
         {
-            _customMcDir = customMcDir;
             CustomMinecraftDirectory = customMcDir;
+            CustomRepositoryDirectory = customRepoDir;
         }
     }
 }
