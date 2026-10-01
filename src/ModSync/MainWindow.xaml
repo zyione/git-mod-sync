@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ModSync"
         Width="620"
-        Height="620"
+        Height="670"
         MinWidth="580"
-        MinHeight="580"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -119,92 +119,187 @@
                                Margin="0,3,0,0" />
                 </StackPanel>
 
-                <!-- Status Card (Compact Pill/Card) -->
-                <Border Grid.Row="2"
-                        Background="{DynamicResource CardBackgroundBrush}"
-                        BorderBrush="{DynamicResource CardBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14"
-                        Padding="18,12"
-                        Margin="0,0,0,22">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                <!-- Information & Status Cards -->
+                <StackPanel Grid.Row="2" Margin="0,0,0,18">
+                    <!-- Status Card (Compact Pill/Card) -->
+                    <Border Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="18,12"
+                            Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
 
-                        <!-- Status Indicator Dot -->
-                        <Ellipse x:Name="StatusDot"
-                                 Grid.Column="0"
-                                 Width="9"
-                                 Height="9"
-                                 Fill="{DynamicResource SuccessBrush}"
-                                 VerticalAlignment="Center"
-                                 Margin="0,0,12,0" />
+                            <!-- Status Indicator Dot -->
+                            <Ellipse x:Name="StatusDot"
+                                     Grid.Column="0"
+                                     Width="9"
+                                     Height="9"
+                                     Fill="{DynamicResource SuccessBrush}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,12,0" />
 
-                        <!-- Status Details -->
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                            <TextBlock x:Name="StatusHeadingText"
-                                       Text="Connected to GitHub"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource PrimaryTextBrush}" />
-                            <TextBlock x:Name="StatusSubText"
-                                       Text="zyione/4stoogies-mod-list • main"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="0,1,0,4" />
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Folder: "
-                                           FontSize="11"
-                                           FontWeight="Medium"
-                                           Foreground="{DynamicResource SecondaryTextBrush}" />
-                                <TextBlock x:Name="ModsFolderPathText"
-                                           Text="C:\...\mods"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource PrimaryTextBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           MaxWidth="260"
-                                           Cursor="Hand"
-                                           MouseDown="OpenModsFolder_Click"
-                                           ToolTip="Click to open folder in File Explorer" />
-                            </StackPanel>
-                        </StackPanel>
-
-                        <!-- Mod Count Badge & Open Action -->
-                        <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                            <Border x:Name="ModCountBadgeBorder"
-                                    Background="{DynamicResource SecondaryButtonBrush}"
-                                    CornerRadius="8"
-                                    Padding="10,4"
-                                    HorizontalAlignment="Right"
-                                    Margin="0,0,0,4">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock x:Name="ModCountStatusIcon"
-                                               Text="✓"
+                            <!-- Status Details -->
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock x:Name="StatusHeadingText"
+                                           Text="Connected to GitHub"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource PrimaryTextBrush}" />
+                                <TextBlock x:Name="StatusSubText"
+                                           Text="zyione/4stoogies-mod-list • main"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Margin="0,1,0,4" />
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Folder: "
                                                FontSize="11"
-                                               FontWeight="Bold"
-                                               Foreground="{DynamicResource SuccessBrush}"
-                                               Margin="0,0,5,0"
-                                               Visibility="Collapsed" />
-                                    <TextBlock x:Name="ModCountBadgeText"
-                                               Text="-- mods"
-                                               FontSize="12"
+                                               FontWeight="Medium"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock x:Name="ModsFolderPathText"
+                                               Text="C:\...\mods"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource PrimaryTextBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="260"
+                                               Cursor="Hand"
+                                               MouseDown="OpenModsFolder_Click"
+                                               ToolTip="Click to open folder in File Explorer" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Mod Count Badge & Open Action -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <Border x:Name="ModCountBadgeBorder"
+                                        Background="{DynamicResource SecondaryButtonBrush}"
+                                        CornerRadius="8"
+                                        Padding="10,4"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,0,0,4">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ModCountStatusIcon"
+                                                   Text="✓"
+                                                   FontSize="11"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                   Margin="0,0,5,0"
+                                                   Visibility="Collapsed" />
+                                        <TextBlock x:Name="ModCountBadgeText"
+                                                   Text="-- mods"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Border>
+                                <Button Content="Open Folder"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        FontSize="11"
+                                        Padding="6,2"
+                                        HorizontalAlignment="Right"
+                                        Click="OpenModsFolder_Click"
+                                        ToolTip="Open mods folder in Windows File Explorer" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Fabric Loader Version Card (Apple Design) -->
+                    <Border x:Name="FabricCard"
+                            Visibility="Collapsed"
+                            Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="14"
+                            Padding="18,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Status Indicator Dot -->
+                            <Ellipse x:Name="FabricStatusDot"
+                                     Grid.Column="0"
+                                     Width="9"
+                                     Height="9"
+                                     Fill="{DynamicResource WarningBrush}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,12,0" />
+
+                            <!-- Fabric Details & Version Comparison -->
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Fabric Loader"
+                                               FontSize="13"
                                                FontWeight="SemiBold"
                                                Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    <TextBlock x:Name="FabricGameVersionText"
+                                               Text=" • Minecraft"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               VerticalAlignment="Center" />
                                 </StackPanel>
-                            </Border>
-                            <Button Content="Open Folder"
-                                    Style="{StaticResource GhostButtonStyle}"
-                                    FontSize="11"
-                                    Padding="6,2"
-                                    HorizontalAlignment="Right"
-                                    Click="OpenModsFolder_Click"
-                                    ToolTip="Open mods folder in Windows File Explorer" />
-                        </StackPanel>
-                    </Grid>
-                </Border>
+
+                                <!-- Version Comparison: Installed vs Required -->
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,0">
+                                    <TextBlock Text="Installed: "
+                                               FontSize="11.5"
+                                               FontWeight="Medium"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock x:Name="FabricInstalledVersionText"
+                                               Text="Not Installed"
+                                               FontSize="11.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    <TextBlock Text="   →   Required: "
+                                               FontSize="11.5"
+                                               FontWeight="Medium"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock x:Name="FabricTargetVersionText"
+                                               Text="0.16.9"
+                                               FontSize="11.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Up to Date Badge or Action Button -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <Border x:Name="FabricUpToDateBadge"
+                                        Visibility="Collapsed"
+                                        Background="{DynamicResource SecondaryButtonBrush}"
+                                        CornerRadius="8"
+                                        Padding="10,4"
+                                        HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="✓"
+                                                   FontSize="11"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource SuccessBrush}"
+                                                   Margin="0,0,5,0" />
+                                        <TextBlock Text="Up to date"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Button x:Name="FabricUpdateButton"
+                                        Content="Update Fabric"
+                                        Style="{StaticResource CompactPrimaryButtonStyle}"
+                                        Height="28"
+                                        Padding="12,0"
+                                        Click="FabricUpdateButton_Click"
+                                        ToolTip="Install or update Fabric Loader to the required version" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
 
                 <!-- Main Actions Area -->
                 <StackPanel Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
@@ -679,6 +774,35 @@
                                                           HorizontalAlignment="Right"
                                                           Margin="0,0,2,0"
                                                           Click="SettingToggle_Click" />
+                                            </Grid>
+
+                                            <!-- Divider -->
+                                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
+
+                                            <!-- Fabric Loader Version Setting -->
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                                    <TextBlock Text="Fabric Loader Version"
+                                                               FontSize="13"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock x:Name="SettingsFabricStatusText"
+                                                               Text="Configured in config.json"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <TextBlock x:Name="SettingsFabricVersionBadge"
+                                                           Grid.Column="1"
+                                                           Text="v0.16.9"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           VerticalAlignment="Center" />
                                             </Grid>
                                         </StackPanel>
                                     </Border>
@@ -1213,6 +1337,83 @@
                                         Height="36"
                                         Width="84"
                                         Click="CloseIgnoredMods_Click" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ================= 10. FABRIC LOADER CONFIRMATION MODAL ================= -->
+                        <StackPanel x:Name="FabricUpdateConfirmSheet" Visibility="Collapsed">
+                            <TextBlock Text="Update Fabric Loader?"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="0,0,0,4" />
+                            <TextBlock x:Name="FabricConfirmSummaryText"
+                                       Text="A new version of Fabric Loader is required."
+                                       FontSize="12.5"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,14" />
+
+                            <!-- Version Comparison Card (Apple Design) -->
+                            <Border Background="{DynamicResource InputBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16,14"
+                                    Margin="0,0,0,14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Current Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="FabricModalCurrentVerText" Grid.Row="0" Grid.Column="1" Text="0.15.11" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Required Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="FabricModalTargetVerText" Grid.Row="1" Grid.Column="1" Text="0.16.9" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,8" />
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Minecraft Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="FabricModalMcVerText" Grid.Row="2" Grid.Column="1" Text="1.21.1" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Target Instance:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
+                                    <TextBlock x:Name="FabricModalInstancePathText" Grid.Row="3" Grid.Column="1" Text=".minecraft" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </Border>
+
+                            <TextBlock Text="This will download and install the required Fabric Loader profile in your local .minecraft folder. Your existing mods and worlds will not be affected."
+                                       FontSize="11.5"
+                                       LineHeight="16"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Margin="0,0,0,18" />
+
+                            <!-- Modal Buttons -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Content="Cancel"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Height="38"
+                                            Width="85"
+                                            Margin="0,0,10,0"
+                                            Click="CloseModal_Click" />
+                                    <Button x:Name="ConfirmFabricUpdateButton"
+                                            Content="Update Loader"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Height="38"
+                                            Padding="16,0"
+                                            Click="ConfirmFabricUpdate_Click" />
+                                </StackPanel>
                             </Grid>
                         </StackPanel>
                     </Grid>

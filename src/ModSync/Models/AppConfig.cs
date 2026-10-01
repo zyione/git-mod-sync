@@ -72,4 +72,11 @@ public class AppConfig
     /// </summary>
     [JsonPropertyName("appUpdateRepository")]
     public string AppUpdateRepository { get; set; } = "https://github.com/zyione/git-mod-sync";
+
+    /// <summary>
+    /// Target Fabric Loader version to enforce (e.g. "0.16.9").
+    /// If null or whitespace, Fabric Loader sync is disabled.
+    /// </summary>
+    [JsonPropertyName("fabricLoaderVersion")]
+    public string? FabricLoaderVersion { get; set; } = null;
 }

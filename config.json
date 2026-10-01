@@ -19,5 +19,6 @@
   "firstSyncCompleted": false,
   "ignoredMods": [],
   "autoCheckUpdates": true,
-  "appUpdateRepository": "https://github.com/zyione/git-mod-sync"
+  "appUpdateRepository": "https://github.com/zyione/git-mod-sync",
+  "fabricLoaderVersion": "0.16.9"
 }

@@ -25,10 +25,12 @@ public partial class MainWindow : Window
     private readonly ModIgnoreService _ignoreService;
     private readonly UpdateService _updateService;
     private readonly ModSyncService _syncService;
+    private readonly FabricService _fabricService;
 
     private bool _isBusy;
     private string? _lastBackupFolder;
     private UpdateInfo? _latestUpdateInfo;
+    private FabricStatusInfo? _currentFabricStatus;
 
     public MainWindow()
     {
@@ -46,6 +48,7 @@ public partial class MainWindow : Window
         _ignoreService = new ModIgnoreService(_configService, _logger);
         _updateService = new UpdateService(_configService, _authService, _logger);
         _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _ignoreService, _logger);
+        _fabricService = new FabricService(_configService, _logger);
 
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
@@ -53,6 +56,7 @@ public partial class MainWindow : Window
             if (!_isBusy)
             {
                 await RefreshLocalModCountAsync();
+                RefreshFabricStatusUI();
             }
         };
     }
@@ -67,6 +71,7 @@ public partial class MainWindow : Window
         await RefreshAuthStatusAsync();
         await RefreshLocalModCountAsync();
         UpdateIgnoredModsUI();
+        RefreshFabricStatusUI();
     }
 
     #region Status & Information
@@ -345,6 +350,7 @@ public partial class MainWindow : Window
         finally
         {
             await RefreshLocalModCountAsync();
+            RefreshFabricStatusUI();
             SetBusy(false);
         }
     }
@@ -612,6 +618,21 @@ public partial class MainWindow : Window
         AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
+
+        string? fabricVer = cfg.FabricLoaderVersion;
+        if (!string.IsNullOrWhiteSpace(fabricVer))
+        {
+            SettingsFabricStatusText.Text = $"Enforcing v{fabricVer}";
+            SettingsFabricVersionBadge.Text = $"v{fabricVer}";
+            SettingsFabricVersionBadge.Foreground = (Brush)FindResource("AccentBrush");
+        }
+        else
+        {
+            SettingsFabricStatusText.Text = "Not configured (Disabled)";
+            SettingsFabricVersionBadge.Text = "Disabled";
+            SettingsFabricVersionBadge.Foreground = (Brush)FindResource("SecondaryTextBrush");
+        }
+
         UpdateIgnoredModsUI();
         ShowModal(SettingsSheet);
     }
@@ -940,6 +961,7 @@ public partial class MainWindow : Window
         SyncConfirmSheet.Visibility = Visibility.Collapsed;
         UpdateSheet.Visibility = Visibility.Collapsed;
         IgnoredModsSheet.Visibility = Visibility.Collapsed;
+        FabricUpdateConfirmSheet.Visibility = Visibility.Collapsed;
 
         sheet.Visibility = Visibility.Visible;
         ModalBackdrop.Visibility = Visibility.Visible;
@@ -956,6 +978,7 @@ public partial class MainWindow : Window
         SyncConfirmSheet.Visibility = Visibility.Collapsed;
         UpdateSheet.Visibility = Visibility.Collapsed;
         IgnoredModsSheet.Visibility = Visibility.Collapsed;
+        FabricUpdateConfirmSheet.Visibility = Visibility.Collapsed;
         ModalBackdrop.Visibility = Visibility.Collapsed;
     }
 
@@ -1331,6 +1354,131 @@ public partial class MainWindow : Window
     private void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
     {
         ShowModal(SettingsSheet);
+    }
+
+    #endregion
+
+    #region Fabric Loader Version Sync
+
+    private void RefreshFabricStatusUI()
+    {
+        try
+        {
+            var cfg = _configService.Config;
+            if (string.IsNullOrWhiteSpace(cfg.FabricLoaderVersion))
+            {
+                FabricCard.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            FabricCard.Visibility = Visibility.Visible;
+            _currentFabricStatus = _fabricService.DetectFabricStatus();
+
+            string target = _currentFabricStatus.TargetLoaderVersion ?? cfg.FabricLoaderVersion;
+            string installed = _currentFabricStatus.InstalledLoaderVersion ?? "Not Installed";
+            string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
+                ? $" • Minecraft {_currentFabricStatus.MinecraftVersion}"
+                : " • Minecraft";
+
+            FabricGameVersionText.Text = mcVer;
+            FabricInstalledVersionText.Text = installed;
+            FabricTargetVersionText.Text = target;
+
+            if (!_currentFabricStatus.IsMinecraftFound)
+            {
+                FabricStatusDot.Fill = (Brush)FindResource("SecondaryTextBrush");
+                FabricUpToDateBadge.Visibility = Visibility.Collapsed;
+                FabricUpdateButton.Visibility = Visibility.Visible;
+                FabricUpdateButton.Content = "Install";
+                FabricInstalledVersionText.Foreground = (Brush)FindResource("SecondaryTextBrush");
+            }
+            else if (_currentFabricStatus.IsUpToDate)
+            {
+                FabricStatusDot.Fill = (Brush)FindResource("SuccessBrush");
+                FabricUpToDateBadge.Visibility = Visibility.Visible;
+                FabricUpdateButton.Visibility = Visibility.Collapsed;
+                FabricInstalledVersionText.Foreground = (Brush)FindResource("SuccessBrush");
+            }
+            else
+            {
+                FabricStatusDot.Fill = (Brush)FindResource("WarningBrush");
+                FabricUpToDateBadge.Visibility = Visibility.Collapsed;
+                FabricUpdateButton.Visibility = Visibility.Visible;
+                FabricUpdateButton.Content = _currentFabricStatus.InstalledLoaderVersion == null ? "Install Fabric" : "Update Fabric";
+                FabricInstalledVersionText.Foreground = (Brush)FindResource("WarningBrush");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Error refreshing Fabric status in UI", ex);
+        }
+    }
+
+    private void FabricUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isBusy) return;
+
+        if (_currentFabricStatus == null)
+        {
+            _currentFabricStatus = _fabricService.DetectFabricStatus();
+        }
+
+        string installed = _currentFabricStatus.InstalledLoaderVersion ?? "Not installed";
+        string target = _currentFabricStatus.TargetLoaderVersion ?? _configService.Config.FabricLoaderVersion ?? "0.16.9";
+        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion) ? _currentFabricStatus.MinecraftVersion : "1.21.1";
+
+        FabricModalCurrentVerText.Text = installed;
+        FabricModalTargetVerText.Text = target;
+        FabricModalMcVerText.Text = mcVer;
+        FabricModalInstancePathText.Text = _fabricService.GetMinecraftDirectory();
+
+        ShowModal(FabricUpdateConfirmSheet);
+    }
+
+    private async void ConfirmFabricUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        CloseModal();
+        if (_isBusy) return;
+
+        if (_currentFabricStatus == null)
+        {
+            _currentFabricStatus = _fabricService.DetectFabricStatus();
+        }
+
+        string target = _currentFabricStatus.TargetLoaderVersion ?? _configService.Config.FabricLoaderVersion ?? "0.16.9";
+        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion) ? _currentFabricStatus.MinecraftVersion : "1.21.1";
+
+        SetBusy(true, "Installing Fabric Loader...");
+
+        try
+        {
+            var (success, error) = await Task.Run(async () =>
+            {
+                return await _fabricService.InstallFabricLoaderAsync(mcVer, target, progress =>
+                {
+                    UpdateProgress(progress);
+                });
+            });
+
+            if (success)
+            {
+                ShowFeedback($"Fabric Loader {target} installed successfully!", false);
+                RefreshFabricStatusUI();
+            }
+            else
+            {
+                ShowFeedback($"Fabric update failed: {error}", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error("Failed to update Fabric Loader", ex);
+            ShowFeedback($"Fabric update failed: {ex.Message}", true);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     #endregion
