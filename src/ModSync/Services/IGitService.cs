@@ -34,9 +34,9 @@ public interface IGitService
     Task<GitStatusInfo> GetStatusAsync(string repoDir, string repositoryUrl, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null);
 
     /// <summary>
-    /// Stages all changes and commits them with an automated commit message.
+    /// Stages and commits the selected paths, or all changes when paths are omitted.
     /// </summary>
-    Task<(bool Success, string? Error)> StageAndCommitAsync(string repoDir, string commitMessage, Action<SyncProgressInfo>? progressCallback = null);
+    Task<(bool Success, string? Error)> StageAndCommitAsync(string repoDir, string commitMessage, Action<SyncProgressInfo>? progressCallback = null, IReadOnlyList<string>? paths = null);
 
     /// <summary>
     /// Pushes the local branch commits to the remote repository with real-time upload progress.

@@ -53,7 +53,7 @@ public class LayoutTests
                         root.Measure(new Size(width, 760));
                         root.Arrange(new Rect(0, 0, width, 760));
                         root.UpdateLayout();
-                        foreach (var name in new[] { "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton" })
+                        foreach (var name in new[] { "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton" })
                         {
                             var button = (Button)window.FindName(name);
                             var point = button.TranslatePoint(new Point(0, 0), root);

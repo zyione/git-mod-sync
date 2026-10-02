@@ -25,3 +25,6 @@ $RECYCLE.BIN/
 .vs/
 .vscode/
 .idea/
+
+# Isolated checkout used for modpack organization
+.migration/

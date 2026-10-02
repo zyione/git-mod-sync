@@ -216,7 +216,10 @@
                                     <TextBlock Text="Resource Packs" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Button x:Name="SyncResourcesButton" Grid.Column="1" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" AutomationProperties.Name="Sync resource packs" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="SyncResourcesButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" AutomationProperties.Name="Sync resource packs" />
+                                    <Button x:Name="PushResourcesButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushResources_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push resource packs" />
+                                </StackPanel>
                             </Grid>
                             <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,12" />
                             <Grid>
@@ -225,7 +228,10 @@
                                     <TextBlock Text="Shaders" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <Button x:Name="SyncShadersButton" Grid.Column="1" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" AutomationProperties.Name="Sync shaders" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="SyncShadersButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" AutomationProperties.Name="Sync shaders" />
+                                    <Button x:Name="PushShadersButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushShaders_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push shaders" />
+                                </StackPanel>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -451,6 +457,7 @@
 
                     <!-- Destructive Tertiary Action: Clean Reinstall (surfaced in main UI, Apple-style subtle danger) -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <Button Content="Backups" Style="{StaticResource GhostButtonStyle}" FontSize="11" Click="OpenBackups_Click" ToolTip="Open pack and reinstall backups" />
                         <Button Content="Clean Reinstall..."
                                 Style="{StaticResource GhostButtonStyle}"
                                 Foreground="{DynamicResource ErrorBrush}"
@@ -521,7 +528,7 @@
                     <Grid>
                         <!-- ================= 1. PUSH CONFIRMATION MODAL ================= -->
                         <StackPanel x:Name="PushConfirmSheet" Visibility="Collapsed">
-                            <TextBlock Text="Push Mod Changes?"
+                            <TextBlock x:Name="PushConfirmTitleText" Text="Push Modpack Changes?"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"
@@ -1099,7 +1106,7 @@
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"
                                        Margin="0,0,0,4" />
-                            <TextBlock Text="Completely reset your mods folder to match the GitHub repository."
+                            <TextBlock Text="Reinstall repository mods and safely sync your enabled packs."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Margin="0,0,0,12" />
@@ -1116,30 +1123,30 @@
                                                Margin="0,0,0,8" />
                                     
                                     <StackPanel Margin="0,0,0,6">
-                                        <TextBlock Text="1. Moves existing .jar files to a safety backup:"
+                                        <TextBlock Text="1. Backs up mods, enabled packs, and pack settings:"
                                                    FontSize="12"
                                                    Foreground="{DynamicResource PrimaryTextBrush}" />
                                         <TextBlock x:Name="CleanReinstallBackupPreviewText"
-                                                   Text="mods_backup_YYYY-MM-DD_HHmmss/"
+                                                   Text="modsync_backups/reinstall_.../"
                                                    FontFamily="Consolas, monospace"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource AccentBrush}"
                                                    Margin="14,2,0,0" />
                                     </StackPanel>
 
-                                    <TextBlock Text="2. Clears the .jar files in your mods folder."
+                                    <TextBlock Text="2. Reinstalls mods; excluded personal mods stay."
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,6" />
 
-                                    <TextBlock Text="3. Copies all authoritative mods fresh from repository."
+                                    <TextBlock Text="3. Syncs shared packs; personal packs stay."
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,8" />
 
                                     <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,2,0,8" />
 
-                                    <TextBlock Text="🛡️ Personal configs, options, and shaders are preserved."
+                                    <TextBlock Text="Worlds stay untouched. Pack order and active shader follow the repo."
                                                FontSize="11"
                                                FontWeight="Medium"
                                                Foreground="{DynamicResource SecondaryTextBrush}" />

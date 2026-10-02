@@ -13,10 +13,9 @@ public class PackSyncService
 
     public static string RepositoryModsFolder(string repository)
     {
-        bool structured = Directory.Exists(Path.Combine(repository, "mods")) ||
-            (Directory.Exists(repository) && !Directory.GetFiles(repository, "*.jar").Any() &&
-             (Directory.Exists(Path.Combine(repository, "resourcepacks")) || Directory.Exists(Path.Combine(repository, "shaderpacks"))));
-        return structured ? Path.Combine(repository, "mods") : repository;
+        // Existing root JAR repositories remain compatible; new repositories use mods/.
+        bool legacy = Directory.Exists(repository) && Directory.GetFiles(repository, "*.jar").Any();
+        return Directory.Exists(Path.Combine(repository, "mods")) || !legacy ? Path.Combine(repository, "mods") : repository;
     }
 
     // Walk explicitly so junctions/symlinks cannot escape the managed directories.

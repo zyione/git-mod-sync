@@ -194,7 +194,7 @@ public class ModSyncService
     /// Pushes local mod modifications to the GitHub repository.
     /// (../mods -> Internal Repo -> GitHub)
     /// </summary>
-    public async Task<(bool Success, SyncSummary? Summary, string? Message)> PushModsAsync(Action<SyncProgressInfo>? progressCallback = null)
+    public async Task<(bool Success, SyncSummary? Summary, string? Message)> PushModsAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -234,11 +234,14 @@ public class ModSyncService
             return (false, null, $"Remote repository contains newer changes ({status.BehindCount} new commit(s)).\n\nPlease sync first to download updates before pushing.\nNo files were uploaded.");
         }
 
+        if (scope != SyncScope.All && status.AheadCount > 0)
+            return (false, null, "The local repository has unpublished commits. Finish pushing the modpack before pushing one category.");
+
         // Step 4: Scan and compare local mods with internal repo
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Comparing mods...", "Scanning local mods folder..."));
-        PathUtils.EnsureDirectoryExists(modsFolder);
+        if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
 
-        var localFiles = ScanFolder(
+        var localFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(
             modsFolder,
             config.AllowedExtensions,
             config.SyncSubdirectories,
@@ -247,9 +250,9 @@ public class ModSyncService
             {
                 double pct = ((double)i / Math.Max(1, total)) * 100.0;
                 progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning local mods...", pct, $"{file} ({i} of {total})"));
-            });
+            }) : new Dictionary<string, ModFileItem>();
 
-        var repoFiles = ScanFolder(
+        var repoFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(
             repoFolder,
             config.AllowedExtensions,
             config.SyncSubdirectories,
@@ -258,7 +261,7 @@ public class ModSyncService
             {
                 double pct = ((double)i / Math.Max(1, total)) * 100.0;
                 progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning repository files...", pct, $"{file} ({i} of {total})"));
-            });
+            }) : new Dictionary<string, ModFileItem>();
 
         // Check for oversized files (GitHub limits)
         foreach (var file in localFiles.Values)
@@ -281,7 +284,7 @@ public class ModSyncService
 
         // Calculate differences (source is local mods, target is repo)
         var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true).Changes);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true, scope: scope).Changes);
         foreach (var change in summary.Added.Concat(summary.Updated))
             if (change.SourceItem != null && change.SourceItem.SizeBytes >= config.MaxFileSizeMb * 1024 * 1024)
                 return (false, summary, $"File '{change.RelativePath}' exceeds the {config.MaxFileSizeMb}MB upload limit.");
@@ -290,7 +293,7 @@ public class ModSyncService
         {
             _logger.Info("Push check completed: No changes detected. Nothing to push.");
             progressCallback?.Invoke(SyncProgressInfo.Determinate("No changes detected", 100, "Mods match GitHub repository."));
-            return (true, summary, "No mod changes detected.\n\nNothing to push.");
+            return (true, summary, "No changes detected.\n\nNothing to push.");
         }
 
         // Step 5: Show changes detected
@@ -298,7 +301,7 @@ public class ModSyncService
 
         if (config.RequireConfirmationBeforePush)
         {
-            if (!ConsoleUI.Confirm("Push these mod changes to GitHub?", defaultYes: true))
+            if (!ConsoleUI.Confirm("Push these changes to GitHub?", defaultYes: true))
             {
                 _logger.Info("Push cancelled by user at confirmation prompt.");
                 return (false, null, "Push cancelled: No files were changed on GitHub.");
@@ -314,9 +317,11 @@ public class ModSyncService
 
         // Step 7: Automated commit message
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
-        string commitMessage = $"Mods update: +{summary.AddedCount} added, -{summary.RemovedCount} removed, ~{summary.UpdatedCount} updated - {timestamp}";
+        string commitMessage = $"{scope} update: +{summary.AddedCount} added, -{summary.RemovedCount} removed, ~{summary.UpdatedCount} updated - {timestamp}";
 
-        var commitResult = await _gitService.StageAndCommitAsync(repoFolder, commitMessage, progressCallback);
+        var paths = summary.Changes.Where(c => c.Type is ChangeType.Added or ChangeType.Updated or ChangeType.Removed)
+            .Select(c => Path.GetRelativePath(repoFolder, c.DestinationPath ?? Path.Combine(PackSyncService.RepositoryModsFolder(repoFolder), c.RelativePath)).Replace('\\', '/')).Distinct().ToArray();
+        var commitResult = await _gitService.StageAndCommitAsync(repoFolder, commitMessage, progressCallback, paths);
         if (!commitResult.Success)
         {
             return (false, summary, $"Commit failed: {commitResult.Error}");
@@ -337,7 +342,7 @@ public class ModSyncService
     /// Computes differences from the perspective of pushing local mods up to GitHub.
     /// (Local mods = source, Repository = target: new local files are Added, deleted local files are Removed).
     /// </summary>
-    public async Task<(bool Success, SyncSummary? Summary, string? Message)> GetPushChangesAsync(Action<SyncProgressInfo>? progressCallback = null)
+    public async Task<(bool Success, SyncSummary? Summary, string? Message)> GetPushChangesAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -360,14 +365,14 @@ public class ModSyncService
         }
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods...", "Comparing local mods with repository..."));
-        PathUtils.EnsureDirectoryExists(modsFolder);
+        if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
 
-        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+        var localFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false) : new Dictionary<string, ModFileItem>();
+        var repoFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true) : new Dictionary<string, ModFileItem>();
 
         // Source is local mods, Target is repo!
         var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true).Changes);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true, scope: scope).Changes);
         return (true, summary, null);
     }
 
@@ -425,15 +430,12 @@ public class ModSyncService
             var packChanges = new PackSyncService(_configService).Plan();
 
             // Step 1: Backup existing mods if any exist (0% -> 40%)
-            string? backupDir = null;
+            string backupDir = new PackBackupService(_configService).SnapshotForReinstall();
             if (Directory.Exists(modsFolder))
             {
                 var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
                 if (localMods.Count > 0)
                 {
-                    string parentDir = Path.GetDirectoryName(modsFolder) ?? PathUtils.GetAppDirectory();
-                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-                    backupDir = Path.Combine(parentDir, $"mods_backup_{timestamp}");
                     PathUtils.EnsureDirectoryExists(backupDir);
 
                     int i = 0;
@@ -455,7 +457,7 @@ public class ModSyncService
                             $"Backing up: {mod.RelativePath} ({i + 1} of {localMods.Count})",
                             speedEta));
 
-                        string dest = Path.Combine(backupDir, mod.RelativePath);
+                        string dest = Path.Combine(backupDir, "mods", mod.RelativePath);
                         string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
                         PathUtils.EnsureDirectoryExists(destSubdir);
                         File.Move(mod.FullPath, dest, overwrite: true);
@@ -520,7 +522,7 @@ public class ModSyncService
             config.FirstSyncCompleted = true;
             _configService.Save();
 
-            var packResult = await ApplyChangesAsync(packChanges, repoFolder, modsFolder, progressCallback);
+            var packResult = await ApplyChangesCoreAsync(packChanges, repoFolder, modsFolder, progressCallback, backupPacks: false);
             if (!packResult.Success) return (false, backupDir, copied, packResult.Error);
 
             _logger.Info($"Clean reinstall complete: {copied} mods copied.");
@@ -846,14 +848,21 @@ public class ModSyncService
     /// Safely applies file modifications with atomic copying (.tmp + rename),
     /// retry logic for locked files, and real-time progress callbacks with Speed & ETA.
     /// </summary>
-    private async Task<(bool Success, string? Error)> ApplyChangesAsync(
+    private Task<(bool Success, string? Error)> ApplyChangesAsync(
         SyncSummary summary,
         string sourceDir,
         string targetDir,
-        Action<SyncProgressInfo>? progressCallback = null)
+        Action<SyncProgressInfo>? progressCallback = null) => ApplyChangesCoreAsync(summary, sourceDir, targetDir, progressCallback);
+
+    private async Task<(bool Success, string? Error)> ApplyChangesCoreAsync(
+        SyncSummary summary, string sourceDir, string targetDir,
+        Action<SyncProgressInfo>? progressCallback = null, bool backupPacks = true)
     {
         try
         {
+            if (backupPacks && Path.GetFullPath(targetDir).Equals(Path.GetFullPath(_configService.ResolvedModsFolder), StringComparison.OrdinalIgnoreCase))
+                new PackBackupService(_configService).BackupChanges(summary);
+
             var textChanges = summary.Changes.Where(c => c.NewContent != null).ToList();
             var itemsToCopy = summary.Changes.Where(c => c.NewContent == null && (c.Type == ChangeType.Added || c.Type == ChangeType.Updated)).ToList();
             var itemsToRemove = summary.Changes.Where(c => c.Type == ChangeType.Removed).ToList();

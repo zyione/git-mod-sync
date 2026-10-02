@@ -483,11 +483,13 @@ public class GitService : IGitService
     public async Task<(bool Success, string? Error)> StageAndCommitAsync(
         string repoDir,
         string commitMessage,
-        Action<SyncProgressInfo>? progressCallback = null)
+        Action<SyncProgressInfo>? progressCallback = null,
+        IReadOnlyList<string>? paths = null)
     {
         if (!await EnsureGitAvailableAsync(progressCallback))
             return (false, "Git executable could not be found.");
 
+        string? pathFile = null;
         try
         {
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Staging mod changes...", "Configuring Git author identity..."));
@@ -496,17 +498,29 @@ public class GitService : IGitService
             await RunGitCommandAsync(repoDir, "config user.name \"ModSync Admin\"");
             await RunGitCommandAsync(repoDir, "config user.email \"modsync@local\"");
 
+            if (paths != null && (paths.Count == 0 || paths.Any(p => Path.IsPathRooted(p) || p.Split('/').Contains("..") || p.Contains('"') || p.Contains('\n') || p.Contains('\r'))))
+                return (false, "Invalid commit paths.");
+            if (paths != null)
+            {
+                pathFile = Path.Combine(Path.GetTempPath(), "ModSync-paths-" + Guid.NewGuid().ToString("N"));
+                await File.WriteAllTextAsync(pathFile, string.Join('\0', paths) + "\0");
+            }
+            string pathArgs = pathFile == null ? "" : $" --pathspec-from-file=\"{pathFile}\" --pathspec-file-nul";
+
             // git add -A
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Staging mod changes...", "Running git add -A..."));
-            var addResult = await RunGitCommandAsync(repoDir, "add -A");
+            var addResult = await RunGitCommandAsync(repoDir, "--literal-pathspecs add -A" + pathArgs);
             if (addResult.ExitCode != 0)
             {
                 return (false, $"Failed to stage files: {addResult.StdErr}");
             }
 
             // Check if there is anything to commit
-            var statusResult = await RunGitCommandAsync(repoDir, "status --porcelain");
-            if (string.IsNullOrWhiteSpace(statusResult.StdOut))
+            var statusResult = await RunGitCommandAsync(repoDir, "diff --cached --name-only -z");
+            if (statusResult.ExitCode != 0) return (false, $"Failed to inspect staged changes: {statusResult.StdErr}");
+            var staged = statusResult.StdOut.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+            if (paths != null) staged = staged.Where(p => paths.Contains(p, StringComparer.Ordinal)).ToArray();
+            if (staged.Length == 0)
             {
                 return (true, null); // Nothing to commit
             }
@@ -514,7 +528,7 @@ public class GitService : IGitService
             // git commit -m "..."
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Creating Git commit...", commitMessage));
             string safeMsg = commitMessage.Replace("\"", "\\\"");
-            var commitResult = await RunGitCommandAsync(repoDir, $"commit -m \"{safeMsg}\"");
+            var commitResult = await RunGitCommandAsync(repoDir, $"--literal-pathspecs commit -m \"{safeMsg}\"" + (paths == null ? "" : " --only" + pathArgs));
             if (commitResult.ExitCode != 0)
             {
                 return (false, $"Failed to commit: {commitResult.StdErr}");
@@ -527,6 +541,10 @@ public class GitService : IGitService
         {
             _logger.Error("Commit failed", ex);
             return (false, ex.Message);
+        }
+        finally
+        {
+            if (pathFile != null && File.Exists(pathFile)) File.Delete(pathFile);
         }
     }
 

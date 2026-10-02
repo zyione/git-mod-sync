@@ -29,6 +29,7 @@ public partial class MainWindow : Window
 
     private bool _isBusy;
     private SyncScope _syncScope = SyncScope.All;
+    private SyncScope _pushScope = SyncScope.All;
     private CancellationTokenSource? _updateCancellation;
     private string? _lastBackupFolder;
     private UpdateInfo? _latestUpdateInfo;
@@ -457,9 +458,22 @@ public partial class MainWindow : Window
 
     #region Push Action
 
-    private async void PushMods_Click(object sender, RoutedEventArgs e)
+    private async void PushMods_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.All);
+    private async void PushResources_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.ResourcePacks);
+    private async void PushShaders_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.Shaders);
+
+    private async Task PreviewPushAsync(SyncScope scope)
     {
         if (_isBusy) return;
+
+        if ((scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks) ||
+            (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
+        {
+            ShowFeedback("Enable this sync option in Settings first.", true);
+            return;
+        }
+        _pushScope = scope;
+        PushConfirmTitleText.Text = scope == SyncScope.ResourcePacks ? "Push Resource Packs?" : scope == SyncScope.Shaders ? "Push Shaders?" : "Push Modpack Changes?";
 
         // Check authentication first
         var (isValid, _, authMsg) = await _authService.CheckAuthStatusAsync();
@@ -481,7 +495,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var (success, modChanges, error) = await Task.Run(() => _syncService.GetPushChangesAsync(UpdateProgress));
+            var (success, modChanges, error) = await Task.Run(() => _syncService.GetPushChangesAsync(UpdateProgress, _pushScope));
             if (!success || modChanges == null)
             {
                 ShowFeedback(error ?? "Failed to inspect modifications.", true);
@@ -491,7 +505,7 @@ public partial class MainWindow : Window
 
             if (!modChanges.HasChanges)
             {
-                ShowFeedback("No mod changes detected. Nothing to push.", false);
+                ShowFeedback("No changes detected. Nothing to push.", false);
                 SetBusy(false);
                 return;
             }
@@ -525,17 +539,17 @@ public partial class MainWindow : Window
     private async void ConfirmPush_Click(object sender, RoutedEventArgs e)
     {
         CloseModal();
-        SetBusy(true, "Pushing mod updates to GitHub...");
+        SetBusy(true, "Pushing selected updates to GitHub...");
 
         try
         {
             var (success, summary, message) = await Task.Run(() =>
-                _syncService.PushModsAsync(UpdateProgress)
+                _syncService.PushModsAsync(UpdateProgress, _pushScope)
             );
 
             if (success)
             {
-                ShowFeedback("✓ Successfully pushed mod updates to GitHub!", false);
+                ShowFeedback("✓ Successfully pushed selected updates to GitHub!", false);
             }
             else
             {
@@ -797,7 +811,7 @@ public partial class MainWindow : Window
         _reinstallOpenedFromSettings = true;
         ReinstallBackButton.Visibility = Visibility.Visible;
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        CleanReinstallBackupPreviewText.Text = $"mods_backup_{timestamp}/";
+        CleanReinstallBackupPreviewText.Text = $"modsync_backups/reinstall_{timestamp}/";
         ShowModal(CleanReinstallConfirmSheet);
     }
 
@@ -806,8 +820,16 @@ public partial class MainWindow : Window
         _reinstallOpenedFromSettings = false;
         ReinstallBackButton.Visibility = Visibility.Collapsed;
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        CleanReinstallBackupPreviewText.Text = $"mods_backup_{timestamp}/";
+        CleanReinstallBackupPreviewText.Text = $"modsync_backups/reinstall_{timestamp}/";
         ShowModal(CleanReinstallConfirmSheet);
+    }
+
+    private void OpenBackups_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = Path.Combine(_configService.MinecraftFolder, "modsync_backups");
+        if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Backups are created before pack changes or a clean reinstall.", false); return; }
+        try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); }
+        catch (Exception ex) { ShowFeedback($"Could not open backups: {ex.Message}", true); }
     }
 
     private void BackFromReinstall_Click(object sender, RoutedEventArgs e)
@@ -1020,6 +1042,8 @@ public partial class MainWindow : Window
         SyncResourcesButton.IsEnabled = !busy;
         SyncShadersButton.IsEnabled = !busy;
         PushModsButton.IsEnabled = !busy;
+        PushResourcesButton.IsEnabled = !busy;
+        PushShadersButton.IsEnabled = !busy;
         FabricUpdateButton.IsEnabled = !busy;
 
         if (busy)

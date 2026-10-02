@@ -241,15 +241,19 @@ Normal players who only download/synchronize mods **do not need a GitHub account
 
 ### Fresh "Clean Reinstall" (For Messed-Up Folders)
 
-If a player's folder has broken, outdated, or conflicting jars and they want a 100% clean reset:
-1. In ModSync, click **Settings** (or the `⚙` gear icon in the header).
-2. Under **Maintenance & Tools**, click **Reinstall...** next to **Clean Reinstall Mods**.
-3. Review the confirmation sheet:
-   - Existing `.jar` files are automatically moved into a safety backup: `../mods_backup_YYYY-MM-DD_HHmmss/`.
-   - The `.jar` files in `../mods/` are cleared.
-   - Authoritative mods are freshly downloaded and copied from the repository.
-   - Non-mod files (personal configs, shaders, options) are preserved and never deleted.
-4. Click **Reinstall & Backup**. A notification will confirm completion, with an **Open Backup** button to jump directly to your backed-up files in Windows File Explorer.
+Use **Clean Reinstall...** on the dashboard, or **Reinstall...** in Settings, to rebuild repository mods. Review the confirmation and click **Reinstall & Backup**.
+
+1. ModSync snapshots the complete enabled resource pack and shader folders, including personal files, and Minecraft pack selection settings.
+2. Existing non-excluded mods move into the backup's `mods/` folder. Excluded personal mods stay in place.
+3. Repository mods are installed fresh. Shared packs follow normal synchronization, so personal packs stay on disk. Pack order and active shader follow enabled repository declarations. Worlds and other unrelated files stay untouched.
+
+Backups live under the Minecraft instance's `modsync_backups/reinstall_<timestamp>_<unique ID>/`. The completion notification has an **Open Backup** action.
+
+### Pack backups and restoration
+
+Before an ordinary download replaces or removes an existing pack file, ModSync copies and verifies the old file and affected pack settings under `modsync_backups/sync_<timestamp>_<unique ID>/`. An already-current sync creates no backup. Newly added files have no previous version to save. If backup creation or verification fails, pack writes stop. Backups are retained until you delete them yourself.
+
+Click **Backups** on the dashboard to open the backup folder. To restore, close Minecraft and copy desired files from `mods/`, `resourcepacks/`, or `shaderpacks/` into their original folders. `restore-paths.json` records the original locations of pack files and settings, including custom pack destinations. Restoring a backed-up `options.txt` restores its full contents. Re-running sync may reapply repository changes.
 
 ---
 
@@ -419,7 +423,7 @@ my-modpack-repo/
     └── Complementary.zip
 ```
 
-Click **Sync All** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order can be published explicitly from Minecraft with the Settings switch described below. Shader declarations remain administrator-managed repository metadata; pushing does not upload your personal Minecraft settings.
+Click **Sync All** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order can be published explicitly from Minecraft with the Settings switch described below. **Push** beside Resource Packs uploads only resource packs and their published order; **Push** beside Shaders uploads only shader ZIPs. Each action previews its own category and leaves other categories out of the commit. Shader declarations remain administrator-managed repository metadata; pushing does not upload your personal Minecraft settings.
 
 Root-level JAR repositories remain supported. If `mods/` exists, ModSync uses it as the authoritative mod source. Visual assets always use repository folders named `resourcepacks/` and `shaderpacks/`. Missing visual folders are skipped during downloads, so existing mod-only repositories leave player visuals untouched. Keep a folder present (for example with a README) when removing its last managed pack.
 
@@ -476,10 +480,10 @@ Settings changed while files are being synchronized are preserved: ModSync stops
 
 ### Publishing Resource Pack Priority
 
-1. Upload new shared packs with **Push Modpack** first.
+1. Upload new shared packs with **Push** beside Resource Packs first.
 2. In Minecraft, enable the shared packs and arrange them in the desired order. The pack at the top has highest priority. Close Minecraft so its selection is saved.
 3. In ModSync Settings, enable **Publish Resource Pack Order**.
-4. Click **Push Modpack** and review `resourcepack-order.txt (shared pack priority)` in the changes.
+4. Click **Push** beside Resource Packs and review `resourcepack-order.txt (shared pack priority)` in the changes.
 5. Push. Other players apply the declaration with **Resource Packs** or **Sync All**, when order enforcement is enabled.
 
 The published declaration includes only enabled packs already present in the repository and still available locally. Built-in packs and local-only personal packs never enter the declaration. Disabled shared packs are omitted. An empty published order disables the shared packs while preserving built-in and personal selections on players' machines. Leave the publishing switch off for ordinary player use. It controls the declaration only; review the separate file uploads when pushing.
