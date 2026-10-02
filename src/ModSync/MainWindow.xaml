@@ -147,7 +147,7 @@
                             <!-- Status Details -->
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <TextBlock x:Name="StatusHeadingText"
-                                           Text="Connected to GitHub"
+                                           Text="Mods • Connected to GitHub"
                                            FontSize="13"
                                            FontWeight="SemiBold"
                                            Foreground="{DynamicResource PrimaryTextBrush}" />
@@ -196,6 +196,7 @@
                                                    Foreground="{DynamicResource PrimaryTextBrush}" />
                                     </StackPanel>
                                 </Border>
+                                <Button x:Name="SyncOnlyModsButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Margin="0,2,0,4" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" AutomationProperties.Name="Sync mods" />
                                 <Button Content="Open Folder"
                                         Style="{StaticResource GhostButtonStyle}"
                                         FontSize="11"
@@ -207,10 +208,25 @@
                         </Grid>
                     </Border>
 
-                    <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18,12" Margin="0,0,0,16">
+                    <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18,12" Margin="0,0,0,8">
                         <StackPanel>
-                            <TextBlock Text="Resource Packs &amp; Shaders" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
-                            <TextBlock x:Name="PackStatusText" Text="Counts available after checking the repository" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Resource Packs" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
+                                </StackPanel>
+                                <Button x:Name="SyncResourcesButton" Grid.Column="1" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" AutomationProperties.Name="Sync resource packs" />
+                            </Grid>
+                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Shaders" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
+                                </StackPanel>
+                                <Button x:Name="SyncShadersButton" Grid.Column="1" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" AutomationProperties.Name="Sync shaders" />
+                            </Grid>
                         </StackPanel>
                     </Border>
                     <!-- Fabric Loader Version Card (Apple Design) -->
@@ -298,8 +314,9 @@
 
                                 <Button x:Name="FabricUpdateButton"
                                         Content="Update Fabric"
-                                        Style="{StaticResource CompactPrimaryButtonStyle}"
-                                        Height="28"
+                                        Style="{StaticResource CompactSecondaryButtonStyle}"
+                                        MinWidth="76"
+                                        Height="32"
                                         Padding="12,0"
                                         Click="FabricUpdateButton_Click"
                                         ToolTip="Install or update Fabric Loader to the required version" />
@@ -398,11 +415,6 @@
                             Margin="0,0,0,10"
                             Click="SyncMods_Click" />
 
-                    <UniformGrid Columns="3" Margin="0,0,0,10">
-                        <Button x:Name="SyncOnlyModsButton" Content="Mods" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" Height="36" FontSize="12" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" />
-                        <Button x:Name="SyncResourcesButton" Content="Resource Packs" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,3,0" Height="36" FontSize="12" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" />
-                        <Button x:Name="SyncShadersButton" Content="Shaders" Style="{StaticResource SecondaryButtonStyle}" Margin="6,0,0,0" Height="36" FontSize="12" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" />
-                    </UniformGrid>
                     <!-- Secondary Action: Push Mods -->
                     <Button x:Name="PushModsButton"
                             Content="Push Modpack"

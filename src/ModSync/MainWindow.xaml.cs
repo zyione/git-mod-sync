@@ -112,7 +112,9 @@ public partial class MainWindow : Window
         {
             var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync());
             UpdateModCountBadge(localCount, expectedCount);
-            PackStatusText.Text = await Task.Run(() => new PackSyncService(_configService).StatusText());
+            var (resources, shaders) = await Task.Run(() => new PackSyncService(_configService).SectionStatus());
+            PackStatusText.Text = resources;
+            ShaderStatusText.Text = shaders;
         }
         catch (Exception ex)
         {
@@ -166,7 +168,7 @@ public partial class MainWindow : Window
                 ModCountStatusIcon.Visibility = Visibility.Collapsed;
                 ModCountBadgeText.Text = $"{localCount} mod{(localCount == 1 ? "" : "s")}";
                 ModCountBadgeBorder.ToolTip = $"{localCount} local mods installed";
-                StatusHeadingText.Text = "Connected to GitHub";
+                StatusHeadingText.Text = "Mods • Connected to GitHub";
                 StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
             }
 
@@ -1018,6 +1020,7 @@ public partial class MainWindow : Window
         SyncResourcesButton.IsEnabled = !busy;
         SyncShadersButton.IsEnabled = !busy;
         PushModsButton.IsEnabled = !busy;
+        FabricUpdateButton.IsEnabled = !busy;
 
         if (busy)
         {

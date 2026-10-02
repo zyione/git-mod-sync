@@ -234,13 +234,19 @@ public class PackSyncService
 
     public string StatusText()
     {
+        var (resources, shaders) = SectionStatus();
+        return $"Resource packs: {resources}\nShaders: {shaders}";
+    }
+
+    public (string Resources, string Shaders) SectionStatus()
+    {
         var repo = _config.ResolvedRepositoryFolder;
         static int Count(string path, bool resource) => ScanPacks(path, resource, false).Keys.Select(x => x.Split('/')[0]).Distinct().Count();
         var iris = Path.Combine(_config.MinecraftFolder, "config", "iris.properties");
         var legacy = Path.Combine(_config.MinecraftFolder, "optionsshaders.txt");
         var text = File.Exists(iris) ? File.ReadAllText(iris) : File.Exists(legacy) ? File.ReadAllText(legacy) : "";
         var active = Regex.Match(text, @"(?m)^shaderPack=([^\r\n]*)");
-        return $"Resource packs: {Count(_config.ResolvedResourcePacksFolder, true)} local / {Count(Path.Combine(repo, "resourcepacks"), true)} repository\n" +
-            $"Shaders: {Count(_config.ResolvedShaderPacksFolder, false)} local / {Count(Path.Combine(repo, "shaderpacks"), false)} repository • Active: {(active.Success ? active.Groups[1].Value : "None")}";
+        return ($"{Count(_config.ResolvedResourcePacksFolder, true)} local / {Count(Path.Combine(repo, "resourcepacks"), true)} repository",
+            $"{Count(_config.ResolvedShaderPacksFolder, false)} local / {Count(Path.Combine(repo, "shaderpacks"), false)} repository • Active: {(active.Success ? active.Groups[1].Value : "None")}");
     }
 }
