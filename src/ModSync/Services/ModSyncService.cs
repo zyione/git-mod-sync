@@ -138,7 +138,8 @@ public class ModSyncService
             "Calculating checksum differences..."));
 
         var summary = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
+        try { summary.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes); }
+        catch (Exception ex) { return (false, null, ex.Message); }
 
         if (!summary.HasChanges)
         {
@@ -245,6 +246,20 @@ public class ModSyncService
         foreach (var (repo, status) in statuses)
         {
             if (!status.IsConnected || status.ErrorMessage != null) throw new IOException($"{repo.Label}: {status.ErrorMessage ?? "Could not verify remote status."}");
+            if (scope == SyncScope.ResourcePackOrder)
+            {
+                // Never include previous asset commits in an order-only upload.
+                if (status.AheadCount > 0) throw new IOException("Resource Packs has an unfinished upload. Finish the previous upload before using Push Order.");
+                if (status.BehindCount > 0)
+                {
+                    // Refresh the cache only: keep the player's saved selection and installed packs intact.
+                    await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, download: true, token, progress);
+                    var refreshed = await _gitService.GetStatusAsync(repo.Folder, repo.Url, repo.Branch, token, progress);
+                    if (!refreshed.IsConnected || refreshed.ErrorMessage != null || refreshed.BehindCount > 0 || refreshed.AheadCount > 0)
+                        throw new IOException("Could not refresh the resource pack repository safely. Retry Push Order.");
+                }
+                continue;
+            }
             if (status.BehindCount > 0) throw new IOException($"{repo.Label} has newer repository changes. Sync {repo.Label} before pushing this category; other categories do not need a sync.");
             if (scope != SyncScope.All && status.AheadCount > 0 && repo.Folder.Equals(_configService.ResolvedRepositoryFolder, StringComparison.OrdinalIgnoreCase))
                 throw new IOException($"{repo.Label} has unpublished commits. Use Push Modpack to finish the previous upload before pushing only one category.");
@@ -271,8 +286,12 @@ public class ModSyncService
     /// </summary>
     public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(
         Action<SyncProgressInfo>? progressCallback = null,
-        bool forceIfMinecraftRunning = false)
+        bool forceIfMinecraftRunning = false, SyncScope scope = SyncScope.All)
     {
+        if (scope is SyncScope.ResourcePacks or SyncScope.Shaders)
+            return await CleanReinstallPacksAsync(scope, progressCallback, forceIfMinecraftRunning);
+        if (scope is not (SyncScope.Mods or SyncScope.All))
+            return (false, null, 0, "Select Mods, Resource Packs, Shaders, or the whole modpack to reinstall.");
         try
         {
             var config = _configService.Config;
@@ -301,13 +320,13 @@ public class ModSyncService
                 }
             }
 
-            await new RepositorySyncService(_configService, _gitService).PrepareAsync(SyncScope.All, download: true, token, progressCallback);
+            await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, download: true, token, progressCallback);
 
             // Validate visual asset declarations before a clean reinstall changes any files.
-            var packChanges = new PackSyncService(_configService).Plan();
+            var packChanges = new PackSyncService(_configService).Plan(scope: scope);
 
             // Step 1: Backup existing mods if any exist (0% -> 40%)
-            string backupDir = new PackBackupService(_configService).SnapshotForReinstall();
+            string backupDir = new PackBackupService(_configService).SnapshotForReinstall(scope);
             if (Directory.Exists(modsFolder))
             {
                 var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
@@ -410,6 +429,32 @@ public class ModSyncService
             _logger.Error("Clean reinstall failed", ex);
             return (false, null, 0, $"Clean reinstall failed: {ex.Message}");
         }
+    }
+
+    private async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallPacksAsync(
+        SyncScope scope, Action<SyncProgressInfo>? progress, bool forceIfMinecraftRunning)
+    {
+        string? backup = null;
+        try
+        {
+            if ((scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks) ||
+                (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
+                return (false, null, 0, "Enable this category in Settings first.");
+            var (running, details) = _mcCheckService.CheckIfMinecraftRunning();
+            if (running && !forceIfMinecraftRunning) return (false, null, 0, $"Minecraft is currently running ({details}). Please close Minecraft and try again.");
+            progress?.Invoke(SyncProgressInfo.Indeterminate("Preparing clean reinstall…", "Refreshing the selected repository…"));
+            await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, download: true, _getToken(), progress);
+            var plan = new PackSyncService(_configService).Plan(scope: scope);
+            // Recopy all shared files, including files that already match. Local-only personal files stay.
+            foreach (var change in plan.Changes.Where(change => change.SourceItem != null && change.Type == ChangeType.Unchanged))
+                change.Type = ChangeType.Updated;
+            progress?.Invoke(SyncProgressInfo.Indeterminate("Creating safety backup…", "Saving the selected packs and their settings…"));
+            backup = new PackBackupService(_configService).SnapshotForReinstall(scope);
+            int packs = plan.Changes.Where(change => change.SourceItem != null).Select(change => change.RelativePath.Split('/')[1]).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            var result = await ApplyChangesCoreAsync(plan, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress, backupPacks: false);
+            return (result.Success, backup, packs, result.Error);
+        }
+        catch (Exception ex) { return (false, backup, 0, $"Clean reinstall failed: {ex.Message}"); }
     }
 
     public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount, int RepoModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All, bool refreshRepository = false)

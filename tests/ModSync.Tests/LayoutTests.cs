@@ -53,7 +53,7 @@ public class LayoutTests
                         root.Measure(new Size(width, 760));
                         root.Arrange(new Rect(0, 0, width, 760));
                         root.UpdateLayout();
-                        foreach (var name in new[] { "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton" })
+                        foreach (var name in new[] { "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton", "SyncOrderButton", "PushOrderButton", "ReinstallResourcesButton", "ReinstallShadersButton" })
                         {
                             var button = (Button)window.FindName(name);
                             var point = button.TranslatePoint(new Point(0, 0), root);
@@ -93,6 +93,20 @@ public class LayoutTests
                     SavePreview(root, dark ? "ui-repositories-dark.png" : "ui-repositories-light.png");
                     ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)window.FindName("SwitchRepoSheet")).Visibility = Visibility.Collapsed;
+                    foreach (var scope in new[] { ModSync.Models.SyncScope.ResourcePacks, ModSync.Models.SyncScope.Shaders })
+                    {
+                        typeof(MainWindow).GetMethod("ShowReinstallConfirmation", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { scope, false });
+                        root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
+                        var sheet = (FrameworkElement)window.FindName("CleanReinstallConfirmSheet");
+                        var point = sheet.TranslatePoint(new Point(), root);
+                        Assert.IsTrue(point.Y >= 0 && point.Y + sheet.ActualHeight <= 760, "Scoped reinstall confirmation must fit.");
+                        var title = ((TextBlock)window.FindName("ReinstallTitleText")).Text;
+                        StringAssert.Contains(title, scope == ModSync.Models.SyncScope.ResourcePacks ? "Resource Packs" : "Shaders");
+                        SavePreview(root, $"ui-reinstall-{scope}-{(dark ? "dark" : "light")}.png");
+                        ((FrameworkElement)window.FindName("CleanReinstallConfirmSheet")).Visibility = Visibility.Collapsed;
+                        ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
+                    }
+
                 }
                 window.Close();
                 app.Shutdown();

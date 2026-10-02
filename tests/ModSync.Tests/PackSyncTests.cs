@@ -132,7 +132,9 @@ public class PackSyncTests
         Write(Path.Combine(Repo, "mods", "Test.jar"), "mod");
         Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "pack");
         Write(Path.Combine(Repo, "resourcepack-order.txt"), "Missing.zip");
-        await Assert.ThrowsExceptionAsync<InvalidDataException>(() => Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true));
+        var result = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true);
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Message!, "Missing.zip");
         Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "Test.jar")));
         Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip")));
     }

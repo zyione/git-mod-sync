@@ -217,9 +217,16 @@
                                     <TextBlock x:Name="ResourceRepoText" Text="4stoogies-resourcepack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                                     <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
                                 <Button x:Name="SyncResourcesButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" AutomationProperties.Name="Sync resource packs" />
                                     <Button x:Name="PushResourcesButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushResources_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push resource packs" />
+                                </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,3,0,0">
+                                        <Button x:Name="SyncOrderButton" Content="Sync Order" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="SyncOrder_Click" ToolTip="Apply the repository order to installed packs without replacing pack files" AutomationProperties.Name="Sync resource pack order" />
+                                        <Button x:Name="PushOrderButton" Content="Push Order" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="PushOrder_Click" ToolTip="Publish your saved Minecraft order for already shared packs; pack files are not uploaded" AutomationProperties.Name="Push resource pack order" />
+                                        <Button x:Name="ReinstallResourcesButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallResources_Click" ToolTip="Back up and reinstall shared resource packs; personal packs stay" AutomationProperties.Name="Clean reinstall resource packs" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Grid>
                             <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,12" />
@@ -230,9 +237,14 @@
                                     <TextBlock x:Name="ShaderRepoText" Text="4stoogies-shaderpack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                                     <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
                                 <Button x:Name="SyncShadersButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" AutomationProperties.Name="Sync shaders" />
                                     <Button x:Name="PushShadersButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushShaders_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push shaders" />
+                                </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,3,0,0">
+                                        <Button x:Name="ReinstallShadersButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallShaders_Click" ToolTip="Back up and reinstall shared shaders; personal packs stay" AutomationProperties.Name="Clean reinstall shaders" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
@@ -1109,12 +1121,12 @@
 
                         <!-- ================= 6. CLEAN REINSTALL CONFIRMATION MODAL ================= -->
                         <StackPanel x:Name="CleanReinstallConfirmSheet" Visibility="Collapsed">
-                            <TextBlock Text="Clean Reinstall Mods?"
+                            <TextBlock x:Name="ReinstallTitleText" TextWrapping="Wrap" Text="Clean Reinstall Mods?"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"
                                        Margin="0,0,0,4" />
-                            <TextBlock Text="Reinstall repository mods and safely sync your enabled packs."
+                            <TextBlock x:Name="ReinstallDescriptionText" TextWrapping="Wrap" Text="Reinstall repository mods and safely sync your enabled packs."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Margin="0,0,0,12" />
@@ -1131,7 +1143,7 @@
                                                Margin="0,0,0,8" />
                                     
                                     <StackPanel Margin="0,0,0,6">
-                                        <TextBlock Text="1. Backs up mods, enabled packs, and pack settings:"
+                                        <TextBlock x:Name="ReinstallStepOneText" TextWrapping="Wrap" Text="1. Backs up mods, enabled packs, and pack settings:"
                                                    FontSize="12"
                                                    Foreground="{DynamicResource PrimaryTextBrush}" />
                                         <TextBlock x:Name="CleanReinstallBackupPreviewText"
@@ -1142,19 +1154,19 @@
                                                    Margin="14,2,0,0" />
                                     </StackPanel>
 
-                                    <TextBlock Text="2. Reinstalls mods; excluded personal mods stay."
+                                    <TextBlock x:Name="ReinstallStepTwoText" TextWrapping="Wrap" Text="2. Reinstalls mods; excluded personal mods stay."
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,6" />
 
-                                    <TextBlock Text="3. Syncs shared packs; personal packs stay."
+                                    <TextBlock x:Name="ReinstallStepThreeText" TextWrapping="Wrap" Text="3. Syncs shared packs; personal packs stay."
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,8" />
 
                                     <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,2,0,8" />
 
-                                    <TextBlock Text="Worlds stay untouched. Pack order and active shader follow the repo."
+                                    <TextBlock x:Name="ReinstallPreservationText" TextWrapping="Wrap" Text="Worlds stay untouched. Pack order and active shader follow the repo."
                                                FontSize="11"
                                                FontWeight="Medium"
                                                Foreground="{DynamicResource SecondaryTextBrush}" />

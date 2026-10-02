@@ -4,7 +4,7 @@ namespace ModSync.Services;
 
 public sealed record SyncRepository(string Url, string Branch, string Folder, SyncScope Scope, int PendingCommits = 0)
 {
-    public string Label => Scope == SyncScope.ResourcePacks ? "Resource Packs" : Scope == SyncScope.Shaders ? "Shaders" : Scope == SyncScope.Mods ? "Mods" : "Modpack";
+    public string Label => Scope == SyncScope.ResourcePackOrder ? "Resource Pack Order" : Scope == SyncScope.ResourcePacks ? "Resource Packs" : Scope == SyncScope.Shaders ? "Shaders" : Scope == SyncScope.Mods ? "Mods" : "Modpack";
 }
 
 /// <summary>Refresh independent clones concurrently; never write Minecraft files here.</summary>
@@ -20,9 +20,9 @@ public sealed class RepositorySyncService(ConfigService config, IGitService git)
         var cfg = config.Config;
         var repositories = new List<SyncRepository>();
         if (scope.HasFlag(SyncScope.Mods)) repositories.Add(new(cfg.Repository, cfg.Branch, config.ResolvedRepositoryFolder, SyncScope.Mods));
-        if (scope.HasFlag(SyncScope.ResourcePacks) && cfg.SyncResourcePacks)
+        if ((scope.HasFlag(SyncScope.ResourcePacks) || scope.HasFlag(SyncScope.ResourcePackOrder)) && cfg.SyncResourcePacks)
             repositories.Add(new(string.IsNullOrWhiteSpace(cfg.ResourcePackRepository) ? cfg.Repository : cfg.ResourcePackRepository,
-                string.IsNullOrWhiteSpace(cfg.ResourcePackRepository) ? cfg.Branch : cfg.ResourcePackBranch, config.ResolvedResourcePackRepositoryFolder, SyncScope.ResourcePacks));
+                string.IsNullOrWhiteSpace(cfg.ResourcePackRepository) ? cfg.Branch : cfg.ResourcePackBranch, config.ResolvedResourcePackRepositoryFolder, scope.HasFlag(SyncScope.ResourcePacks) ? SyncScope.ResourcePacks : SyncScope.ResourcePackOrder));
         if (scope.HasFlag(SyncScope.Shaders) && cfg.SyncShaderPacks)
             repositories.Add(new(string.IsNullOrWhiteSpace(cfg.ShaderPackRepository) ? cfg.Repository : cfg.ShaderPackRepository,
                 string.IsNullOrWhiteSpace(cfg.ShaderPackRepository) ? cfg.Branch : cfg.ShaderPackBranch, config.ResolvedShaderPackRepositoryFolder, SyncScope.Shaders));

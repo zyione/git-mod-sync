@@ -156,12 +156,27 @@ public class PackSyncService
         }
         if (push)
         {
-            if (cfg.PublishResourcePackOrder && cfg.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks))
+            if (scope == SyncScope.ResourcePackOrder && !cfg.SyncResourcePacks)
+                throw new InvalidOperationException("Enable Resource Pack sync in Settings first.");
+            if (cfg.SyncResourcePacks && (scope == SyncScope.ResourcePackOrder || cfg.PublishResourcePackOrder && scope.HasFlag(SyncScope.ResourcePacks)))
                 PlanPublishedOrder(summary, AssetRepositoryFolder(true));
             return summary;
         }
+        bool orderOnly = scope == SyncScope.ResourcePackOrder;
         var orderFile = Path.Combine(AssetRepositoryFolder(true), "resourcepack-order.txt");
-        if (scope.HasFlag(SyncScope.ResourcePacks) && cfg.SyncResourcePacks && cfg.EnforcePackOrder && Directory.Exists(AssetSourceFolder(true)) && File.Exists(orderFile))
+        if (orderOnly)
+        {
+            if (!cfg.SyncResourcePacks) throw new InvalidOperationException("Enable Resource Pack sync in Settings first.");
+            if (!File.Exists(orderFile)) throw new InvalidDataException("The resource pack repository has no resourcepack-order.txt yet.");
+            ValidateDestination(_config.ResolvedResourcePacksFolder, repository);
+            resources = ScanPacks(AssetSourceFolder(true), true, hashContents: false);
+            var installed = ScanPacks(_config.ResolvedResourcePacksFolder, true, hashContents: false).Keys
+                .Select(name => name.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in ReadDeclaration(orderFile))
+                if (!installed.Contains(ValidatePackName(name)))
+                    throw new InvalidDataException($"Resource pack '{name}' is not installed. Sync Resource Packs first, then sync their order.");
+        }
+        if ((scope.HasFlag(SyncScope.ResourcePacks) || orderOnly) && cfg.SyncResourcePacks && (cfg.EnforcePackOrder || orderOnly) && Directory.Exists(AssetSourceFolder(true)) && File.Exists(orderFile))
         {
             var options = Path.Combine(_config.MinecraftFolder, "options.txt");
             var names = resources.Keys.Select(x => x.Split('/')[0]).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -187,7 +202,7 @@ public class PackSyncService
             if (!useLegacy) text = ReplaceSetting(text, "enableShaders", "true", '=');
             PlanText(summary, path, text, useLegacy ? "optionsshaders.txt (active shader)" : "iris.properties (active shader)");
         }
-        if (managed.Count > 0) PlanText(summary, manifestPath, JsonSerializer.Serialize(managed), "Pack tracking", isInternal: true);
+        if (!orderOnly && (scope.HasFlag(SyncScope.ResourcePacks) || scope.HasFlag(SyncScope.Shaders)) && managed.Count > 0) PlanText(summary, manifestPath, JsonSerializer.Serialize(managed), "Pack tracking", isInternal: true);
         return summary;
     }
 

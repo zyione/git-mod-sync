@@ -202,6 +202,170 @@ public class MultiRepositoryTests
         Assert.AreEqual(2, plan.AddedCount);
     }
 
+
+    [TestMethod]
+    public async Task ResourceReinstallRefreshesEvenMatchingFilesAndBacksUpOnlySelectedCategory()
+    {
+        var local = Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip");
+        Write(local, "same"); Write(Path.Combine(PacksRepo, "Pack.zip"), "same");
+        File.SetLastWriteTimeUtc(local, new DateTime(2000, 1, 1));
+        Write(Path.Combine(PacksRepo, "Extracted", "pack.mcmeta"), "{}");
+        Write(Path.Combine(PacksRepo, "resourcepack-order.txt"), "Pack.zip\nExtracted\n");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Old.zip"), "old");
+        Write(Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json"), "{\"resourcepacks\":[\"Pack.zip\",\"Old.zip\"]}");
+        Write(Path.Combine(_config.MinecraftFolder, "options.txt"), "music:0.5\nresourcePacks:[\"vanilla\"]\n");
+        var shader = Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip"); Write(shader, "shader");
+        using var locked = new FileStream(shader, FileMode.Open, FileAccess.Read, FileShare.None);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(2, result.RestoredCount);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(_config.MinecraftFolder, "options.txt")), "resourcePacks:[\"vanilla\",\"file/Extracted\",\"file/Pack.zip\"]");
+        Assert.IsTrue(File.GetLastWriteTimeUtc(local).Year > 2000);
+        Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedResourcePacksFolder, "Old.zip")));
+        Assert.AreEqual("personal", File.ReadAllText(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip")));
+        Assert.AreEqual("same", File.ReadAllText(Path.Combine(result.BackupFolder!, "resourcepacks", "Pack.zip")));
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(result.BackupFolder!, "resourcepacks", "Old.zip")));
+        Assert.IsTrue(File.Exists(Path.Combine(result.BackupFolder!, "settings", "options.txt")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(result.BackupFolder!, "shaderpacks")));
+        Assert.IsFalse(Directory.Exists(_config.ResolvedModsFolder));
+        Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
+    }
+
+    [TestMethod]
+    public async Task ShaderReinstallSavesSelectionAndLeavesResourcePacksUntouched()
+    {
+        Write(Path.Combine(ShadersRepo, "Shader.zip"), "new");
+        Write(Path.Combine(ShadersRepo, "active-shader.txt"), "Shader.zip");
+        Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip"), "old");
+        var props = Path.Combine(_config.MinecraftFolder, "config", "iris.properties");
+        Write(props, "shaderPack=Old.zip\nenableShaders=true\n");
+        Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Personal.zip"), "personal");
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt"); Write(options, "untouched");
+        using var locked = new FileStream(options, FileMode.Open, FileAccess.Read, FileShare.None);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.Shaders);
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, result.RestoredCount);
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip")));
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(result.BackupFolder!, "shaderpacks", "Shader.zip")));
+        StringAssert.Contains(File.ReadAllText(Path.Combine(result.BackupFolder!, "settings", "config", "iris.properties")), "Old.zip");
+        StringAssert.Contains(File.ReadAllText(props), "Shader.zip");
+        Assert.IsFalse(File.Exists(Path.Combine(result.BackupFolder!, "settings", "options.txt")));
+        Assert.IsTrue(_git.Touched.All(folder => folder == ShadersRepo));
+    }
+
+    [TestMethod]
+    public async Task OrderOnlyChangesSettingsWithoutReadingOrReplacingPackContents()
+    {
+        foreach (var name in new[] { "Top.zip", "Base.zip" })
+        { Write(Path.Combine(PacksRepo, name), "remote"); Write(Path.Combine(_config.ResolvedResourcePacksFolder, name), "local"); }
+        Write(Path.Combine(PacksRepo, "resourcepack-order.txt"), "Top.zip\nBase.zip\n");
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt");
+        Write(options, "music:0.5\nresourcePacks:[\"vanilla\",\"file/Personal.zip\"]\n");
+        var manifest = Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json"); Write(manifest, "{}");
+        _config.Config.EnforcePackOrder = false;
+        using var remoteLock = new FileStream(Path.Combine(PacksRepo, "Top.zip"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using var localLock = new FileStream(Path.Combine(_config.ResolvedResourcePacksFolder, "Top.zip"), FileMode.Open, FileAccess.Read, FileShare.None);
+        var result = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePackOrder);
+        Assert.IsTrue(result.Success, result.Message);
+        StringAssert.Contains(File.ReadAllText(options), "resourcePacks:[\"vanilla\",\"file/Base.zip\",\"file/Top.zip\",\"file/Personal.zip\"]");
+        StringAssert.Contains(File.ReadAllText(options), "music:0.5");
+        Assert.AreEqual("{}", File.ReadAllText(manifest));
+        Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
+        var backups = Directory.GetDirectories(Path.Combine(_config.MinecraftFolder, "modsync_backups"));
+        Assert.AreEqual(1, backups.Length);
+        Assert.IsTrue(File.Exists(Path.Combine(backups[0], "settings", "options.txt")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(backups[0], "resourcepacks")));
+        var time = File.GetLastWriteTimeUtc(options);
+        var again = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePackOrder);
+        Assert.IsTrue(again.Success, again.Message);
+        Assert.AreEqual(time, File.GetLastWriteTimeUtc(options));
+        Assert.AreEqual(1, Directory.GetDirectories(Path.Combine(_config.MinecraftFolder, "modsync_backups")).Length);
+    }
+
+    [TestMethod]
+    public async Task MissingOrderOrMissingInstalledPackStopsBeforeChangingOptions()
+    {
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt"); Write(options, "original");
+        var engine = Engine();
+        var missingOrder = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePackOrder);
+        Assert.IsFalse(missingOrder.Success);
+        Write(Path.Combine(PacksRepo, "resourcepack-order.txt"), "Missing.zip");
+        Write(Path.Combine(PacksRepo, "Missing.zip"), "remote");
+        var missingPack = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePackOrder);
+        Assert.IsFalse(missingPack.Success);
+        StringAssert.Contains(missingPack.Message!, "Sync Resource Packs first");
+        Assert.AreEqual("original", File.ReadAllText(options));
+        Assert.IsFalse(Directory.Exists(Path.Combine(_config.MinecraftFolder, "modsync_backups")));
+    }
+
+    [TestMethod]
+    public async Task ReinstallAbortsBeforeWritesWhenRefreshOrBackupFails()
+    {
+        var local = Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip"); Write(local, "old");
+        Write(Path.Combine(PacksRepo, "Pack.zip"), "new");
+        _git.FailedRefresh = PacksRepo;
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.AreEqual("old", File.ReadAllText(local));
+        _git.FailedRefresh = null;
+        Write(Path.Combine(_config.MinecraftFolder, "modsync_backups"), "blocked");
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.AreEqual("old", File.ReadAllText(local));
+    }
+
+    [TestMethod]
+    public async Task ModsReinstallUsesOnlyModsRepositoryAndDisabledPackReinstallDoesNothing()
+    {
+        Write(Path.Combine(ModsRepo, "mods", "New.jar"), "new");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Old.jar"), "old");
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt"); Write(options, "original");
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.Mods);
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsTrue(_git.Touched.All(folder => folder == ModsRepo));
+        Assert.AreEqual("original", File.ReadAllText(options));
+        _git.Touched.Clear(); _config.Config.SyncResourcePacks = false;
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.AreEqual(0, _git.Touched.Count);
+    }
+
+
+    [TestMethod]
+    public async Task PushOrderPublishesOnlyPriorityDespiteDifferentPackContentsAndNewerMods()
+    {
+        _git.Behind[ModsRepo] = 20; _git.Behind[ShadersRepo] = 10; _git.Behind[PacksRepo] = 1;
+        _config.Config.PublishResourcePackOrder = false;
+        foreach (var name in new[] { "Top.zip", "Base.zip" })
+        { Write(Path.Combine(PacksRepo, name), "remote"); Write(Path.Combine(_config.ResolvedResourcePacksFolder, name), "local"); }
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal");
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt");
+        var selection = "resourcePacks:[\"vanilla\",\"fabric\",\"file/Base.zip\",\"file/Top.zip\",\"file/Personal.zip\"]\n";
+        Write(options, selection);
+        using var remoteLock = new FileStream(Path.Combine(PacksRepo, "Top.zip"), FileMode.Open, FileAccess.Read, FileShare.None);
+        using var localLock = new FileStream(Path.Combine(_config.ResolvedResourcePacksFolder, "Top.zip"), FileMode.Open, FileAccess.Read, FileShare.None);
+        var preview = await Engine().GetPushChangesAsync(scope: SyncScope.ResourcePackOrder);
+        Assert.IsTrue(preview.Success, preview.Message);
+        Assert.AreEqual(1, preview.Summary!.TotalActionableChanges);
+        var result = await Engine().PushModsAsync(scope: SyncScope.ResourcePackOrder);
+        Assert.IsTrue(result.Success, result.Message);
+        var names = File.ReadAllLines(Path.Combine(PacksRepo, "resourcepack-order.txt")).Where(line => !line.StartsWith('#') && line.Length > 0).ToArray();
+        CollectionAssert.AreEqual(new[] { "Top.zip", "Base.zip" }, names);
+        CollectionAssert.AreEqual(new[] { "resourcepack-order.txt" }, _git.CommitPaths[PacksRepo]);
+        Assert.AreEqual(selection, File.ReadAllText(options));
+        Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
+        Assert.IsFalse(File.Exists(Path.Combine(PacksRepo, "Personal.zip")));
+    }
+
+    [TestMethod]
+    public async Task PushOrderRejectsPendingAssetCommitsBeforeUploadingAnything()
+    {
+        _git.Ahead[PacksRepo] = 1;
+        var result = await Engine().PushModsAsync(scope: SyncScope.ResourcePackOrder);
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Message!, "unfinished upload");
+        Assert.AreEqual(0, _git.Pushes.Count);
+        Assert.IsFalse(File.Exists(Path.Combine(PacksRepo, "resourcepack-order.txt")));
+    }
+
     private sealed class FakeGit : IGitService
     {
         public ConcurrentBag<string> Touched = new();
@@ -225,6 +389,7 @@ public class MultiRepositoryTests
                 await _gate.Task.WaitAsync(TimeSpan.FromSeconds(5));
             }
             Interlocked.Decrement(ref _active);
+            if (folder != FailedRefresh) Behind[folder] = 0;
             return (folder != FailedRefresh, folder == FailedRefresh ? "offline" : null);
         }
         public Task<(bool Success, string? Error)> FetchAsync(string folder, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) { Touched.Add(folder); return Task.FromResult<(bool, string?)>((true, null)); }

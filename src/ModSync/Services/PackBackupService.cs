@@ -34,21 +34,25 @@ public sealed class PackBackupService(ConfigService config)
         return Snapshot(files, "sync");
     }
 
-    public string SnapshotForReinstall()
+    public string SnapshotForReinstall(SyncScope scope = SyncScope.All)
     {
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (folder, kind, enabled) in new[] {
-            (config.ResolvedResourcePacksFolder, "resourcepacks", config.Config.SyncResourcePacks),
-            (config.ResolvedShaderPacksFolder, "shaderpacks", config.Config.SyncShaderPacks) })
+            (config.ResolvedResourcePacksFolder, "resourcepacks", config.Config.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks)),
+            (config.ResolvedShaderPacksFolder, "shaderpacks", config.Config.SyncShaderPacks && scope.HasFlag(SyncScope.Shaders)) })
             if (enabled)
                 foreach (var file in PackSyncService.SafeFiles(folder))
                     files[file] = kind + "/" + Path.GetRelativePath(folder, file).Replace('\\', '/');
-        foreach (var relative in new[] { "options.txt", "config/iris.properties", "optionsshaders.txt", ".modsync-managed-packs.json" })
+        var settings = new List<string>();
+        if (scope.HasFlag(SyncScope.ResourcePacks) && config.Config.SyncResourcePacks) settings.Add("options.txt");
+        if (scope.HasFlag(SyncScope.Shaders) && config.Config.SyncShaderPacks) settings.AddRange(new[] { "config/iris.properties", "optionsshaders.txt" });
+        if (settings.Count > 0) settings.Add(".modsync-managed-packs.json");
+        foreach (var relative in settings)
         {
             var file = Path.Combine(config.MinecraftFolder, relative);
             if (File.Exists(file)) files[file] = "settings/" + relative;
         }
-        return Snapshot(files, "reinstall", createEmpty: true)!;
+        return Snapshot(files, scope == SyncScope.All ? "reinstall" : "reinstall_" + scope.ToString().ToLowerInvariant(), createEmpty: true)!;
     }
 
     private string SettingsLabel(string file) => "settings/" + Path.GetRelativePath(config.MinecraftFolder, file).Replace('\\', '/');

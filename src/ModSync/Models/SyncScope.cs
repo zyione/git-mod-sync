@@ -7,5 +7,6 @@ public enum SyncScope
     Mods = 1,
     ResourcePacks = 2,
     Shaders = 4,
+    ResourcePackOrder = 8,
     All = Mods | ResourcePacks | Shaders
 }

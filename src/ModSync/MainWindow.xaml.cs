@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private SyncScope _syncScope = SyncScope.All;
     private SyncScope _pushScope = SyncScope.All;
+    private SyncScope _reinstallScope = SyncScope.All;
     private CancellationTokenSource? _updateCancellation;
     private string? _lastBackupFolder;
     private UpdateInfo? _latestUpdateInfo;
@@ -234,12 +235,13 @@ public partial class MainWindow : Window
     private async void SyncMods_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.All);
     private async void SyncOnlyMods_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Mods);
     private async void SyncResources_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.ResourcePacks);
+    private async void SyncOrder_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.ResourcePackOrder);
     private async void SyncShaders_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Shaders);
 
     private async Task BeginSyncAsync(SyncScope scope)
     {
         if (_isBusy) return;
-        if (scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks ||
+        if ((scope == SyncScope.ResourcePacks || scope == SyncScope.ResourcePackOrder) && !_configService.Config.SyncResourcePacks ||
             scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks)
         {
             ShowFeedback("Enable this sync option in Settings first.", false);
@@ -251,6 +253,7 @@ public partial class MainWindow : Window
             SyncScope.Mods => "Sync Mods from GitHub?",
             SyncScope.ResourcePacks => "Sync Resource Packs from GitHub?",
             SyncScope.Shaders => "Sync Shaders from GitHub?",
+            SyncScope.ResourcePackOrder => "Sync Resource Pack Order?",
             _ => "Sync All from GitHub?"
         };
 
@@ -464,20 +467,21 @@ public partial class MainWindow : Window
 
     private async void PushMods_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.All);
     private async void PushResources_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.ResourcePacks);
+    private async void PushOrder_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.ResourcePackOrder);
     private async void PushShaders_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.Shaders);
 
     private async Task PreviewPushAsync(SyncScope scope)
     {
         if (_isBusy) return;
 
-        if ((scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks) ||
+        if (((scope == SyncScope.ResourcePacks || scope == SyncScope.ResourcePackOrder) && !_configService.Config.SyncResourcePacks) ||
             (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
         {
             ShowFeedback("Enable this sync option in Settings first.", true);
             return;
         }
         _pushScope = scope;
-        PushConfirmTitleText.Text = scope == SyncScope.ResourcePacks ? "Push Resource Packs?" : scope == SyncScope.Shaders ? "Push Shaders?" : "Push Modpack Changes?";
+        PushConfirmTitleText.Text = scope == SyncScope.ResourcePackOrder ? "Push Resource Pack Order?" : scope == SyncScope.ResourcePacks ? "Push Resource Packs?" : scope == SyncScope.Shaders ? "Push Shaders?" : "Push Modpack Changes?";
 
         // Check authentication first
         var (isValid, _, authMsg) = await _authService.CheckAuthStatusAsync();
@@ -813,21 +817,28 @@ public partial class MainWindow : Window
 
     private bool _reinstallOpenedFromSettings = false;
 
-    private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e)
-    {
-        _reinstallOpenedFromSettings = true;
-        ReinstallBackButton.Visibility = Visibility.Visible;
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        CleanReinstallBackupPreviewText.Text = $"modsync_backups/reinstall_{timestamp}/";
-        ShowModal(CleanReinstallConfirmSheet);
-    }
+    private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.Mods, fromSettings: true);
+    private void OpenCleanReinstallFromMain_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.All);
+    private void ReinstallResources_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.ResourcePacks);
+    private void ReinstallShaders_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.Shaders);
 
-    private void OpenCleanReinstallFromMain_Click(object sender, RoutedEventArgs e)
+    private void ShowReinstallConfirmation(SyncScope scope, bool fromSettings = false)
     {
-        _reinstallOpenedFromSettings = false;
-        ReinstallBackButton.Visibility = Visibility.Collapsed;
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        CleanReinstallBackupPreviewText.Text = $"modsync_backups/reinstall_{timestamp}/";
+        if (_isBusy) return;
+        if ((scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks) || (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
+        { ShowFeedback("Enable this category in Settings first.", true); return; }
+        _reinstallScope = scope;
+        _reinstallOpenedFromSettings = fromSettings;
+        ReinstallBackButton.Visibility = fromSettings ? Visibility.Visible : Visibility.Collapsed;
+        string category = scope == SyncScope.ResourcePacks ? "Resource Packs" : scope == SyncScope.Shaders ? "Shaders" : scope == SyncScope.Mods ? "Mods" : "Modpack";
+        bool packs = scope is SyncScope.ResourcePacks or SyncScope.Shaders;
+        ReinstallTitleText.Text = $"Clean Reinstall {category}?";
+        ReinstallDescriptionText.Text = packs ? "Save a safety backup, then reinstall every shared pack from this category’s repository." : scope == SyncScope.Mods ? "Back up and reinstall mods without changing resource packs or shaders." : "Back up and reinstall repository mods, then safely sync enabled packs.";
+        ReinstallStepOneText.Text = packs ? "1. Back up this pack folder and its selection settings." : scope == SyncScope.Mods ? "1. Move non-excluded mods into a safety backup." : "1. Back up mods, enabled packs, and pack settings.";
+        ReinstallStepTwoText.Text = packs ? "2. Replace all shared packs with fresh, verified copies." : "2. Install fresh repository mods; excluded mods stay.";
+        ReinstallStepThreeText.Text = packs ? "3. Remove obsolete managed files; personal packs stay." : scope == SyncScope.Mods ? "3. Leave resource packs, shaders, and settings untouched." : "3. Sync shared packs; personal packs stay.";
+        ReinstallPreservationText.Text = packs ? "Other categories and worlds stay untouched. Enabled selection rules are applied after the files succeed." : scope == SyncScope.Mods ? "Resource packs, shaders, and worlds stay untouched." : "Worlds stay untouched. Pack order and active shader follow enabled rules.";
+        CleanReinstallBackupPreviewText.Text = "modsync_backups/" + (scope == SyncScope.All ? "reinstall_" : "reinstall_" + scope.ToString().ToLowerInvariant() + "_") + DateTime.Now.ToString("yyyy-MM-dd_HHmmss") + "/";
         ShowModal(CleanReinstallConfirmSheet);
     }
 
@@ -856,21 +867,21 @@ public partial class MainWindow : Window
     {
         CloseModal();
         DismissFeedback();
-        SetBusy(true, "Backing up old mods and performing clean reinstall...");
+        SetBusy(true, "Backing up and reinstalling the selected category…");
 
         try
         {
             var (success, backupDir, count, error) = await Task.Run(() =>
                 _syncService.CleanReinstallAsync(
                     UpdateProgress,
-                    forceIfMinecraftRunning: false
+                    forceIfMinecraftRunning: false, scope: _reinstallScope
                 )
             );
 
             if (!success && error != null && error.Contains("Minecraft is currently running", StringComparison.OrdinalIgnoreCase))
             {
                 var result = MessageBox.Show(
-                    $"{error}\n\nModifying mods while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
+                    $"{error}\n\nChanging files while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
                     "Minecraft Running Warning",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
@@ -881,7 +892,7 @@ public partial class MainWindow : Window
                     (success, backupDir, count, error) = await Task.Run(() =>
                         _syncService.CleanReinstallAsync(
                             UpdateProgress,
-                            forceIfMinecraftRunning: true
+                            forceIfMinecraftRunning: true, scope: _reinstallScope
                         )
                     );
                 }
@@ -899,8 +910,8 @@ public partial class MainWindow : Window
 
                 if (!string.IsNullOrEmpty(backupDir))
                 {
-                    string backupFolderName = Path.GetFileName(backupDir);
-                    ShowFeedback($"✓ Clean Reinstall Complete! {count} mods restored. Backup: {backupFolderName}", false, showBackupAction: true);
+                    string kind = _reinstallScope is SyncScope.ResourcePacks or SyncScope.Shaders ? "packs" : "mods";
+                    ShowFeedback($"✓ Clean reinstall complete. {count} {kind} restored; backup saved.", false, showBackupAction: true);
                 }
                 else
                 {
@@ -910,7 +921,8 @@ public partial class MainWindow : Window
             else
             {
                 SetStatusDot(false);
-                ShowFeedback(error ?? "Clean reinstall failed.", true);
+                _lastBackupFolder = backupDir;
+                ShowFeedback(error ?? "Clean reinstall failed.", true, showBackupAction: backupDir != null);
             }
         }
         catch (Exception ex)
@@ -921,7 +933,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            await RefreshLocalModCountAsync();
+            await RefreshLocalModCountAsync(fetchRemote: _reinstallScope.HasFlag(SyncScope.Mods));
             UpdateStatusCard();
             SetBusy(false);
         }
@@ -1047,6 +1059,10 @@ public partial class MainWindow : Window
         SyncModsButton.IsEnabled = !busy;
         SyncOnlyModsButton.IsEnabled = !busy;
         SyncResourcesButton.IsEnabled = !busy;
+        SyncOrderButton.IsEnabled = !busy;
+        PushOrderButton.IsEnabled = !busy;
+        ReinstallResourcesButton.IsEnabled = !busy;
+        ReinstallShadersButton.IsEnabled = !busy;
         SyncShadersButton.IsEnabled = !busy;
         PushModsButton.IsEnabled = !busy;
         PushResourcesButton.IsEnabled = !busy;
