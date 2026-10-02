@@ -20,6 +20,7 @@ public class ModChange
     public ModFileItem? TargetItem { get; set; }
     public string? DestinationPath { get; set; }
     public string? NewContent { get; set; }
+    public string? OriginalContent { get; set; }
     public bool IsInternal { get; set; }
 
     public string Symbol => Type switch

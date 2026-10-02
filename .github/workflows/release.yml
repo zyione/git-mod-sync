@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to publish (for example v1.1.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,11 +23,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Cache dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
 
       - name: Run Tests
         run: dotnet test ModSync.sln -c Release
@@ -30,10 +43,12 @@ jobs:
       - name: Extract Version From Tag
         id: get_version
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          $rawTag = '${{ github.ref_name }}'
+          $rawTag = $env:RELEASE_TAG
           $cleanVer = $rawTag.TrimStart('v').Trim()
-          if ([string]::IsNullOrWhiteSpace($cleanVer)) { $cleanVer = "1.0.0" }
+          if ($cleanVer -notmatch '^\d+\.\d+\.\d+$') { throw 'A valid version tag is required.' }
           Write-Host "Publishing version: $cleanVer"
           "version=$cleanVer" >> $env:GITHUB_OUTPUT
 
@@ -41,8 +56,28 @@ jobs:
         run: |
           dotnet publish src/ModSync/ModSync.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:Version=${{ steps.get_version.outputs.version }} -p:AssemblyVersion=${{ steps.get_version.outputs.version }}.0 -p:FileVersion=${{ steps.get_version.outputs.version }}.0 -o ./publish
 
+      - name: Build and verify smaller update downloads
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/build-deltas.ps1 -Repository '${{ github.repository }}' -Version '${{ steps.get_version.outputs.version }}'
+
+      - name: Prepare release notes
+        id: notes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          $path = "./docs/releases/v$env:RELEASE_VERSION.md"
+          if (Test-Path -LiteralPath $path) { "path=$path" >> $env:GITHUB_OUTPUT }
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: publish/ModSync.exe
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          body_path: ${{ steps.notes.outputs.path }}
+          files: |
+            publish/ModSync.exe
+            publish/*.delta
+            publish/SHA256SUMS.txt
           generate_release_notes: true

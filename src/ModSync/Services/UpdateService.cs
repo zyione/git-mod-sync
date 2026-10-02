@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -10,357 +10,206 @@ using ModSync.Utils;
 
 namespace ModSync.Services;
 
-/// <summary>
-/// Service responsible for checking GitHub Releases for newer ModSync.exe builds,
-/// downloading update binaries with live streaming progress, and executing a safe,
-/// self-contained in-place executable replacement.
-/// </summary>
 public class UpdateService
 {
     private readonly ConfigService _configService;
     private readonly AuthenticationService _authService;
     private readonly LoggingService _logger;
-    private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private readonly HttpClient _http;
+    private readonly string _cacheDirectory;
+    private readonly SemaphoreSlim _updateLock = new(1, 1);
 
-    public UpdateService(ConfigService configService, AuthenticationService authService, LoggingService logger)
+    public UpdateService(ConfigService configService, AuthenticationService authService, LoggingService logger,
+        HttpClient? http = null, string? cacheDirectory = null)
     {
         _configService = configService;
         _authService = authService;
         _logger = logger;
+        _http = http ?? SharedHttp;
+        _cacheDirectory = cacheDirectory ?? Path.Combine(PathUtils.GetAppDirectory(), ".updates");
     }
 
-    /// <summary>
-    /// Gets the current running application version.
-    /// </summary>
-    public string CurrentVersion
+    public string CurrentVersion => Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0].TrimStart('v', 'V')
+        ?? "1.0.0";
+
+    public sealed class ReleaseCache
     {
-        get
-        {
-            try
-            {
-                var asm = Assembly.GetExecutingAssembly();
-                var infoVer = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-                if (!string.IsNullOrWhiteSpace(infoVer))
-                {
-                    // Strip git commit hash if present (e.g., 1.0.11+76c36db)
-                    string clean = infoVer.Split('+')[0].Trim();
-                    if (!string.IsNullOrWhiteSpace(clean))
-                    {
-                        return clean.TrimStart('v', 'V');
-                    }
-                }
-
-                var ver = asm.GetName().Version;
-                if (ver != null)
-                {
-                    return $"{ver.Major}.{ver.Minor}.{ver.Build}";
-                }
-            }
-            catch { }
-
-            return "1.0.0";
-        }
+        public string Repository { get; set; } = "";
+        public string Json { get; set; } = "";
+        public string? ETag { get; set; }
+        public DateTimeOffset CheckedAt { get; set; }
     }
 
-    /// <summary>
-    /// Checks GitHub Releases to see if a newer version of ModSync.exe is available.
-    /// </summary>
-    public async Task<UpdateInfo> CheckForUpdatesAsync()
+    public async Task<UpdateInfo> CheckForUpdatesAsync(bool force = true, CancellationToken cancellation = default)
     {
-        string currentVerStr = CurrentVersion;
-        var info = new UpdateInfo
-        {
-            CurrentVersion = currentVerStr,
-            IsUpdateAvailable = false
-        };
-
+        var info = new UpdateInfo { CurrentVersion = CurrentVersion };
         try
         {
-            string repoUrl = _configService.Config.AppUpdateRepository;
-            if (string.IsNullOrWhiteSpace(repoUrl))
-            {
-                repoUrl = "https://github.com/zyione/git-mod-sync";
-            }
-
-            var (owner, repo) = ParseGitHubOwnerAndRepo(repoUrl);
-            if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo))
-            {
-                info.ErrorMessage = $"Invalid update repository URL: {repoUrl}";
-                return info;
-            }
-
+            var (owner, repo) = PathUtils.ParseGitHubOwnerAndRepo(_configService.Config.AppUpdateRepository);
+            if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo)) throw new InvalidDataException("Invalid update repository.");
             string apiUrl = $"https://api.github.com/repos/{owner}/{repo}/releases/latest";
+            string cachePath = Path.Combine(_cacheDirectory, "release-cache.json");
+            ReleaseCache? cache = null;
+            try { if (File.Exists(cachePath)) cache = JsonSerializer.Deserialize<ReleaseCache>(File.ReadAllText(cachePath)); }
+            catch (Exception ex) when (ex is IOException or JsonException) { _logger.Warning("Ignoring invalid update cache."); }
+            if (cache?.Repository != apiUrl) cache = null;
+            if (!force && cache != null && DateTimeOffset.UtcNow - cache.CheckedAt < TimeSpan.FromMinutes(15))
+                return ParseRelease(cache.Json, CurrentVersion);
             using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
             request.Headers.Add("User-Agent", "ModSync-App-Updater");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
-            request.Headers.CacheControl = new CacheControlHeaderValue
-            {
-                NoCache = true,
-                NoStore = true,
-                MustRevalidate = true
-            };
-            request.Headers.Pragma.Add(new NameValueHeaderValue("no-cache"));
-
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+            if (cache?.ETag != null && EntityTagHeaderValue.TryParse(cache.ETag, out var etag)) request.Headers.IfNoneMatch.Add(etag);
             string? token = _authService.GetStoredToken();
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            }
-
-            using var response = await HttpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    // No releases published yet
-                    _logger.Info($"No releases published yet on {owner}/{repo}");
-                    info.LatestVersion = currentVerStr;
-                    return info;
-                }
-
-                info.ErrorMessage = $"GitHub release check returned: {(int)response.StatusCode} {response.ReasonPhrase}";
-                _logger.Warning(info.ErrorMessage);
-                return info;
-            }
-
-            string json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            string tagName = root.TryGetProperty("tag_name", out var tagProp) ? tagProp.GetString() ?? string.Empty : string.Empty;
-            string releaseTitle = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? tagName : tagName;
-            string body = root.TryGetProperty("body", out var bodyProp) ? bodyProp.GetString() ?? string.Empty : string.Empty;
-            string htmlUrl = root.TryGetProperty("html_url", out var htmlProp) ? htmlProp.GetString() ?? string.Empty : string.Empty;
-
-            DateTimeOffset? publishedAt = null;
-            if (root.TryGetProperty("published_at", out var pubProp) && pubProp.TryGetDateTimeOffset(out var dt))
-            {
-                publishedAt = dt;
-            }
-
-            string cleanTag = tagName.TrimStart('v', 'V').Trim();
-            info.LatestVersion = cleanTag;
-            info.ReleaseTitle = releaseTitle;
-            info.ReleaseNotes = body;
-            info.ReleaseHtmlUrl = htmlUrl;
-            info.PublishedAt = publishedAt;
-
-            // Find executable asset (.exe)
-            if (root.TryGetProperty("assets", out var assetsProp) && assetsProp.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var asset in assetsProp.EnumerateArray())
-                {
-                    string assetName = asset.TryGetProperty("name", out var aName) ? aName.GetString() ?? "" : "";
-                    if (assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                    {
-                        info.DownloadUrl = asset.TryGetProperty("browser_download_url", out var dlProp) ? dlProp.GetString() ?? "" : "";
-                        info.AssetSizeBytes = asset.TryGetProperty("size", out var szProp) ? szProp.GetInt64() : 0;
-                        break;
-                    }
-                }
-            }
-
-            // Compare versions
-            info.IsUpdateAvailable = IsNewerVersion(cleanTag, currentVerStr);
-            if (info.IsUpdateAvailable)
-            {
-                _logger.Info($"Update detected! Current: {currentVerStr}, Latest: {cleanTag} (Asset: {info.DownloadUrl})");
-            }
+            if (!string.IsNullOrWhiteSpace(token)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await _http.SendAsync(request, cancellation);
+            if (response.StatusCode == HttpStatusCode.NotFound) return info;
+            string json;
+            if (response.StatusCode == HttpStatusCode.NotModified && cache != null) json = cache.Json;
             else
             {
-                _logger.Info($"ModSync is up to date (Version {currentVerStr}).");
+                response.EnsureSuccessStatusCode();
+                json = await response.Content.ReadAsStringAsync(cancellation);
             }
-
+            info = ParseRelease(json, CurrentVersion);
+            try
+            {
+                Directory.CreateDirectory(_cacheDirectory);
+                File.WriteAllText(cachePath, JsonSerializer.Serialize(new ReleaseCache { Repository = apiUrl,
+                    Json = json, ETag = response.Headers.ETag?.ToString() ?? cache?.ETag, CheckedAt = DateTimeOffset.UtcNow }));
+            }
+            catch (IOException ex) { _logger.Warning($"Could not cache update metadata: {ex.Message}"); }
             return info;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.Error("Failed to check for ModSync updates", ex);
+            _logger.Error("Failed to check for updates", ex);
             info.ErrorMessage = $"Update check failed: {ex.Message}";
             return info;
         }
     }
 
-    /// <summary>
-    /// Downloads the updated executable and triggers atomic self-replacement and restart.
-    /// </summary>
-    public async Task<(bool Success, string? Error)> DownloadAndApplyUpdateAsync(
-        string downloadUrl,
-        Action<SyncProgressInfo>? progressCallback = null)
+    public static UpdateInfo ParseRelease(string json, string currentVersion)
     {
-        if (string.IsNullOrWhiteSpace(downloadUrl))
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        static string String(JsonElement element, string key) => element.TryGetProperty(key, out var value) ? value.GetString() ?? "" : "";
+        var info = new UpdateInfo { CurrentVersion = currentVersion,
+            LatestVersion = String(root, "tag_name").TrimStart('v', 'V'), ReleaseTitle = String(root, "name"),
+            ReleaseNotes = String(root, "body"), ReleaseHtmlUrl = String(root, "html_url") };
+        if (root.TryGetProperty("published_at", out var date) && date.TryGetDateTimeOffset(out var published)) info.PublishedAt = published;
+        if (!Version.TryParse(info.LatestVersion, out var latest) || !Version.TryParse(currentVersion, out var current) || latest <= current)
+            return info;
+        if (root.TryGetProperty("draft", out var draft) && draft.GetBoolean() ||
+            root.TryGetProperty("prerelease", out var pre) && pre.GetBoolean()) return info;
+        if (!root.TryGetProperty("assets", out var assets)) return info;
+        foreach (var asset in assets.EnumerateArray())
         {
-            return (false, "Invalid download URL for update asset.");
+            var metadata = new UpdateAsset { Url = String(asset, "browser_download_url"),
+                Size = asset.TryGetProperty("size", out var size) ? size.GetInt64() : 0,
+                Sha256 = String(asset, "digest").Replace("sha256:", "", StringComparison.Ordinal).ToLowerInvariant() };
+            string name = String(asset, "name");
+            if (name == "ModSync.exe")
+            {
+                info.DownloadUrl = metadata.Url;
+                info.AssetSizeBytes = metadata.Size;
+                info.AssetSha256 = metadata.Sha256;
+            }
+            else if (name == $"ModSync-from-v{currentVersion}.delta") info.DeltaAsset = metadata;
         }
-
-        string appDir = PathUtils.GetAppDirectory();
-        string currentExePath = Environment.ProcessPath ?? Path.Combine(appDir, "ModSync.exe");
-        string newExePath = Path.Combine(appDir, "ModSync.update.exe");
-        string updaterBatPath = Path.Combine(appDir, "update_modsync.bat");
-
         try
         {
-            _logger.Info($"Starting ModSync update download from: {downloadUrl}");
-            progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Connecting...", "Initiating download from GitHub..."));
+            VerifiedDownload.ValidateAsset(new UpdateAsset { Url = info.DownloadUrl, Size = info.AssetSizeBytes, Sha256 = info.AssetSha256 });
+            info.IsUpdateAvailable = true;
+        }
+        catch (InvalidDataException ex) { info.ErrorMessage = ex.Message; }
+        return info;
+    }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-            request.Headers.Add("User-Agent", "ModSync-App-Updater");
-
-            using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-
-            long? totalBytes = response.Content.Headers.ContentLength;
-            await using var contentStream = await response.Content.ReadAsStreamAsync();
-            await using var fileStream = new FileStream(newExePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-
-            var buffer = new byte[81920];
-            long bytesReadTotal = 0;
-            var stopwatch = Stopwatch.StartNew();
-            int bytesRead;
-
-            while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
-            {
-                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
-                bytesReadTotal += bytesRead;
-
-                double elapsedSec = stopwatch.Elapsed.TotalSeconds;
-                double speed = elapsedSec > 0.2 ? bytesReadTotal / elapsedSec : 0;
-                double? pct = totalBytes.HasValue && totalBytes.Value > 0
-                    ? (double)bytesReadTotal / totalBytes.Value * 100.0
-                    : null;
-
-                string speedEta = speed > 1024
-                    ? (totalBytes.HasValue && speed > 0
-                        ? $"{PathUtils.FormatSpeed(speed)} • {PathUtils.FormatEta((totalBytes.Value - bytesReadTotal) / speed)}"
-                        : PathUtils.FormatSpeed(speed))
-                    : $"{PathUtils.FormatFileSize(bytesReadTotal)} downloaded";
-
-                progressCallback?.Invoke(new SyncProgressInfo
-                {
-                    Status = "Downloading update...",
-                    Percentage = pct,
-                    Details = totalBytes.HasValue
-                        ? $"{PathUtils.FormatFileSize(bytesReadTotal)} of {PathUtils.FormatFileSize(totalBytes.Value)}"
-                        : $"{PathUtils.FormatFileSize(bytesReadTotal)} downloaded",
-                    SpeedOrEta = speedEta
-                });
-            }
-
-            fileStream.Close();
-            _logger.Info($"Downloaded update ({PathUtils.FormatFileSize(bytesReadTotal)}) to {newExePath}");
-
-            // Verify file
-            if (!File.Exists(newExePath) || new FileInfo(newExePath).Length == 0)
-            {
-                return (false, "Downloaded update file is empty or missing.");
-            }
-
-            progressCallback?.Invoke(SyncProgressInfo.Determinate("Restarting...", 100, "Applying update and restarting ModSync..."));
-
-            // Write helper batch script that waits for current PID to exit, copies new exe over current exe, and restarts
-            int currentPid = Environment.ProcessId;
-            string scriptContent = $@"@echo off
-chcp 65001 >nul
-set ""PID={currentPid}""
-set ""TARGET={currentExePath}""
-set ""UPDATE={newExePath}""
-set ""DIR={appDir}""
-
-:: Wait up to 5 seconds for process to exit gracefully
-set /a count=0
-:wait_loop
-timeout /t 1 /nobreak >nul
-set /a count+=1
-tasklist /fi ""PID eq %PID%"" 2>nul | findstr /i ""%PID%"" >nul
-if not errorlevel 1 (
-    if %count% geq 5 (
-        taskkill /F /PID %PID% >nul 2>&1
-    ) else (
-        goto wait_loop
-    )
-)
-
-:: Attempt copy/replace with retry
-set /a retries=0
-:copy_loop
-copy /y ""%UPDATE%"" ""%TARGET%"" >nul 2>&1
-if errorlevel 1 (
-    set /a retries+=1
-    if %retries% geq 10 goto finish
-    timeout /t 1 /nobreak >nul
-    goto copy_loop
-)
-
-del /f /q ""%UPDATE%"" >nul 2>&1
-
-:finish
-start """" /d ""%DIR%"" ""%TARGET%""
-(goto) 2>nul & del ""%~f0""
-";
-
-            File.WriteAllText(updaterBatPath, scriptContent);
-            _logger.Info($"Generated updater script at {updaterBatPath}. Launching restart sequence.");
-
-            // Launch updater script detached
-            var psi = new ProcessStartInfo
-            {
-                FileName = updaterBatPath,
-                UseShellExecute = true,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = appDir
-            };
-
-            Process.Start(psi);
-
-            // Clean shutdown of current instance
+    /// <summary>Builds a verified staged executable without modifying or restarting the current application.</summary>
+    public async Task<string> PrepareUpdateAsync(UpdateInfo update, string currentExe,
+        Action<SyncProgressInfo>? progress = null, CancellationToken cancellation = default)
+    {
+        var full = new UpdateAsset { Url = update.DownloadUrl, Size = update.AssetSizeBytes, Sha256 = update.AssetSha256 };
+        VerifiedDownload.ValidateAsset(full);
+        string directory = Path.GetDirectoryName(Path.GetFullPath(currentExe))!;
+        Directory.CreateDirectory(_cacheDirectory);
+        string staged = Path.Combine(directory, "ModSync.update.exe");
+        if (File.Exists(staged) && (File.GetAttributes(staged) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("Linked update staging files are not supported.");
+        var downloader = new VerifiedDownload(_http);
+        bool reconstructed = false;
+        if (update.DeltaAsset is { } delta && delta.Size < full.Size)
+        {
             try
             {
-                Application.Current?.Dispatcher?.Invoke(() =>
-                {
-                    Application.Current.Shutdown();
-                });
+                VerifiedDownload.ValidateAsset(delta);
+                string patch = Path.Combine(_cacheDirectory, delta.Sha256 + ".delta");
+                await downloader.DownloadAsync(delta, patch, progress, cancellation);
+                progress?.Invoke(SyncProgressInfo.Indeterminate("Preparing update...", "Verifying the smaller download..."));
+                await Task.Run(() => BinaryDelta.Apply(currentExe, patch, staged), cancellation);
+                reconstructed = new FileInfo(staged).Length == full.Size && BinaryDelta.Hash(staged).Equals(full.Sha256, StringComparison.OrdinalIgnoreCase);
+                if (!reconstructed) throw new InvalidDataException("Patch target differs from the release executable.");
             }
-            catch { }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warning($"Delta update unavailable; using full download: {ex.Message}");
+                progress?.Invoke(SyncProgressInfo.Indeterminate("Downloading update...", "Using the full download for this version..."));
+            }
+        }
+        if (!reconstructed)
+        {
+            string downloaded = Path.Combine(_cacheDirectory, full.Sha256 + ".exe");
+            await downloader.DownloadAsync(full, downloaded, progress, cancellation);
+            File.Copy(downloaded, staged, overwrite: true);
+        }
+        if (new FileInfo(staged).Length != full.Size || !BinaryDelta.Hash(staged).Equals(full.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Staged update checksum failed.");
+        var version = FileVersionInfo.GetVersionInfo(staged);
+        if (version.FileMajorPart + "." + version.FileMinorPart + "." + version.FileBuildPart != update.LatestVersion)
+            throw new InvalidDataException("Downloaded executable version does not match the release.");
+        return staged;
+    }
 
-            Environment.Exit(0);
+    public void PruneDownloadCache()
+    {
+        if (!Directory.Exists(_cacheDirectory)) return;
+        foreach (var extension in new[] { ".exe", ".delta", ".part" })
+        {
+            var files = new DirectoryInfo(_cacheDirectory).GetFiles("*" + extension)
+                .Where(x => (x.Attributes & FileAttributes.ReparsePoint) == 0).OrderByDescending(x => x.LastWriteTimeUtc);
+            foreach (var file in extension == ".part" ? files.Where(x => x.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-7)) : files.Skip(extension == ".exe" ? 2 : 3))
+            {
+                try { file.Delete(); } catch (IOException ex) { _logger.Warning($"Could not remove old download cache: {ex.Message}"); }
+            }
+        }
+    }
+
+    public async Task<(bool Success, string? Error)> DownloadAndApplyUpdateAsync(UpdateInfo update,
+        Action<SyncProgressInfo>? progressCallback = null, CancellationToken cancellation = default)
+    {
+        if (!await _updateLock.WaitAsync(0, cancellation)) return (false, "An update is already in progress.");
+        try
+        {
+            string current = Environment.ProcessPath ?? throw new IOException("Cannot locate the running executable.");
+            string staged = await PrepareUpdateAsync(update, current, progressCallback, cancellation);
+            var helper = UpdateInstaller.Prepare(current, staged, Environment.ProcessId, update.AssetSha256);
+            var start = new ProcessStartInfo { FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "WindowsPowerShell", "v1.0", "powershell.exe"), UseShellExecute = false, CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Path.GetDirectoryName(current)! };
+            foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper.Script, "-Instructions", helper.Instructions })
+                start.ArgumentList.Add(argument);
+            if (Process.Start(start) == null) throw new IOException("Could not start the update helper.");
+            Application.Current?.Dispatcher.Invoke(() => Application.Current.Shutdown());
             return (true, null);
         }
+        catch (OperationCanceledException) { return (false, "Update paused. You can resume it later."); }
         catch (Exception ex)
         {
-            _logger.Error("Failed to apply application update", ex);
-            try { if (File.Exists(newExePath)) File.Delete(newExePath); } catch { }
-            try { if (File.Exists(updaterBatPath)) File.Delete(updaterBatPath); } catch { }
+            _logger.Error("Update failed", ex);
             return (false, $"Update failed: {ex.Message}");
         }
-    }
-
-    private static (string Owner, string Repo) ParseGitHubOwnerAndRepo(string url)
-    {
-        return PathUtils.ParseGitHubOwnerAndRepo(url);
-    }
-
-    private static bool IsNewerVersion(string latestStr, string currentStr)
-    {
-        if (string.IsNullOrWhiteSpace(latestStr)) return false;
-
-        // Try standard Version parse
-        if (Version.TryParse(NormalizeVersionString(latestStr), out var latestVer) &&
-            Version.TryParse(NormalizeVersionString(currentStr), out var currentVer))
-        {
-            return latestVer > currentVer;
-        }
-
-        // Fallback string compare
-        return !string.Equals(latestStr, currentStr, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeVersionString(string v)
-    {
-        string clean = v.Trim().TrimStart('v', 'V');
-        var parts = clean.Split('.');
-        if (parts.Length == 1) return $"{parts[0]}.0.0";
-        if (parts.Length == 2) return $"{parts[0]}.{parts[1]}.0";
-        return clean;
+        finally { _updateLock.Release(); }
     }
 }

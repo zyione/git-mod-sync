@@ -233,6 +233,119 @@ public class PackSyncTests
         Assert.ThrowsException<InvalidDataException>(() => new PackSyncService(_config).Plan());
     }
 
+    [TestMethod]
+    public async Task ResourceOnlySyncLeavesModsAndShaderSettingsUntouchedAndIsIdempotent()
+    {
+        Write(Path.Combine(Repo, "mods", "New.jar"), "new");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Personal.jar"), "personal");
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "resource");
+        Write(Path.Combine(Repo, "shaderpacks", "Shader.zip"), "shader");
+        Write(Path.Combine(Repo, "active-shader.txt"), "Missing.zip");
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), "Pack.zip");
+        var engine = Engine();
+        var first = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(first.Success, first.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "New.jar")));
+        Assert.IsTrue(File.Exists(Path.Combine(_config.ResolvedModsFolder, "Personal.jar")));
+        Assert.IsFalse(Directory.Exists(_config.ResolvedShaderPacksFolder));
+        var pack = Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip");
+        var options = Path.Combine(Instance, "options.txt");
+        var packTime = File.GetLastWriteTimeUtc(pack);
+        var optionsTime = File.GetLastWriteTimeUtc(options);
+        var second = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(second.Success, second.Message);
+        Assert.IsFalse(second.Summary!.HasChanges);
+        Assert.AreEqual(packTime, File.GetLastWriteTimeUtc(pack));
+        Assert.AreEqual(optionsTime, File.GetLastWriteTimeUtc(options));
+    }
+
+    [TestMethod]
+    public async Task ShaderOnlySyncDoesNotReadInvalidResourceOrderOrModifyMods()
+    {
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "resource");
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), "Missing.zip");
+        Write(Path.Combine(Repo, "shaderpacks", "Shader.zip"), "shader");
+        Write(Path.Combine(Repo, "active-shader.txt"), "Shader.zip");
+        var result = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.Shaders);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.IsFalse(Directory.Exists(_config.ResolvedResourcePacksFolder));
+        Assert.IsFalse(Directory.Exists(_config.ResolvedModsFolder));
+        Assert.IsTrue(File.Exists(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip")));
+        Assert.IsFalse(new PackSyncService(_config).Plan(scope: SyncScope.Shaders).HasChanges);
+    }
+
+    [TestMethod]
+    public async Task ModsOnlySyncSkipsAllVisualDeclarations()
+    {
+        Write(Path.Combine(Repo, "mods", "Test.jar"), "mod");
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "resource");
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), "Missing.zip");
+        var result = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.Mods);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.IsTrue(File.Exists(Path.Combine(_config.ResolvedModsFolder, "Test.jar")));
+        Assert.IsFalse(File.Exists(Path.Combine(Instance, "options.txt")));
+        Assert.IsFalse(File.Exists(Path.Combine(Instance, ".modsync-managed-packs.json")));
+    }
+
+    [TestMethod]
+    public void PublishingOrderUsesSharedPacksOnlyAndHighestPriorityFirst()
+    {
+        foreach (var name in new[] { "Base.zip", "Top.zip" })
+        {
+            Write(Path.Combine(Repo, "resourcepacks", name), "resource");
+            Write(Path.Combine(_config.ResolvedResourcePacksFolder, name), "resource");
+        }
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal");
+        var options = "resourcePacks:[\"vanilla\",\"file/Base.zip\",\"file/Top.zip\",\"file/Personal.zip\"]\nfov:90\n";
+        Write(Path.Combine(Instance, "options.txt"), options);
+        _config.Config.PublishResourcePackOrder = true;
+        var plan = new PackSyncService(_config).Plan(push: true);
+        var order = plan.Added.Single(x => x.RelativePath.StartsWith("resourcepack-order.txt"));
+        Assert.IsTrue(order.NewContent!.EndsWith("Top.zip\nBase.zip\n"));
+        Assert.IsFalse(order.NewContent.Contains("Personal"));
+        Assert.AreEqual(options, File.ReadAllText(Path.Combine(Instance, "options.txt")));
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), order.NewContent);
+        Assert.IsFalse(new PackSyncService(_config).Plan(push: true).Changes.Any(x => x.RelativePath.StartsWith("resourcepack-order.txt")));
+    }
+
+    [TestMethod]
+    public async Task UnreadableRepositoryModsAbortBeforeDeletingLocalFiles()
+    {
+        Write(Path.Combine(Repo, "mods", "Locked.jar"), "mod");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Existing.jar"), "existing");
+        using var locked = new FileStream(Path.Combine(Repo, "mods", "Locked.jar"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        await Assert.ThrowsExceptionAsync<IOException>(() => Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true));
+        Assert.AreEqual("existing", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Existing.jar")));
+    }
+
+    [TestMethod]
+    public async Task SettingsChangedAfterPlanningArePreserved()
+    {
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "resource");
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), "Pack.zip");
+        Write(Path.Combine(Instance, "options.txt"), "fov:80\nresourcePacks:[\"vanilla\"]\n");
+        var plan = new PackSyncService(_config).Plan();
+        var newer = "fov:100\nresourcePacks:[\"vanilla\"]\n";
+        Write(Path.Combine(Instance, "options.txt"), newer);
+        var apply = typeof(ModSyncService).GetMethod("ApplyChangesAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var result = await (Task<(bool Success, string? Error)>)apply.Invoke(Engine(), new object?[] { plan, Repo, _config.ResolvedModsFolder, null })!;
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(newer, File.ReadAllText(Path.Combine(Instance, "options.txt")));
+    }
+
+    [TestMethod]
+    public async Task ChangedSourceIsRejectedBeforeReplacingExistingPack()
+    {
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "source");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip"), "existing");
+        var plan = new PackSyncService(_config).Plan();
+        Write(Path.Combine(Repo, "resourcepacks", "Pack.zip"), "changed during copy");
+        var apply = typeof(ModSyncService).GetMethod("ApplyChangesAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var result = await (Task<(bool Success, string? Error)>)apply.Invoke(Engine(), new object?[] { plan, Repo, _config.ResolvedModsFolder, null })!;
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("existing", File.ReadAllText(Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip")));
+    }
+
     private sealed class OfflineGit : IGitService
     {
         public Task<bool> EnsureGitAvailableAsync(Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult(true);

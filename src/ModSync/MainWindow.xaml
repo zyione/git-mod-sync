@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ModSync"
         Width="620"
-        Height="760"
+        Height="800"
         MinWidth="580"
-        MinHeight="720"
+        MinHeight="760"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -112,7 +112,7 @@
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"
                                Foreground="{DynamicResource PrimaryTextBrush}" />
-                    <TextBlock Text="Minecraft Mod Synchronizer"
+                    <TextBlock Text="Your Minecraft modpack, in sync"
                                FontSize="13"
                                Foreground="{DynamicResource SecondaryTextBrush}"
                                HorizontalAlignment="Center"
@@ -389,14 +389,20 @@
                         </StackPanel>
                     </Border>
 
+                    <Button x:Name="PauseUpdateButton" Content="Pause Download" Visibility="Collapsed" Style="{StaticResource GhostButtonStyle}" Click="PauseUpdate_Click" Margin="0,0,0,8" />
                     <!-- Primary Action: Sync Mods -->
                     <Button x:Name="SyncModsButton"
-                            Content="Sync Modpack"
+                            Content="Sync All"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Height="48"
                             Margin="0,0,0,10"
                             Click="SyncMods_Click" />
 
+                    <UniformGrid Columns="3" Margin="0,0,0,10">
+                        <Button x:Name="SyncOnlyModsButton" Content="Mods" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,6,0" Height="36" FontSize="12" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" />
+                        <Button x:Name="SyncResourcesButton" Content="Resource Packs" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,3,0" Height="36" FontSize="12" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" />
+                        <Button x:Name="SyncShadersButton" Content="Shaders" Style="{StaticResource SecondaryButtonStyle}" Margin="6,0,0,0" Height="36" FontSize="12" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" />
+                    </UniformGrid>
                     <!-- Secondary Action: Push Mods -->
                     <Button x:Name="PushModsButton"
                             Content="Push Modpack"
@@ -802,7 +808,15 @@
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <TextBlock Text="Use Repository Active Shader" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
                                                 <CheckBox x:Name="EnforceActiveShaderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
-                                            </Grid>                                            <!-- Sync Fabric Loader Toggle -->
+                                            </Grid>                                            <Grid Margin="0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel Margin="0,0,12,0">
+                                                    <TextBlock Text="Publish Resource Pack Order" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" />
+                                                    <TextBlock Text="Include shared pack priority from Minecraft when pushing" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <CheckBox x:Name="PublishPackOrderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
+                                            </Grid>
+                                            <!-- Sync Fabric Loader Toggle -->
                                             <Grid Margin="0,5">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1145,7 +1159,7 @@
 
                         <!-- ================= 7. SYNC CONFIRMATION MODAL ================= -->
                         <StackPanel x:Name="SyncConfirmSheet" Visibility="Collapsed">
-                            <TextBlock Text="Sync Modpack from GitHub?"
+                            <TextBlock x:Name="SyncConfirmTitleText" Text="Sync All from GitHub?"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"

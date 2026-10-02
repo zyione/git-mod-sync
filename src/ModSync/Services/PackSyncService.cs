@@ -20,7 +20,7 @@ public class PackSyncService
     }
 
     // Walk explicitly so junctions/symlinks cannot escape the managed directories.
-    private static IEnumerable<string> SafeFiles(string directory)
+    internal static IEnumerable<string> SafeFiles(string directory, bool recursive = true)
     {
         if (!Directory.Exists(directory)) yield break;
         if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
@@ -31,14 +31,15 @@ public class PackSyncService
                 throw new IOException($"Linked asset file is not supported: {file}");
             yield return file;
         }
-        foreach (var child in Directory.GetDirectories(directory))
-            foreach (var file in SafeFiles(child)) yield return file;
+        if (recursive)
+            foreach (var child in Directory.GetDirectories(directory).Where(x => Path.GetFileName(x) != ".git"))
+                foreach (var file in SafeFiles(child)) yield return file;
     }
 
-    public static Dictionary<string, ModFileItem> ScanPacks(string folder, bool resourcePacks)
+    public static Dictionary<string, ModFileItem> ScanPacks(string folder, bool resourcePacks, bool hashContents = true)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in SafeFiles(folder))
+        foreach (var file in SafeFiles(folder, resourcePacks))
         {
             var relative = Path.GetRelativePath(folder, file).Replace('\\', '/');
             var parts = relative.Split('/');
@@ -47,7 +48,7 @@ public class PackSyncService
                 : resourcePacks && File.Exists(Path.Combine(folder, parts[0], "pack.mcmeta"));
             if (!included || file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
             result.Add(relative, new ModFileItem { RelativePath = relative, FullPath = file,
-                SizeBytes = new FileInfo(file).Length, Sha256Hash = HashUtils.ComputeSha256(file) });
+                SizeBytes = new FileInfo(file).Length, Sha256Hash = hashContents ? HashUtils.ComputeSha256(file) : "" });
         }
         return result;
     }
@@ -98,12 +99,13 @@ public class PackSyncService
     private static void PlanText(SyncSummary summary, string path, string content, string label, bool isInternal = false)
     {
         EnsureNotLinked(path);
-        if (File.Exists(path) && File.ReadAllText(path) == content) return;
+        string? original = File.Exists(path) ? File.ReadAllText(path) : null;
+        if (original == content) return;
         summary.Changes.Add(new ModChange { RelativePath = label, DestinationPath = path,
-            NewContent = content, IsInternal = isInternal, Type = File.Exists(path) ? ChangeType.Updated : ChangeType.Added });
+            NewContent = content, OriginalContent = original, IsInternal = isInternal, Type = File.Exists(path) ? ChangeType.Updated : ChangeType.Added });
     }
 
-    public SyncSummary Plan(bool push = false)
+    public SyncSummary Plan(bool push = false, SyncScope scope = SyncScope.All)
     {
         var summary = new SyncSummary();
         var cfg = _config.Config;
@@ -116,8 +118,8 @@ public class PackSyncService
         var resources = new Dictionary<string, ModFileItem>();
         var shaders = new Dictionary<string, ModFileItem>();
         foreach (var (kind, local, enabled, resource) in new[] {
-            ("resourcepacks", _config.ResolvedResourcePacksFolder, cfg.SyncResourcePacks, true),
-            ("shaderpacks", _config.ResolvedShaderPacksFolder, cfg.SyncShaderPacks, false) })
+            ("resourcepacks", _config.ResolvedResourcePacksFolder, cfg.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks), true),
+            ("shaderpacks", _config.ResolvedShaderPacksFolder, cfg.SyncShaderPacks && scope.HasFlag(SyncScope.Shaders), false) })
         {
             var remote = Path.Combine(repository, kind);
             if (!enabled || (!push && !Directory.Exists(remote))) continue;
@@ -143,9 +145,14 @@ public class PackSyncService
                         TargetItem = file, DestinationPath = file.FullPath, Type = ChangeType.Removed });
             managed[kind] = repoFiles.Keys.OrderBy(x => x).ToArray();
         }
-        if (push) return summary; // declarations remain administrator-controlled repository metadata
+        if (push)
+        {
+            if (cfg.PublishResourcePackOrder && cfg.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks))
+                PlanPublishedOrder(summary, repository);
+            return summary;
+        }
         var orderFile = Path.Combine(repository, "resourcepack-order.txt");
-        if (cfg.SyncResourcePacks && cfg.EnforcePackOrder && Directory.Exists(Path.Combine(repository, "resourcepacks")) && File.Exists(orderFile))
+        if (scope.HasFlag(SyncScope.ResourcePacks) && cfg.SyncResourcePacks && cfg.EnforcePackOrder && Directory.Exists(Path.Combine(repository, "resourcepacks")) && File.Exists(orderFile))
         {
             var options = Path.Combine(_config.MinecraftFolder, "options.txt");
             var names = resources.Keys.Select(x => x.Split('/')[0]).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -154,7 +161,7 @@ public class PackSyncService
                 ReadDeclaration(orderFile), names, old), "options.txt (resource pack order)");
         }
         var shaderFile = Path.Combine(repository, "active-shader.txt");
-        if (cfg.SyncShaderPacks && cfg.EnforceActiveShader && Directory.Exists(Path.Combine(repository, "shaderpacks")) && File.Exists(shaderFile))
+        if (scope.HasFlag(SyncScope.Shaders) && cfg.SyncShaderPacks && cfg.EnforceActiveShader && Directory.Exists(Path.Combine(repository, "shaderpacks")) && File.Exists(shaderFile))
         {
             var declaration = ReadDeclaration(shaderFile);
             if (declaration.Length != 1 || !shaders.ContainsKey(ValidatePackName(declaration[0])))
@@ -173,6 +180,24 @@ public class PackSyncService
         }
         if (managed.Count > 0) PlanText(summary, manifestPath, JsonSerializer.Serialize(managed), "Pack tracking", isInternal: true);
         return summary;
+    }
+
+    private void PlanPublishedOrder(SyncSummary summary, string repository)
+    {
+        string options = Path.Combine(_config.MinecraftFolder, "options.txt");
+        if (!File.Exists(options)) throw new InvalidDataException("Open Minecraft and select resource packs before publishing their order.");
+        var match = Regex.Match(File.ReadAllText(options), @"(?m)^resourcePacks:([^\r\n]*)");
+        if (!match.Success) throw new InvalidDataException("Minecraft has no resource pack selection to publish.");
+        var selected = JsonSerializer.Deserialize<List<string>>(match.Groups[1].Value)
+            ?? throw new InvalidDataException("Invalid Minecraft resource pack selection.");
+        // Only already shared packs that remain locally available are eligible. Personal packs never enter the declaration.
+        var shared = ScanPacks(Path.Combine(repository, "resourcepacks"), true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var local = ScanPacks(_config.ResolvedResourcePacksFolder, true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (selected.Any(x => x == null)) throw new InvalidDataException("Invalid Minecraft resource pack selection.");
+        var names = selected.Where(x => x.StartsWith("file/", StringComparison.Ordinal))
+            .Select(x => ValidatePackName(x[5..])).Where(x => shared.Contains(x) && local.Contains(x)).Reverse().Distinct(StringComparer.OrdinalIgnoreCase);
+        string content = "# Highest priority first; published from Minecraft by ModSync\n" + string.Join("\n", names) + "\n";
+        PlanText(summary, Path.Combine(repository, "resourcepack-order.txt"), content, "resourcepack-order.txt (shared pack priority)");
     }
 
     private static string EscapeProperty(string value) => string.Concat(value.Select(c =>
@@ -210,7 +235,7 @@ public class PackSyncService
     public string StatusText()
     {
         var repo = _config.ResolvedRepositoryFolder;
-        static int Count(string path, bool resource) => ScanPacks(path, resource).Keys.Select(x => x.Split('/')[0]).Distinct().Count();
+        static int Count(string path, bool resource) => ScanPacks(path, resource, false).Keys.Select(x => x.Split('/')[0]).Distinct().Count();
         var iris = Path.Combine(_config.MinecraftFolder, "config", "iris.properties");
         var legacy = Path.Combine(_config.MinecraftFolder, "optionsshaders.txt");
         var text = File.Exists(iris) ? File.ReadAllText(iris) : File.Exists(legacy) ? File.ReadAllText(legacy) : "";

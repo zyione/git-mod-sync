@@ -41,6 +41,9 @@ public class AppConfig
     [JsonPropertyName("enforceActiveShader")]
     public bool EnforceActiveShader { get; set; } = true;
 
+    [JsonPropertyName("publishResourcePackOrder")]
+    public bool PublishResourcePackOrder { get; set; } = false;
+
     [JsonPropertyName("repositoryFolder")]
     public string RepositoryFolder { get; set; } = "./repository";
 

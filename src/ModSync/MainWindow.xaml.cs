@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private readonly FabricService _fabricService;
 
     private bool _isBusy;
+    private SyncScope _syncScope = SyncScope.All;
+    private CancellationTokenSource? _updateCancellation;
     private string? _lastBackupFolder;
     private UpdateInfo? _latestUpdateInfo;
     private FabricStatusInfo? _currentFabricStatus;
@@ -66,12 +68,13 @@ public partial class MainWindow : Window
         UpdateStatusCard();
 
         // Force check for application updates on every startup
-        _ = CheckForUpdatesOnStartupAsync();
+        if (_configService.Config.AutoCheckUpdates) _ = CheckForUpdatesOnStartupAsync();
 
         await RefreshAuthStatusAsync();
         await RefreshLocalModCountAsync();
         UpdateIgnoredModsUI();
         RefreshFabricStatusUI();
+        ReadUpdateResult();
     }
 
     #region Status & Information
@@ -221,9 +224,28 @@ public partial class MainWindow : Window
 
     #region Sync Action
 
-    private async void SyncMods_Click(object sender, RoutedEventArgs e)
+    private async void SyncMods_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.All);
+    private async void SyncOnlyMods_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Mods);
+    private async void SyncResources_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.ResourcePacks);
+    private async void SyncShaders_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Shaders);
+
+    private async Task BeginSyncAsync(SyncScope scope)
     {
         if (_isBusy) return;
+        if (scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks ||
+            scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks)
+        {
+            ShowFeedback("Enable this sync option in Settings first.", false);
+            return;
+        }
+        _syncScope = scope;
+        SyncConfirmTitleText.Text = scope switch
+        {
+            SyncScope.Mods => "Sync Mods from GitHub?",
+            SyncScope.ResourcePacks => "Sync Resource Packs from GitHub?",
+            SyncScope.Shaders => "Sync Shaders from GitHub?",
+            _ => "Sync All from GitHub?"
+        };
 
         if (_configService.Config.RequireConfirmationBeforeSync)
         {
@@ -232,11 +254,11 @@ public partial class MainWindow : Window
 
             try
             {
-                var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+                var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress, _syncScope, refreshRepository: true));
 
                 // Check if Fabric Loader also needs update
                 bool fabricNeedsUpdate = false;
-                if (_configService.Config.SyncFabricLoader)
+                if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader)
                 {
                     _currentFabricStatus = await _fabricService.DetectFabricStatusAsync();
                     fabricNeedsUpdate = _currentFabricStatus != null &&
@@ -244,9 +266,9 @@ public partial class MainWindow : Window
                                         !_currentFabricStatus.IsUpToDate;
                 }
 
-                if (!modChanges.HasChanges && !gitStatus.HasUpdates && !fabricNeedsUpdate)
+                if (!modChanges.HasChanges && !fabricNeedsUpdate)
                 {
-                    ShowFeedback("✓ Modpack and Fabric Loader are up to date.", false);
+                    ShowFeedback("✓ Already up to date. No files were changed.", false);
                     SetBusy(false);
                     return;
                 }
@@ -296,8 +318,9 @@ public partial class MainWindow : Window
             catch (Exception ex)
             {
                 _logger.Error("Error checking sync diffs", ex);
-                // Fall through to regular sync if diff precheck failed
+                ShowFeedback($"Could not check changes: {ex.Message}", true);
                 SetBusy(false);
+                return;
             }
         }
 
@@ -312,7 +335,7 @@ public partial class MainWindow : Window
 
     private async Task PerformSyncAsync(bool skipConfirmation = false)
     {
-        SetBusy(true, "Syncing mods...");
+        SetBusy(true, "Syncing selected files...");
         DismissFeedback();
 
         try
@@ -321,7 +344,7 @@ public partial class MainWindow : Window
                 _syncService.SyncModsAsync(
                     UpdateProgress,
                     forceIfMinecraftRunning: false,
-                    skipConfirmation: skipConfirmation
+                    skipConfirmation: skipConfirmation, scope: _syncScope
                 )
             );
 
@@ -340,7 +363,7 @@ public partial class MainWindow : Window
                         _syncService.SyncModsAsync(
                             UpdateProgress,
                             forceIfMinecraftRunning: true,
-                            skipConfirmation: true
+                            skipConfirmation: true, scope: _syncScope
                         )
                     );
                 }
@@ -356,7 +379,7 @@ public partial class MainWindow : Window
                 bool fabricUpdated = false;
                 string? fabricTarget = null;
 
-                if (_configService.Config.SyncFabricLoader)
+                if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader)
                 {
                     try
                     {
@@ -404,7 +427,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    ShowFeedback("✓ Modpack and Fabric Loader are up to date.", false);
+                    ShowFeedback("✓ Already up to date. No files were changed.", false);
                 }
                 SetStatusDot(true);
             }
@@ -694,6 +717,7 @@ public partial class MainWindow : Window
         SyncShaderPacksToggle.IsChecked = cfg.SyncShaderPacks;
         EnforcePackOrderToggle.IsChecked = cfg.EnforcePackOrder;
         EnforceActiveShaderToggle.IsChecked = cfg.EnforceActiveShader;
+        PublishPackOrderToggle.IsChecked = cfg.PublishResourcePackOrder;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 
@@ -727,6 +751,7 @@ public partial class MainWindow : Window
         cfg.SyncShaderPacks = SyncShaderPacksToggle.IsChecked == true;
         cfg.EnforcePackOrder = EnforcePackOrderToggle.IsChecked == true;
         cfg.EnforceActiveShader = EnforceActiveShaderToggle.IsChecked == true;
+        cfg.PublishResourcePackOrder = PublishPackOrderToggle.IsChecked == true;
         _configService.Save();
         _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}, SyncFabricLoader={cfg.SyncFabricLoader}");
         RefreshFabricStatusUI();
@@ -989,6 +1014,9 @@ public partial class MainWindow : Window
     {
         _isBusy = busy;
         SyncModsButton.IsEnabled = !busy;
+        SyncOnlyModsButton.IsEnabled = !busy;
+        SyncResourcesButton.IsEnabled = !busy;
+        SyncShadersButton.IsEnabled = !busy;
         PushModsButton.IsEnabled = !busy;
 
         if (busy)
@@ -1104,7 +1132,7 @@ public partial class MainWindow : Window
         try
         {
             _logger.Info("Performing startup force check for updates...");
-            var info = await _updateService.CheckForUpdatesAsync();
+            var info = await _updateService.CheckForUpdatesAsync(force: false);
             if (info.IsUpdateAvailable)
             {
                 _latestUpdateInfo = info;
@@ -1180,6 +1208,7 @@ public partial class MainWindow : Window
 
     private async void ApplyUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         if (_latestUpdateInfo == null || string.IsNullOrWhiteSpace(_latestUpdateInfo.DownloadUrl))
         {
             ShowFeedback("No direct update download asset (.exe) available for this release.", true);
@@ -1188,10 +1217,12 @@ public partial class MainWindow : Window
 
         CloseModal();
         SetBusy(true, "Downloading ModSync update...");
+        _updateCancellation = new CancellationTokenSource();
+        PauseUpdateButton.Visibility = Visibility.Visible;
 
         try
         {
-            var (success, error) = await _updateService.DownloadAndApplyUpdateAsync(_latestUpdateInfo.DownloadUrl, UpdateProgress);
+            var (success, error) = await _updateService.DownloadAndApplyUpdateAsync(_latestUpdateInfo, UpdateProgress, _updateCancellation.Token);
             if (!success)
             {
                 SetBusy(false);
@@ -1204,6 +1235,29 @@ public partial class MainWindow : Window
             _logger.Error("Update execution failed", ex);
             ShowFeedback($"Update failed: {ex.Message}", true);
         }
+        finally
+        {
+            _updateCancellation.Dispose();
+            _updateCancellation = null;
+            PauseUpdateButton.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void PauseUpdate_Click(object sender, RoutedEventArgs e) => _updateCancellation?.Cancel();
+
+    private void ReadUpdateResult()
+    {
+        string path = (Environment.ProcessPath ?? Path.Combine(PathUtils.GetAppDirectory(), "ModSync.exe")) + ".update-result.json";
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var result = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            ShowFeedback(result.RootElement.GetProperty("Message").GetString() ?? "Update finished.",
+                !result.RootElement.GetProperty("Success").GetBoolean());
+            File.Delete(path);
+            if (result.RootElement.GetProperty("Success").GetBoolean()) _updateService.PruneDownloadCache();
+        }
+        catch (Exception ex) { _logger.Warning($"Could not read update result: {ex.Message}"); }
     }
 
     private void OpenReleaseWeb_Click(object sender, RoutedEventArgs e)

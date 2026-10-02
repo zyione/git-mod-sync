@@ -28,5 +28,6 @@
   "syncResourcePacks": true,
   "syncShaderPacks": true,
   "enforcePackOrder": true,
-  "enforceActiveShader": true
+  "enforceActiveShader": true,
+  "publishResourcePackOrder": false
 }

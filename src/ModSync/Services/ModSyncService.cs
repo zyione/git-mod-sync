@@ -47,7 +47,8 @@ public class ModSyncService
     public async Task<(bool Success, SyncSummary? Summary, string? Message)> SyncModsAsync(
         Action<SyncProgressInfo>? progressCallback = null,
         bool forceIfMinecraftRunning = false,
-        bool skipConfirmation = false)
+        bool skipConfirmation = false,
+        SyncScope scope = SyncScope.All)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -113,13 +114,14 @@ public class ModSyncService
         }
 
         // Step 3: Scan both directories
-        PathUtils.EnsureDirectoryExists(modsFolder);
+        if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
 
         var repoFiles = ScanFolder(
             repoFolder,
             config.AllowedExtensions,
             config.SyncSubdirectories,
             isRepoFolder: true,
+            scope: scope,
             onProgress: (i, total, file) =>
             {
                 double pct = ((double)i / Math.Max(1, total)) * 100.0;
@@ -134,6 +136,7 @@ public class ModSyncService
             config.AllowedExtensions,
             config.SyncSubdirectories,
             isRepoFolder: false,
+            scope: scope,
             onProgress: (i, total, file) =>
             {
                 double pct = ((double)i / Math.Max(1, total)) * 100.0;
@@ -149,13 +152,13 @@ public class ModSyncService
             "Calculating checksum differences..."));
 
         var summary = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan().Changes);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
 
         if (!summary.HasChanges)
         {
             _logger.Info("Sync check completed: No changes detected. Mods are up to date.");
             progressCallback?.Invoke(SyncProgressInfo.Determinate("Mods up to date", 100, "All mods match GitHub repository."));
-            return (true, summary, "Your mods are already up to date.");
+            return (true, summary, "Already up to date. No files were changed.");
         }
 
         // Step 5: Display summary and ask confirmation if required
@@ -180,7 +183,7 @@ public class ModSyncService
             return (false, summary, applyResult.Error);
         }
 
-        config.FirstSyncCompleted = true;
+        if (scope.HasFlag(SyncScope.Mods)) config.FirstSyncCompleted = true;
         _configService.Save();
 
         _logger.Info($"Sync complete: +{summary.AddedCount}, ~{summary.UpdatedCount}, -{summary.RemovedCount}");
@@ -530,7 +533,7 @@ public class ModSyncService
         }
     }
 
-    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount, int RepoModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null)
+    public async Task<(GitStatusInfo GitStatus, SyncSummary LocalModChanges, int LocalModCount, int RepoModCount)> CheckStatusAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All, bool refreshRepository = false)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -545,19 +548,23 @@ public class ModSyncService
         bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
         if (!repoExists)
         {
-            await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
+            var clone = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
+            if (!clone.Success) throw new IOException(clone.Error);
         }
-        // NOTE: Do NOT pull here. CheckStatusAsync is read-only and must never mutate the
-        // internal repo. Pulling here was the bug: SyncModsAsync would then see an already-
-        // updated repo and report "up to date" even though new mods had not been copied to
-        // the mods folder yet. The actual pull happens inside SyncModsAsync.
+        else if (refreshRepository)
+        {
+            var pull = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
+            if (!pull.Success) throw new IOException(pull.Error);
+        }
+        // A status-only check leaves the clone unchanged. A sync preview explicitly refreshes
+        // the clone first; differences are always computed against the player's files.
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
-        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
+        var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false, scope: scope);
+        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true, scope: scope);
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
-        modChanges.Changes.AddRange(new PackSyncService(_configService).Plan().Changes);
+        modChanges.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
         int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
 
         progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
@@ -599,7 +606,7 @@ public class ModSyncService
         {
             try
             {
-                var repoFiles = ScanFolder(repoFolder, allowedExts, syncSubdirs, isRepoFolder: true);
+                var repoFiles = ScanFolder(repoFolder, allowedExts, syncSubdirs, isRepoFolder: true, hashContents: false);
                 expectedCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
             }
             catch (Exception ex)
@@ -691,9 +698,12 @@ public class ModSyncService
         List<string> allowedExtensions,
         bool searchSubdirs,
         bool isRepoFolder,
-        Action<int, int, string>? onProgress = null)
+        Action<int, int, string>? onProgress = null,
+        SyncScope scope = SyncScope.All,
+        bool hashContents = true)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
+        if (!scope.HasFlag(SyncScope.Mods)) return result;
 
         if (isRepoFolder) folderPath = PackSyncService.RepositoryModsFolder(folderPath);
 
@@ -704,7 +714,7 @@ public class ModSyncService
 
         try
         {
-            var allFiles = Directory.GetFiles(folderPath, "*.*", searchOption);
+            var allFiles = PackSyncService.SafeFiles(folderPath, searchSubdirs).ToArray();
             var extensionSet = new HashSet<string>(allowedExtensions, StringComparer.OrdinalIgnoreCase);
 
             var candidateFiles = new List<string>();
@@ -736,11 +746,11 @@ public class ModSyncService
                 string hash = string.Empty;
                 try
                 {
-                    hash = HashUtils.ComputeSha256(file);
+                    if (hashContents) hash = HashUtils.ComputeSha256(file);
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warning($"Could not compute hash for '{file}': {ex.Message}");
+                    throw new IOException($"Could not verify '{file}'. No changes were applied.", ex);
                 }
 
                 result[relative] = new ModFileItem
@@ -755,6 +765,7 @@ public class ModSyncService
         catch (Exception ex)
         {
             _logger.Error($"Failed to scan folder '{folderPath}'", ex);
+            throw new IOException($"Could not scan '{folderPath}'. No changes were applied.", ex);
         }
 
         return result;
@@ -872,7 +883,7 @@ public class ModSyncService
 
                 string actionLabel = change.Type == ChangeType.Added ? "Adding" : "Updating";
                 progressCallback?.Invoke(SyncProgressInfo.Determinate(
-                    "Synchronizing mods...",
+                    "Synchronizing files...",
                     pct,
                     $"{actionLabel}: {change.RelativePath} ({opsCompleted + 1} of {totalOps})",
                     speedEta));
@@ -895,6 +906,8 @@ public class ModSyncService
                     try
                     {
                         File.Copy(sourcePath, tempPath, overwrite: true);
+                        if (change.SourceItem != null && HashUtils.ComputeSha256(tempPath) != change.SourceItem.Sha256Hash)
+                            throw new InvalidDataException($"'{change.RelativePath}' changed during copying. Retry the sync.");
 
                         // Atomically replace target
                         if (File.Exists(targetPath))
@@ -945,7 +958,7 @@ public class ModSyncService
                 double pct = ((double)opsCompleted / Math.Max(1, totalOps)) * 100.0;
 
                 progressCallback?.Invoke(SyncProgressInfo.Determinate(
-                    "Cleaning obsolete mods...",
+                    "Cleaning obsolete files...",
                     pct,
                     $"Removing: {change.RelativePath} ({opsCompleted} of {totalOps})",
                     $"{totalOps - opsCompleted} item{(totalOps - opsCompleted > 1 ? "s" : "")} left"));
@@ -992,6 +1005,8 @@ public class ModSyncService
             foreach (var change in textChanges)
             {
                 string path = change.DestinationPath!;
+                if ((File.Exists(path) ? File.ReadAllText(path) : null) != change.OriginalContent)
+                    throw new IOException($"'{change.RelativePath}' changed while syncing. Your newer settings were preserved; retry the sync.");
                 PathUtils.EnsureDirectoryExists(Path.GetDirectoryName(path)!);
                 string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 try

@@ -27,7 +27,10 @@ Set-Location $RepoRoot
 # 2. Locate dotnet executable
 $LocalDotnetDir = "$env:LocalAppData\Microsoft\dotnet"
 $LocalDotnetExe = "$LocalDotnetDir\dotnet.exe"
-if (Test-Path $LocalDotnetExe) {
+$UserDotnetExe = Join-Path $env:USERPROFILE '.dotnet/dotnet.exe'
+if (Test-Path $UserDotnetExe) {
+    $DotnetCmd = $UserDotnetExe
+} elseif (Test-Path $LocalDotnetExe) {
     $env:PATH = "$LocalDotnetDir;$env:PATH"
     $DotnetCmd = $LocalDotnetExe
 } elseif (Get-Command "dotnet" -ErrorAction SilentlyContinue) {
@@ -153,18 +156,22 @@ Write-Host "    Executable built successfully ($ExeSizeMb MB)." -ForegroundColor
 # 8. Git Commit, Tag, and Push
 Write-Host "--> Creating Git commit & tag..." -ForegroundColor Cyan
 git add -A
+if ($LASTEXITCODE -ne 0) { throw 'Could not stage release changes.' }
 git commit -m "release: v$NewVersion - $ReleaseNotes" --allow-empty
+if ($LASTEXITCODE -ne 0) { throw 'Could not commit release changes.' }
 
 # Create git tag
 $TagName = "v$NewVersion"
 $ExistingTag = git tag -l $TagName
 if ($ExistingTag) {
-    git tag -d $TagName | Out-Null
+    throw "Tag $TagName already exists. Choose a new version; release tags are never replaced."
 }
 git tag -a $TagName -m "$ReleaseNotes"
+if ($LASTEXITCODE -ne 0) { throw 'Could not create release tag.' }
 
 Write-Host "--> Pushing commits and tag to GitHub..." -ForegroundColor Cyan
-git push origin main --tags
+git push --atomic origin main "refs/tags/$TagName"
+if ($LASTEXITCODE -ne 0) { throw 'Push failed. No release success is reported until the remote accepts it.' }
 
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green

@@ -27,7 +27,7 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 - **Apple-Inspired Graphical Interface:** Soft, spacious, minimalist UI featuring clean typography, rounded cards, subtle hover states, and smooth sheet modals.
 - **Automatic Light/Dark Mode:** Adapts seamlessly to your Windows theme with custom Apple dark mode and light mode palettes.
-- **Zero-Terminal Experience:** Players simply click **Sync Mods**. No Git installation, command prompt, or complex setup required.
+- **Zero-Terminal Experience:** Players simply click **Sync All**. No Git installation, command prompt, or complex setup required.
 - **Self-Contained Single-File Executable:** Compiles to a single standalone `ModSync.exe` with bundled .NET runtime and automated portable Git provisioning (MinGit).
 - **Safe Bidirectional Synchronization:**
   - **Sync (Download):** GitHub Remote $\to$ Internal Repository $\to$ `../mods`
@@ -235,7 +235,7 @@ Normal players who only download/synchronize mods **do not need a GitHub account
        └── config.json
    ```
 3. Double-click `ModSync.exe`.
-4. Click **Sync Mods**:
+4. Click **Sync All**:
    - ModSync inspects your mods folder, compares cryptographic SHA-256 hashes against GitHub, and brings your folder in sync with the repository.
    - If confirmation is enabled, an Apple-inspired review sheet displays the exact added, updated, and removed files before applying.
 
@@ -260,13 +260,13 @@ ModSync features complete **bidirectional ignore support**, allowing players and
 ### Use Cases:
 1. **Personal Client Mods You Want to Keep:**
    - Keep client-only mods (such as Mini-maps, ReplayMod, custom HUDs, or shaders) in your local `mods/` directory.
-   - When you click **Sync Mods**, ModSync will **never delete** these ignored mods.
-   - If an admin clicks **Push Mods**, ModSync will **never upload** your ignored personal mods to GitHub.
+   - When you click **Sync All**, ModSync will **never delete** these ignored mods.
+   - If an admin clicks **Push Modpack**, ModSync will **never upload** your ignored personal mods to GitHub.
    - Even during a **Clean Reinstall**, personal ignored mods are safely preserved in place.
 
 2. **Unwanted Synced Mods:**
    - If the repository contains a mod you don't want or can't run on your hardware (e.g., a heavy shader mod or high-res texture pack jar), add it to your ignore list.
-   - When you click **Sync Mods**, ModSync will **skip downloading** it to your PC.
+   - When you click **Sync All**, ModSync will **skip downloading** it to your PC.
    - When pushing changes, ModSync will **not delete** the mod from GitHub.
 
 ### Supported Pattern Syntax:
@@ -419,7 +419,7 @@ my-modpack-repo/
     └── Complementary.zip
 ```
 
-Click **Sync Modpack** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order and shader declarations are maintained by administrators in the repository; pushing does not upload your personal Minecraft settings.
+Click **Sync All** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order can be published explicitly from Minecraft with the Settings switch described below. Shader declarations remain administrator-managed repository metadata; pushing does not upload your personal Minecraft settings.
 
 Root-level JAR repositories remain supported. If `mods/` exists, ModSync uses it as the authoritative mod source. Visual assets always use repository folders named `resourcepacks/` and `shaderpacks/`. Missing visual folders are skipped during downloads, so existing mod-only repositories leave player visuals untouched. Keep a folder present (for example with a README) when removing its last managed pack.
 
@@ -433,8 +433,9 @@ These configuration keys apply to the local Minecraft instance:
 | `syncShaderPacks` | `true` | Include shader ZIPs |
 | `enforcePackOrder` | `true` | Apply `resourcepack-order.txt` when present |
 | `enforceActiveShader` | `true` | Apply `active-shader.txt` when present |
+| `publishResourcePackOrder` | `false` | Include the enabled shared-pack order from Minecraft when pushing |
 
-The four switches are available in Settings. The dashboard shows local and repository pack counts from the internal clone and the selected shader. Check/sync the repository to refresh that clone; these counts are not a live remote lookup. Asset destinations must be separate from each other, the mods folder, and the internal clone. Linked asset files and directories are rejected.
+The switches are available in Settings. The dashboard shows local and repository pack counts from the internal clone and the selected shader. Sync the repository to refresh that clone; these counts are not a live remote lookup. Asset destinations must be separate from each other, the mods folder, and the internal clone. Linked asset files and directories are rejected.
 
 Example `resourcepack-order.txt`:
 
@@ -457,3 +458,46 @@ ModSync sets `shaderPack` and `enableShaders=true` in `config/iris.properties`, 
 Incoming assets and settings use temporary files followed by atomic replacement. This protects individual files; a whole sync is not a filesystem transaction. A failure can leave some assets updated, so retry after resolving the reported error. Settings and pack ownership tracking are applied only after asset copies/deletions succeed.
 
 ModSync tracks downloaded pack files in `.modsync-managed-packs.json` in the Minecraft instance. Later downloads remove only previously managed pack files that have disappeared from an existing repository asset folder, preserving local-only personal packs and unrelated files. Push treats local supported packs as authoritative, including local-only ZIPs; review the preview before uploading personal packs. Size limits apply to added/updated visual files as well as mods. Large packs may require a separately configured Git LFS workflow; this feature does not add automatic Git LFS provisioning.
+
+## Separate Sync Actions (v1.1.0)
+
+The dashboard keeps **Sync All** as its primary action, with three smaller actions below it:
+
+| Action | What it updates |
+|---|---|
+| **Mods** | Managed JARs and Fabric Loader when enabled |
+| **Resource Packs** | Resource ZIPs/extracted packs and the optional shared pack order |
+| **Shaders** | Shader ZIPs and the optional selected shader |
+| **Sync All** | All enabled categories and Fabric Loader |
+
+Each action refreshes the one shared repository, compares content only for the selected categories, and leaves matching files untouched. Unselected categories and their declarations are skipped, even if they need updates. The confirmation preview uses the refreshed clone. Changes are checked again before applying because files can change while the preview is open. Matching files and matching settings are not rewritten. Dashboard count refreshes inspect filenames/metadata without hashing large packs. Actual synchronization uses SHA-256 and checks copied data before replacement; unreadable files abort the operation instead of being treated as absent.
+
+Settings changed while files are being synchronized are preserved: ModSync stops rather than overwriting those newer preferences. A whole sync is still not a transaction; completed asset changes remain if a later operation fails, and a retry finishes the remaining work.
+
+### Publishing Resource Pack Priority
+
+1. Upload new shared packs with **Push Modpack** first.
+2. In Minecraft, enable the shared packs and arrange them in the desired order. The pack at the top has highest priority. Close Minecraft so its selection is saved.
+3. In ModSync Settings, enable **Publish Resource Pack Order**.
+4. Click **Push Modpack** and review `resourcepack-order.txt (shared pack priority)` in the changes.
+5. Push. Other players apply the declaration with **Resource Packs** or **Sync All**, when order enforcement is enabled.
+
+The published declaration includes only enabled packs already present in the repository and still available locally. Built-in packs and local-only personal packs never enter the declaration. Disabled shared packs are omitted. An empty published order disables the shared packs while preserving built-in and personal selections on players' machines. Leave the publishing switch off for ordinary player use. It controls the declaration only; review the separate file uploads when pushing.
+
+## Verified Portable Updates and Delta Downloads (v1.1.0)
+
+ModSync remains a self-contained portable `ModSync.exe`; existing instance paths and configurations continue to work. The updater now:
+
+- Selects the exact `ModSync.exe` asset and verifies its GitHub SHA-256 digest, declared size, and embedded version.
+- Resumes interrupted downloads when the server supports byte ranges, restarting cleanly when it does not. Partial data is retained for retry; invalid data is discarded. **Pause Download** preserves progress.
+- Throttles progress reporting, retries temporary download failures, and detects stalled reads.
+- Respects the automatic update setting. Background checks use a 15-minute metadata cache; manual checks contact GitHub immediately, with ETag conditional requests.
+- Uses `ModSync-from-v<installed-version>.delta` only when it is smaller than the full EXE. The versioned patch format reuses content-defined chunks of the installed EXE and compresses new content with Brotli. Base checksum, patch checksum, bounded ranges, reconstructed checksum, size, and executable version are verified.
+- Falls back to the full EXE when a patch is missing, incompatible, corrupt, or unusable. Exact verified downloads can be reused from `.updates/`.
+- Waits for ModSync to close, then uses Windows file replacement with `ModSync.exe.previous` as a backup. Replacement or launch failures are recorded, with restoration attempted after replacement. The next launch reports the result. This is recovery from replacement/launch failure, not automatic detection of every possible later application crash.
+
+These checks detect corrupted downloads and incorrect release assets. They do not substitute for Authenticode signing or protect against an attacker who can change the trusted repository's releases.
+
+**Migration:** v1.0.12 and older clients need one full download to install v1.1.0, because their updater cannot apply patches. Clients with v1.1.0 or later can use delta downloads in subsequent releases. Skipped versions outside the three retained patch bases receive a full download. Savings depend on the changed code and bundled runtime; runtime changes can make a full download preferable.
+
+GitHub Actions caches dependency downloads, tests the app, publishes the EXE, generates patches from up to three previous stable releases, verifies exact reconstruction, and uploads only patches smaller than the full EXE. `SHA256SUMS.txt` is published for manual verification. The full EXE remains available for manual installation and older clients. A failed reconstruction stops publication. Manual workflow runs require an existing version tag; release tags are never recreated by the local publisher.

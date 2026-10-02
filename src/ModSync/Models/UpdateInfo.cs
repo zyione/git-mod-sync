@@ -15,6 +15,15 @@ public class UpdateInfo
     public string ReleaseHtmlUrl { get; set; } = string.Empty;
     public DateTimeOffset? PublishedAt { get; set; }
     public string? ErrorMessage { get; set; }
+    public string AssetSha256 { get; set; } = "";
+    public UpdateAsset? DeltaAsset { get; set; }
 
     public string FormattedSize => AssetSizeBytes > 0 ? Utils.PathUtils.FormatFileSize(AssetSizeBytes) : string.Empty;
+}
+
+public class UpdateAsset
+{
+    public string Url { get; set; } = "";
+    public long Size { get; set; }
+    public string Sha256 { get; set; } = "";
 }
