@@ -1,6 +1,6 @@
 # ModSync
 
-**ModSync** is a lightweight, zero-configuration Windows application for synchronizing a Minecraft `mods/` directory with an authoritative GitHub repository.
+**ModSync** is a lightweight Windows application for synchronizing Minecraft mods, resource packs, and shaderpacks with one authoritative GitHub repository.
 
 Designed specifically for non-technical players, ModSync requires no Git knowledge or manual terminal commands, while providing mod pack administrators with safe, one-click push capabilities and secure credential storage.
 
@@ -34,6 +34,7 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
   - **Push (Upload):** `../mods` $\to$ Internal Repository $\to$ GitHub Remote
 - **Non-Destructive File Protection:** Only synchronizes specified mod files (`*.jar`). Never deletes unrelated files such as `README.txt`, configs, or `disabled-mods/`.
 - **SHA-256 Checksums:** Compares mod files by cryptographic content hash rather than relying solely on filenames or timestamps.
+- **Single Repository Modpacks:** Sync mods, resource packs (ZIPs or extracted folders), shader ZIPs, resource pack precedence, and an optional active shader in one pass. Existing repositories with root-level JARs remain supported.
 - **Atomic File Updates:** Copies incoming mods to `.tmp` files before renaming/replacing to prevent corrupted partial downloads. Includes automatic retry logic for locked files.
 - **Active Minecraft Detection:** Warns users if Java/Minecraft or popular launchers (`javaw.exe`, `MinecraftLauncher.exe`) are currently open.
 - **Automatic Application Updates:** In-app updater checks for new releases on GitHub, previews release notes and file sizes, streams downloads with live progress, and cleanly restarts ModSync via an atomic self-deleting batch process.
@@ -395,4 +396,64 @@ To give another admin push permissions:
 - Verify that your token has the `repo` scope.
 
 ### Will ModSync Delete My Configs or Shaders?
-- **No.** ModSync only manages files matching `allowedExtensions` (`.jar` by default). Subfolders, config files, shader packs, screenshots, and logs in the Minecraft folder are completely ignored and preserved.
+- ModSync preserves unrelated files, worlds, screenshots, and settings. When visual asset synchronization is enabled, it updates repository resource packs and shaderpacks. Personal packs remain on disk during downloads. Optional declarations change only the resource pack list and active shader settings.
+
+## Resource Packs and Shaders in One Repository
+
+Use this layout in the modpack repository (separate from the ModSync application source):
+
+```text
+my-modpack-repo/
+├── fabric-version.txt
+├── minecraft-version.txt
+├── resourcepack-order.txt       # Optional: highest priority first
+├── active-shader.txt            # Optional: one shader ZIP filename
+├── mods/
+│   └── example.jar
+├── resourcepacks/
+│   ├── CustomUI.zip
+│   └── BaseTextures/
+│       ├── pack.mcmeta
+│       └── assets/
+└── shaderpacks/
+    └── Complementary.zip
+```
+
+Click **Sync Modpack** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order and shader declarations are maintained by administrators in the repository; pushing does not upload your personal Minecraft settings.
+
+Root-level JAR repositories remain supported. If `mods/` exists, ModSync uses it as the authoritative mod source. Visual assets always use repository folders named `resourcepacks/` and `shaderpacks/`. Missing visual folders are skipped during downloads, so existing mod-only repositories leave player visuals untouched. Keep a folder present (for example with a README) when removing its last managed pack.
+
+These configuration keys apply to the local Minecraft instance:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `resourcePacksFolder` | `"resourcepacks"` | Local destination, relative to the parent of the resolved mods folder; absolute paths also work |
+| `shaderPacksFolder` | `"shaderpacks"` | Local shader destination, resolved the same way |
+| `syncResourcePacks` | `true` | Include resource ZIPs and extracted folders with a root `pack.mcmeta` |
+| `syncShaderPacks` | `true` | Include shader ZIPs |
+| `enforcePackOrder` | `true` | Apply `resourcepack-order.txt` when present |
+| `enforceActiveShader` | `true` | Apply `active-shader.txt` when present |
+
+The four switches are available in Settings. The dashboard shows local and repository pack counts from the internal clone and the selected shader. Check/sync the repository to refresh that clone; these counts are not a live remote lookup. Asset destinations must be separate from each other, the mods folder, and the internal clone. Linked asset files and directories are rejected.
+
+Example `resourcepack-order.txt`:
+
+```text
+# Highest priority first, matching Minecraft's in-game display
+CustomUI.zip
+BaseTextures
+```
+
+ModSync writes the reverse order into `options.txt`: built-in packs (with `vanilla` first), declared repository packs from lowest to highest priority, then existing personal packs. Personal packs therefore retain priority above the shared stack. Only declared repository packs are activated; other repository packs are still downloaded. Blank lines and `#` comments are ignored. Duplicate, unsafe, or missing pack names stop synchronization before asset writes. Malformed existing `resourcePacks` JSON also stops order enforcement; disable enforcement to keep that setting untouched.
+
+Example `active-shader.txt`:
+
+```text
+Complementary.zip
+```
+
+ModSync sets `shaderPack` and `enableShaders=true` in `config/iris.properties`, preserving other properties. It uses an existing `optionsshaders.txt` as a legacy fallback when Iris is absent. Iris detection includes mods incoming from the repository. If no shader configuration exists, it creates Iris settings; the shader loader must still be installed as a mod. Shader names are escaped for Java properties. Disabling enforcement or omitting either declaration leaves its corresponding player settings unchanged.
+
+Incoming assets and settings use temporary files followed by atomic replacement. This protects individual files; a whole sync is not a filesystem transaction. A failure can leave some assets updated, so retry after resolving the reported error. Settings and pack ownership tracking are applied only after asset copies/deletions succeed.
+
+ModSync tracks downloaded pack files in `.modsync-managed-packs.json` in the Minecraft instance. Later downloads remove only previously managed pack files that have disappeared from an existing repository asset folder, preserving local-only personal packs and unrelated files. Push treats local supported packs as authoritative, including local-only ZIPs; review the preview before uploading personal packs. Size limits apply to added/updated visual files as well as mods. Large packs may require a separately configured Git LFS workflow; this feature does not add automatic Git LFS provisioning.

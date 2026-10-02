@@ -18,6 +18,9 @@ public class ModChange
     public ChangeType Type { get; set; }
     public ModFileItem? SourceItem { get; set; }
     public ModFileItem? TargetItem { get; set; }
+    public string? DestinationPath { get; set; }
+    public string? NewContent { get; set; }
+    public bool IsInternal { get; set; }
 
     public string Symbol => Type switch
     {

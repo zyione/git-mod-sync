@@ -23,6 +23,24 @@ public class AppConfig
     [JsonPropertyName("modsFolder")]
     public string ModsFolder { get; set; } = "./mods";
 
+    [JsonPropertyName("resourcePacksFolder")]
+    public string ResourcePacksFolder { get; set; } = "resourcepacks";
+
+    [JsonPropertyName("shaderPacksFolder")]
+    public string ShaderPacksFolder { get; set; } = "shaderpacks";
+
+    [JsonPropertyName("syncResourcePacks")]
+    public bool SyncResourcePacks { get; set; } = true;
+
+    [JsonPropertyName("syncShaderPacks")]
+    public bool SyncShaderPacks { get; set; } = true;
+
+    [JsonPropertyName("enforcePackOrder")]
+    public bool EnforcePackOrder { get; set; } = true;
+
+    [JsonPropertyName("enforceActiveShader")]
+    public bool EnforceActiveShader { get; set; } = true;
+
     [JsonPropertyName("repositoryFolder")]
     public string RepositoryFolder { get; set; } = "./repository";
 

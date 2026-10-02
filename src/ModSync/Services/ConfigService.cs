@@ -35,6 +35,11 @@ public class ConfigService
     /// </summary>
     public string ResolvedRepositoryFolder => PathUtils.ResolveAppPath(Config.RepositoryFolder);
 
+    public string MinecraftFolder => Path.GetDirectoryName(ResolvedModsFolder)!;
+    public string ResolvedResourcePacksFolder => ResolveAssetFolder(Config.ResourcePacksFolder);
+    public string ResolvedShaderPacksFolder => ResolveAssetFolder(Config.ShaderPacksFolder);
+    private string ResolveAssetFolder(string path) => Path.GetFullPath(Path.Combine(MinecraftFolder, path));
+
     public ConfigService(LoggingService logger)
     {
         _logger = logger;

@@ -109,6 +109,7 @@ public partial class MainWindow : Window
         {
             var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync());
             UpdateModCountBadge(localCount, expectedCount);
+            PackStatusText.Text = await Task.Run(() => new PackSyncService(_configService).StatusText());
         }
         catch (Exception ex)
         {
@@ -245,7 +246,7 @@ public partial class MainWindow : Window
 
                 if (!modChanges.HasChanges && !gitStatus.HasUpdates && !fabricNeedsUpdate)
                 {
-                    ShowFeedback("✓ Mods and Fabric Loader are up to date.", false);
+                    ShowFeedback("✓ Modpack and Fabric Loader are up to date.", false);
                     SetBusy(false);
                     return;
                 }
@@ -403,7 +404,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    ShowFeedback("✓ Mods and Fabric Loader are up to date.", false);
+                    ShowFeedback("✓ Modpack and Fabric Loader are up to date.", false);
                 }
                 SetStatusDot(true);
             }
@@ -689,6 +690,10 @@ public partial class MainWindow : Window
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
         AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
         SyncFabricLoaderToggle.IsChecked = cfg.SyncFabricLoader;
+        SyncResourcePacksToggle.IsChecked = cfg.SyncResourcePacks;
+        SyncShaderPacksToggle.IsChecked = cfg.SyncShaderPacks;
+        EnforcePackOrderToggle.IsChecked = cfg.EnforcePackOrder;
+        EnforceActiveShaderToggle.IsChecked = cfg.EnforceActiveShader;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 
@@ -718,6 +723,10 @@ public partial class MainWindow : Window
         cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
         cfg.AutoCheckUpdates = AutoCheckUpdatesToggle.IsChecked == true;
         cfg.SyncFabricLoader = SyncFabricLoaderToggle.IsChecked == true;
+        cfg.SyncResourcePacks = SyncResourcePacksToggle.IsChecked == true;
+        cfg.SyncShaderPacks = SyncShaderPacksToggle.IsChecked == true;
+        cfg.EnforcePackOrder = EnforcePackOrderToggle.IsChecked == true;
+        cfg.EnforceActiveShader = EnforceActiveShaderToggle.IsChecked == true;
         _configService.Save();
         _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}, SyncFabricLoader={cfg.SyncFabricLoader}");
         RefreshFabricStatusUI();

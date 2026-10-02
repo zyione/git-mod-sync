@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ModSync"
         Width="620"
-        Height="670"
+        Height="760"
         MinWidth="580"
-        MinHeight="620"
+        MinHeight="720"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -207,6 +207,12 @@
                         </Grid>
                     </Border>
 
+                    <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18,12" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Resource Packs &amp; Shaders" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" />
+                            <TextBlock x:Name="PackStatusText" Text="Counts available after checking the repository" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
                     <!-- Fabric Loader Version Card (Apple Design) -->
                     <Border x:Name="FabricCard"
                             Visibility="Visible"
@@ -385,7 +391,7 @@
 
                     <!-- Primary Action: Sync Mods -->
                     <Button x:Name="SyncModsButton"
-                            Content="Sync Mods"
+                            Content="Sync Modpack"
                             Style="{StaticResource PrimaryButtonStyle}"
                             Height="48"
                             Margin="0,0,0,10"
@@ -393,7 +399,7 @@
 
                     <!-- Secondary Action: Push Mods -->
                     <Button x:Name="PushModsButton"
-                            Content="Push Mods"
+                            Content="Push Modpack"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Height="42"
                             Margin="0,0,0,16"
@@ -780,7 +786,23 @@
                                             <!-- Divider -->
                                             <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
 
-                                            <!-- Sync Fabric Loader Toggle -->
+                                            <Grid Margin="0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Sync Resource Packs" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
+                                                <CheckBox x:Name="SyncResourcePacksToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
+                                            </Grid>                                            <Grid Margin="0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Sync Shaderpacks" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
+                                                <CheckBox x:Name="SyncShaderPacksToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
+                                            </Grid>                                            <Grid Margin="0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Enforce Resource Pack Order" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
+                                                <CheckBox x:Name="EnforcePackOrderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
+                                            </Grid>                                            <Grid Margin="0,7">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Use Repository Active Shader" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
+                                                <CheckBox x:Name="EnforceActiveShaderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
+                                            </Grid>                                            <!-- Sync Fabric Loader Toggle -->
                                             <Grid Margin="0,5">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1123,7 +1145,7 @@
 
                         <!-- ================= 7. SYNC CONFIRMATION MODAL ================= -->
                         <StackPanel x:Name="SyncConfirmSheet" Visibility="Collapsed">
-                            <TextBlock Text="Sync Mods from GitHub?"
+                            <TextBlock Text="Sync Modpack from GitHub?"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"

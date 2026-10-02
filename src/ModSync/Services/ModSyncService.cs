@@ -149,6 +149,7 @@ public class ModSyncService
             "Calculating checksum differences..."));
 
         var summary = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan().Changes);
 
         if (!summary.HasChanges)
         {
@@ -277,6 +278,10 @@ public class ModSyncService
 
         // Calculate differences (source is local mods, target is repo)
         var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true).Changes);
+        foreach (var change in summary.Added.Concat(summary.Updated))
+            if (change.SourceItem != null && change.SourceItem.SizeBytes >= config.MaxFileSizeMb * 1024 * 1024)
+                return (false, summary, $"File '{change.RelativePath}' exceeds the {config.MaxFileSizeMb}MB upload limit.");
 
         if (!summary.HasChanges)
         {
@@ -359,6 +364,7 @@ public class ModSyncService
 
         // Source is local mods, Target is repo!
         var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true).Changes);
         return (true, summary, null);
     }
 
@@ -411,6 +417,9 @@ public class ModSyncService
                 var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
                 if (!pullResult.Success) return (false, null, 0, pullResult.Error);
             }
+
+            // Validate visual asset declarations before a clean reinstall changes any files.
+            var packChanges = new PackSyncService(_configService).Plan();
 
             // Step 1: Backup existing mods if any exist (0% -> 40%)
             string? backupDir = null;
@@ -508,6 +517,9 @@ public class ModSyncService
             config.FirstSyncCompleted = true;
             _configService.Save();
 
+            var packResult = await ApplyChangesAsync(packChanges, repoFolder, modsFolder, progressCallback);
+            if (!packResult.Success) return (false, backupDir, copied, packResult.Error);
+
             _logger.Info($"Clean reinstall complete: {copied} mods copied.");
             return (true, backupDir, copied, null);
         }
@@ -545,6 +557,7 @@ public class ModSyncService
         var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
+        modChanges.Changes.AddRange(new PackSyncService(_configService).Plan().Changes);
         int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
 
         progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
@@ -643,6 +656,9 @@ public class ModSyncService
         }
 
         var extSet = new HashSet<string>(allowedExtensions, StringComparer.OrdinalIgnoreCase);
+        bool hasModsFolder = treeProp.EnumerateArray().Any(item =>
+            item.TryGetProperty("path", out var p) && p.GetString() == "mods" &&
+            item.TryGetProperty("type", out var t) && t.GetString() == "tree");
         int count = 0;
         foreach (var item in treeProp.EnumerateArray())
         {
@@ -650,6 +666,12 @@ public class ModSyncService
             if (!string.Equals(type, "blob", StringComparison.OrdinalIgnoreCase)) continue;
 
             string path = item.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
+            if (hasModsFolder)
+            {
+                if (!path.StartsWith("mods/", StringComparison.Ordinal)) continue;
+                path = path[5..];
+            }
+            if (!_configService.Config.SyncSubdirectories && path.Contains('/')) continue;
             string ext = Path.GetExtension(path);
             if (extSet.Contains(ext) && !_ignoreService.IsIgnored(path))
             {
@@ -672,6 +694,8 @@ public class ModSyncService
         Action<int, int, string>? onProgress = null)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
+
+        if (isRepoFolder) folderPath = PackSyncService.RepositoryModsFolder(folderPath);
 
         if (!Directory.Exists(folderPath))
             return result;
@@ -819,10 +843,11 @@ public class ModSyncService
     {
         try
         {
-            var itemsToCopy = summary.Changes.Where(c => c.Type == ChangeType.Added || c.Type == ChangeType.Updated).ToList();
+            var textChanges = summary.Changes.Where(c => c.NewContent != null).ToList();
+            var itemsToCopy = summary.Changes.Where(c => c.NewContent == null && (c.Type == ChangeType.Added || c.Type == ChangeType.Updated)).ToList();
             var itemsToRemove = summary.Changes.Where(c => c.Type == ChangeType.Removed).ToList();
 
-            int totalOps = itemsToCopy.Count + itemsToRemove.Count;
+            int totalOps = itemsToCopy.Count + itemsToRemove.Count + textChanges.Count;
             long totalBytes = itemsToCopy.Sum(c => c.SourceItem?.SizeBytes ?? 0);
 
             var stopwatch = Stopwatch.StartNew();
@@ -852,9 +877,11 @@ public class ModSyncService
                     $"{actionLabel}: {change.RelativePath} ({opsCompleted + 1} of {totalOps})",
                     speedEta));
 
-                string sourcePath = Path.Combine(sourceDir, change.RelativePath);
-                string targetPath = Path.Combine(targetDir, change.RelativePath);
-                string tempPath = targetPath + ".tmp";
+                string sourcePath = change.SourceItem?.FullPath ?? Path.Combine(sourceDir, change.RelativePath);
+                string targetRoot = targetDir == _configService.ResolvedRepositoryFolder
+                    ? PackSyncService.RepositoryModsFolder(targetDir) : targetDir;
+                string targetPath = change.DestinationPath ?? Path.Combine(targetRoot, change.RelativePath);
+                string tempPath = targetPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
                 string targetSubdir = Path.GetDirectoryName(targetPath) ?? targetDir;
                 PathUtils.EnsureDirectoryExists(targetSubdir);
@@ -923,7 +950,9 @@ public class ModSyncService
                     $"Removing: {change.RelativePath} ({opsCompleted} of {totalOps})",
                     $"{totalOps - opsCompleted} item{(totalOps - opsCompleted > 1 ? "s" : "")} left"));
 
-                string targetPath = Path.Combine(targetDir, change.RelativePath);
+                string targetRoot = targetDir == _configService.ResolvedRepositoryFolder
+                    ? PackSyncService.RepositoryModsFolder(targetDir) : targetDir;
+                string targetPath = change.DestinationPath ?? Path.Combine(targetRoot, change.RelativePath);
                 if (File.Exists(targetPath))
                 {
                     bool deleted = false;
@@ -956,6 +985,23 @@ public class ModSyncService
                         _logger.Error(err, lastEx!);
                         return (false, err);
                     }
+                }
+            }
+
+            // Apply settings and ownership tracking only after every asset operation succeeds.
+            foreach (var change in textChanges)
+            {
+                string path = change.DestinationPath!;
+                PathUtils.EnsureDirectoryExists(Path.GetDirectoryName(path)!);
+                string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    await File.WriteAllTextAsync(temporary, change.NewContent);
+                    File.Move(temporary, path, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temporary)) File.Delete(temporary);
                 }
             }
 

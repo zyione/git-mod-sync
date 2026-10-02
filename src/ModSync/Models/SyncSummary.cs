@@ -7,17 +7,17 @@ public class SyncSummary
 {
     public List<ModChange> Changes { get; set; } = new();
 
-    public int AddedCount => Changes.Count(c => c.Type == ChangeType.Added);
-    public int UpdatedCount => Changes.Count(c => c.Type == ChangeType.Updated);
-    public int RemovedCount => Changes.Count(c => c.Type == ChangeType.Removed);
+    public int AddedCount => Added.Count();
+    public int UpdatedCount => Updated.Count();
+    public int RemovedCount => Removed.Count();
     public int UnchangedCount => Changes.Count(c => c.Type == ChangeType.Unchanged);
     public int IgnoredCount => Changes.Count(c => c.Type == ChangeType.Ignored);
     public int TotalActionableChanges => AddedCount + UpdatedCount + RemovedCount;
 
-    public bool HasChanges => TotalActionableChanges > 0;
+    public bool HasChanges => TotalActionableChanges > 0 || Changes.Any(c => c.IsInternal && c.Type != ChangeType.Unchanged);
 
-    public IEnumerable<ModChange> Added => Changes.Where(c => c.Type == ChangeType.Added);
-    public IEnumerable<ModChange> Updated => Changes.Where(c => c.Type == ChangeType.Updated);
-    public IEnumerable<ModChange> Removed => Changes.Where(c => c.Type == ChangeType.Removed);
+    public IEnumerable<ModChange> Added => Changes.Where(c => !c.IsInternal && c.Type == ChangeType.Added);
+    public IEnumerable<ModChange> Updated => Changes.Where(c => !c.IsInternal && c.Type == ChangeType.Updated);
+    public IEnumerable<ModChange> Removed => Changes.Where(c => !c.IsInternal && c.Type == ChangeType.Removed);
     public IEnumerable<ModChange> Ignored => Changes.Where(c => c.Type == ChangeType.Ignored);
 }
