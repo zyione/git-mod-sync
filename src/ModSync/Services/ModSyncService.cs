@@ -17,6 +17,7 @@ public class ModSyncService
     private readonly ConfigService _configService;
     private readonly IGitService _gitService;
     private readonly AuthenticationService _authService;
+    private readonly Func<string?> _getToken;
     private readonly MinecraftCheckService _mcCheckService;
     private readonly ModIgnoreService _ignoreService;
     private readonly LoggingService _logger;
@@ -30,11 +31,12 @@ public class ModSyncService
         AuthenticationService authService,
         MinecraftCheckService mcCheckService,
         ModIgnoreService ignoreService,
-        LoggingService logger)
+        LoggingService logger, Func<string?>? tokenProvider = null)
     {
         _configService = configService;
         _gitService = gitService;
         _authService = authService;
+        _getToken = tokenProvider ?? authService.GetStoredToken;
         _mcCheckService = mcCheckService;
         _ignoreService = ignoreService;
         _logger = logger;
@@ -92,26 +94,10 @@ public class ModSyncService
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate(
             "Checking repository updates...",
             "Connecting to GitHub..."));
-        string? token = _authService.GetStoredToken();
+        string? token = _getToken();
 
-        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-        bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
-        if (!repoExists)
-        {
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
-            if (!cloneResult.Success)
-            {
-                return (false, null, cloneResult.Error);
-            }
-        }
-        else
-        {
-            var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
-            if (!pullResult.Success)
-            {
-                return (false, null, pullResult.Error);
-            }
-        }
+        try { await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, download: true, token, progressCallback); }
+        catch (Exception ex) { return (false, null, ex.Message); }
 
         // Step 3: Scan both directories
         if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
@@ -196,189 +182,91 @@ public class ModSyncService
     /// </summary>
     public async Task<(bool Success, SyncSummary? Summary, string? Message)> PushModsAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All)
     {
-        var config = _configService.Config;
-        string modsFolder = _configService.ResolvedModsFolder;
-        string repoFolder = _configService.ResolvedRepositoryFolder;
-
-        _logger.Info("Starting Push Mods workflow...");
-
-        // Step 1: Authentication Check
-        string? token = _authService.GetStoredToken();
-        if (string.IsNullOrWhiteSpace(token))
+        string? token = _getToken();
+        if (string.IsNullOrWhiteSpace(token)) return (false, null, "GitHub login is required to push updates.");
+        var uploaded = new List<string>();
+        var summary = new SyncSummary();
+        try
         {
-            _logger.Warning("Push rejected: User is not authenticated.");
-            return (false, null, "GitHub authentication is required to push mod updates.\n\nPlease select [4] GitHub Login first.");
-        }
-
-        // Step 2: Ensure internal repository exists and matches configured repository
-        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-        if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
-        {
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
-            if (!cloneResult.Success)
-                return (false, null, cloneResult.Error);
-        }
-
-        // Step 3: Fetch remote changes FIRST before doing anything
-        var fetchResult = await _gitService.FetchAsync(repoFolder, config.Branch, token, progressCallback);
-        if (!fetchResult.Success)
-        {
-            return (false, null, $"Failed to connect to GitHub remote: {fetchResult.Error}");
-        }
-
-        // Check if remote is ahead
-        var status = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token, progressCallback);
-        if (status.BehindCount > 0)
-        {
-            _logger.Warning($"Push aborted: Remote contains {status.BehindCount} newer commits.");
-            return (false, null, $"Remote repository contains newer changes ({status.BehindCount} new commit(s)).\n\nPlease sync first to download updates before pushing.\nNo files were uploaded.");
-        }
-
-        if (scope != SyncScope.All && status.AheadCount > 0)
-            return (false, null, "The local repository has unpublished commits. Finish pushing the modpack before pushing one category.");
-
-        // Step 4: Scan and compare local mods with internal repo
-        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Comparing mods...", "Scanning local mods folder..."));
-        if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
-
-        var localFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(
-            modsFolder,
-            config.AllowedExtensions,
-            config.SyncSubdirectories,
-            isRepoFolder: false,
-            onProgress: (i, total, file) =>
+            var repositories = await PreparePushAsync(scope, token, progressCallback);
+            // Validate every plan and size limit before changing any repository checkout.
+            var plans = repositories.Select(repo => (Repo: repo, Plan: BuildPushPlan(repo.Scope))).ToArray();
+            foreach (var (_, plan) in plans)
             {
-                double pct = ((double)i / Math.Max(1, total)) * 100.0;
-                progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning local mods...", pct, $"{file} ({i} of {total})"));
-            }) : new Dictionary<string, ModFileItem>();
-
-        var repoFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(
-            repoFolder,
-            config.AllowedExtensions,
-            config.SyncSubdirectories,
-            isRepoFolder: true,
-            onProgress: (i, total, file) =>
-            {
-                double pct = ((double)i / Math.Max(1, total)) * 100.0;
-                progressCallback?.Invoke(SyncProgressInfo.Determinate("Scanning repository files...", pct, $"{file} ({i} of {total})"));
-            }) : new Dictionary<string, ModFileItem>();
-
-        // Check for oversized files (GitHub limits)
-        foreach (var file in localFiles.Values)
-        {
-            if (_ignoreService.IsIgnored(file.RelativePath))
-                continue;
-
-            long sizeMb = file.SizeBytes / (1024 * 1024);
-            if (sizeMb >= config.MaxFileSizeMb)
-            {
-                string msg = $"File '{file.RelativePath}' is {PathUtils.FormatFileSize(file.SizeBytes)}, which exceeds GitHub's {config.MaxFileSizeMb}MB file limit.\nGitHub will reject this upload. Please remove or compress this file.";
-                _logger.Error(msg);
-                return (false, null, msg);
+                summary.Changes.AddRange(plan.Changes);
+                foreach (var change in plan.Added.Concat(plan.Updated))
+                    if (change.SourceItem != null && change.SourceItem.SizeBytes >= _configService.Config.MaxFileSizeMb * 1024 * 1024)
+                        return (false, summary, $"File '{change.RelativePath}' exceeds the {_configService.Config.MaxFileSizeMb}MB upload limit.");
             }
-            if (sizeMb >= config.WarnFileSizeMb)
-            {
-                ConsoleUI.PrintWarning($"Notice: '{file.RelativePath}' is {PathUtils.FormatFileSize(file.SizeBytes)} (near GitHub recommended size limit).");
-            }
-        }
-
-        // Calculate differences (source is local mods, target is repo)
-        var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true, scope: scope).Changes);
-        foreach (var change in summary.Added.Concat(summary.Updated))
-            if (change.SourceItem != null && change.SourceItem.SizeBytes >= config.MaxFileSizeMb * 1024 * 1024)
-                return (false, summary, $"File '{change.RelativePath}' exceeds the {config.MaxFileSizeMb}MB upload limit.");
-
-        if (!summary.HasChanges)
-        {
-            _logger.Info("Push check completed: No changes detected. Nothing to push.");
-            progressCallback?.Invoke(SyncProgressInfo.Determinate("No changes detected", 100, "Mods match GitHub repository."));
-            return (true, summary, "No changes detected.\n\nNothing to push.");
-        }
-
-        // Step 5: Show changes detected
-        ConsoleUI.PrintChangesSummary(summary, "Changes detected:");
-
-        if (config.RequireConfirmationBeforePush)
-        {
-            if (!ConsoleUI.Confirm("Push these changes to GitHub?", defaultYes: true))
-            {
-                _logger.Info("Push cancelled by user at confirmation prompt.");
+            summary.PendingRepositories.AddRange(repositories.Where(repo => repo.PendingCommits > 0).Select(repo => repo.Label));
+            if (!summary.HasChanges) return (true, summary, "No changes detected. Nothing to push.");
+            ConsoleUI.PrintChangesSummary(summary, "Changes to upload:");
+            if (_configService.Config.RequireConfirmationBeforePush && Environment.UserInteractive && !Console.IsInputRedirected && !ConsoleUI.Confirm("Push these changes to GitHub?", defaultYes: true))
                 return (false, null, "Push cancelled: No files were changed on GitHub.");
+            foreach (var (repo, plan) in plans.Where(p => p.Plan.HasChanges || p.Repo.PendingCommits > 0))
+            {
+                if (plan.HasChanges)
+                {
+                    var applied = await ApplyChangesAsync(plan, _configService.ResolvedModsFolder, repo.Folder, progressCallback);
+                    if (!applied.Success) throw new IOException($"{repo.Label}: {applied.Error}");
+                    var paths = plan.Changes.Where(c => c.Type is ChangeType.Added or ChangeType.Updated or ChangeType.Removed)
+                        .Select(c => Path.GetRelativePath(repo.Folder, c.DestinationPath ?? Path.Combine(PackSyncService.RepositoryModsFolder(repo.Folder), c.RelativePath)).Replace('\\', '/')).Distinct().ToArray();
+                    var committed = await _gitService.StageAndCommitAsync(repo.Folder,
+                        $"{repo.Label} update: +{plan.AddedCount} added, -{plan.RemovedCount} removed, ~{plan.UpdatedCount} updated - {DateTime.Now:yyyy-MM-dd HH:mm}", progressCallback, paths);
+                    if (!committed.Success) throw new IOException($"{repo.Label}: {committed.Error}");
+                }
+                var pushed = await _gitService.PushAsync(repo.Folder, repo.Branch, token, progressCallback);
+                if (!pushed.Success) throw new IOException($"{repo.Label}: {pushed.Error}");
+                uploaded.Add(repo.Label);
             }
+            return (true, summary, null);
         }
-
-        // Step 6: Apply changes from ../mods to internal repo
-        var applyResult = await ApplyChangesAsync(summary, sourceDir: modsFolder, targetDir: repoFolder, progressCallback);
-        if (!applyResult.Success)
+        catch (Exception ex)
         {
-            return (false, summary, applyResult.Error);
+            string completed = uploaded.Count == 0 ? "No repositories were uploaded." : $"Already uploaded: {string.Join(", ", uploaded)}.";
+            return (false, summary, ex.Message + "\n" + completed);
         }
-
-        // Step 7: Automated commit message
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
-        string commitMessage = $"{scope} update: +{summary.AddedCount} added, -{summary.RemovedCount} removed, ~{summary.UpdatedCount} updated - {timestamp}";
-
-        var paths = summary.Changes.Where(c => c.Type is ChangeType.Added or ChangeType.Updated or ChangeType.Removed)
-            .Select(c => Path.GetRelativePath(repoFolder, c.DestinationPath ?? Path.Combine(PackSyncService.RepositoryModsFolder(repoFolder), c.RelativePath)).Replace('\\', '/')).Distinct().ToArray();
-        var commitResult = await _gitService.StageAndCommitAsync(repoFolder, commitMessage, progressCallback, paths);
-        if (!commitResult.Success)
-        {
-            return (false, summary, $"Commit failed: {commitResult.Error}");
-        }
-
-        // Step 8: Push to GitHub
-        var pushResult = await _gitService.PushAsync(repoFolder, config.Branch, token, progressCallback);
-        if (!pushResult.Success)
-        {
-            return (false, summary, pushResult.Error);
-        }
-
-        _logger.Info($"Pushed successfully: {commitMessage}");
-        return (true, summary, null);
     }
 
-    /// <summary>
-    /// Computes differences from the perspective of pushing local mods up to GitHub.
-    /// (Local mods = source, Repository = target: new local files are Added, deleted local files are Removed).
-    /// </summary>
+    private SyncSummary BuildPushPlan(SyncScope scope)
+    {
+        var cfg = _configService.Config;
+        var local = ScanFolder(_configService.ResolvedModsFolder, cfg.AllowedExtensions, cfg.SyncSubdirectories, isRepoFolder: false, scope: scope);
+        var remote = ScanFolder(_configService.ResolvedRepositoryFolder, cfg.AllowedExtensions, cfg.SyncSubdirectories, isRepoFolder: true, scope: scope);
+        var summary = CalculateDifferences(local, remote);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true, scope: scope).Changes);
+        return summary;
+    }
+
+    private async Task<IReadOnlyList<SyncRepository>> PreparePushAsync(SyncScope scope, string? token, Action<SyncProgressInfo>? progress)
+    {
+        var repositories = await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, download: false, token, progress, fetch: false);
+        var statuses = await Task.WhenAll(repositories.Select(async repo => (Repo: repo, Status: await _gitService.GetStatusAsync(repo.Folder, repo.Url, repo.Branch, token, progress))));
+        foreach (var (repo, status) in statuses)
+        {
+            if (!status.IsConnected || status.ErrorMessage != null) throw new IOException($"{repo.Label}: {status.ErrorMessage ?? "Could not verify remote status."}");
+            if (status.BehindCount > 0) throw new IOException($"{repo.Label} has newer repository changes. Sync {repo.Label} before pushing this category; other categories do not need a sync.");
+            if (scope != SyncScope.All && status.AheadCount > 0 && repo.Folder.Equals(_configService.ResolvedRepositoryFolder, StringComparison.OrdinalIgnoreCase))
+                throw new IOException($"{repo.Label} has unpublished commits. Use Push Modpack to finish the previous upload before pushing only one category.");
+        }
+        return statuses.Select(item => item.Repo with { PendingCommits = item.Status.AheadCount }).ToArray();
+    }
+
     public async Task<(bool Success, SyncSummary? Summary, string? Message)> GetPushChangesAsync(Action<SyncProgressInfo>? progressCallback = null, SyncScope scope = SyncScope.All)
     {
-        var config = _configService.Config;
-        string modsFolder = _configService.ResolvedModsFolder;
-        string repoFolder = _configService.ResolvedRepositoryFolder;
-        string? token = _authService.GetStoredToken();
-
-        // Ensure internal repo exists and is synced with remote
-        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-        if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
+        try
         {
-            var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
-            if (!cloneResult.Success)
-                return (false, null, cloneResult.Error);
+            var repositories = await PreparePushAsync(scope, _getToken(), progressCallback);
+            var summary = BuildPushPlan(scope);
+            summary.PendingRepositories.AddRange(repositories.Where(repo => repo.PendingCommits > 0).Select(repo => repo.Label));
+            return (true, summary, null);
         }
-        else
-        {
-            var fetchResult = await _gitService.FetchAsync(repoFolder, config.Branch, token, progressCallback);
-            if (!fetchResult.Success)
-                return (false, null, $"Failed to reach GitHub: {fetchResult.Error}");
-        }
-
-        progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods...", "Comparing local mods with repository..."));
-        if (scope.HasFlag(SyncScope.Mods)) PathUtils.EnsureDirectoryExists(modsFolder);
-
-        var localFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false) : new Dictionary<string, ModFileItem>();
-        var repoFiles = scope.HasFlag(SyncScope.Mods) ? ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true) : new Dictionary<string, ModFileItem>();
-
-        // Source is local mods, Target is repo!
-        var summary = CalculateDifferences(sourceFiles: localFiles, targetFiles: repoFiles);
-        summary.Changes.AddRange(new PackSyncService(_configService).Plan(push: true, scope: scope).Changes);
-        return (true, summary, null);
+        catch (Exception ex) { return (false, null, ex.Message); }
     }
 
     /// <summary>
     /// Performs a fresh clean install of all repository mods into the local mods folder.
-    /// Safely backs up existing local mods to mods_backup_YYYY-MM-DD_HHmmss.
+    /// Backs up mods, enabled packs, and pack settings under modsync_backups.
     /// Provides live per-file backup & install progress, transfer speed, and ETA.
     /// </summary>
     public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(
@@ -390,7 +278,7 @@ public class ModSyncService
             var config = _configService.Config;
             string modsFolder = _configService.ResolvedModsFolder;
             string repoFolder = _configService.ResolvedRepositoryFolder;
-            string? token = _authService.GetStoredToken();
+            string? token = _getToken();
 
             _logger.Info("Starting Clean Reinstall workflow...");
             progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking running processes...", "Verifying Minecraft state..."));
@@ -413,18 +301,7 @@ public class ModSyncService
                 }
             }
 
-            // Ensure internal repo is up to date
-            await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-            if (!Directory.Exists(Path.Combine(repoFolder, ".git")))
-            {
-                var cloneResult = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
-                if (!cloneResult.Success) return (false, null, 0, cloneResult.Error);
-            }
-            else
-            {
-                var pullResult = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
-                if (!pullResult.Success) return (false, null, 0, pullResult.Error);
-            }
+            await new RepositorySyncService(_configService, _gitService).PrepareAsync(SyncScope.All, download: true, token, progressCallback);
 
             // Validate visual asset declarations before a clean reinstall changes any files.
             var packChanges = new PackSyncService(_configService).Plan();
@@ -540,26 +417,24 @@ public class ModSyncService
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
         string repoFolder = _configService.ResolvedRepositoryFolder;
-        string? token = _authService.GetStoredToken();
+        string? token = _getToken();
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking repository...", "Querying GitHub status..."));
-        await _gitService.VerifyOrResetRemoteAsync(repoFolder, config.Repository);
-
-        var gitStatus = await _gitService.GetStatusAsync(repoFolder, config.Repository, config.Branch, token, progressCallback);
-
-        bool repoExists = Directory.Exists(Path.Combine(repoFolder, ".git"));
-        if (!repoExists)
+        var repositories = await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, refreshRepository, token, progressCallback, fetch: false);
+        var statuses = await Task.WhenAll(repositories.Select(async repo => (Repo: repo, Status: await _gitService.GetStatusAsync(repo.Folder, repo.Url, repo.Branch, token, progressCallback))));
+        var gitStatus = statuses.FirstOrDefault().Status ?? new GitStatusInfo();
+        if (statuses.Length > 1)
         {
-            var clone = await _gitService.CloneAsync(config.Repository, repoFolder, config.Branch, token, progressCallback);
-            if (!clone.Success) throw new IOException(clone.Error);
+            gitStatus = new GitStatusInfo {
+                RepositoryUrl = string.Join("\n", statuses.Select(s => $"{s.Repo.Label}: {s.Repo.Url}")),
+                Branch = string.Join(", ", statuses.Select(s => $"{s.Repo.Label}: {s.Repo.Branch}")),
+                StatusMessage = string.Join(" • ", statuses.Select(s => $"{s.Repo.Label}: {s.Status.StatusMessage}")),
+                IsCloned = statuses.All(s => s.Status.IsCloned), IsConnected = statuses.All(s => s.Status.IsConnected),
+                AheadCount = statuses.Sum(s => s.Status.AheadCount), BehindCount = statuses.Sum(s => s.Status.BehindCount),
+                LocalCommitHash = gitStatus.LocalCommitHash, LocalCommitDate = gitStatus.LocalCommitDate,
+                RemoteCommitHash = gitStatus.RemoteCommitHash, RemoteCommitDate = gitStatus.RemoteCommitDate
+            };
         }
-        else if (refreshRepository)
-        {
-            var pull = await _gitService.PullOrResetToRemoteAsync(repoFolder, config.Branch, token, progressCallback);
-            if (!pull.Success) throw new IOException(pull.Error);
-        }
-        // A status-only check leaves the clone unchanged. A sync preview explicitly refreshes
-        // the clone first; differences are always computed against the player's files.
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
         var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false, scope: scope);
@@ -577,7 +452,7 @@ public class ModSyncService
     /// Gets the count of local mods installed in the mods folder, and the count of expected
     /// mods configured in the repository (either from local cloned repo or remote GitHub tree).
     /// </summary>
-    public async Task<(int LocalCount, int? ExpectedCount)> GetModCountsAsync()
+    public async Task<(int LocalCount, int? ExpectedCount)> GetModCountsAsync(bool fetchRemoteIfMissing = true)
     {
         var config = _configService.Config;
         string modsFolder = _configService.ResolvedModsFolder;
@@ -618,7 +493,7 @@ public class ModSyncService
         }
 
         // Case B: Repo not cloned yet locally -> Query GitHub Tree API
-        if (!expectedCount.HasValue && !string.IsNullOrWhiteSpace(config.Repository))
+        if (fetchRemoteIfMissing && !expectedCount.HasValue && !string.IsNullOrWhiteSpace(config.Repository))
         {
             try
             {
@@ -645,7 +520,7 @@ public class ModSyncService
         request.Headers.Add("User-Agent", "ModSync-App");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
 
-        string? token = _authService.GetStoredToken();
+        string? token = _getToken();
         if (!string.IsNullOrWhiteSpace(token))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

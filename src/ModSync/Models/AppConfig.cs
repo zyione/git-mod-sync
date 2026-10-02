@@ -14,6 +14,21 @@ public class AppConfig
     [JsonPropertyName("repository")]
     public string Repository { get; set; } = DefaultRepositoryUrl;
 
+    public const string DefaultResourcePackRepositoryUrl = "https://github.com/zyione/4stoogies-resourcepack-list.git";
+    public const string DefaultShaderPackRepositoryUrl = "https://github.com/zyione/4stoogies-shaderpack-list.git";
+
+    [JsonPropertyName("resourcePackRepository")]
+    public string ResourcePackRepository { get; set; } = DefaultResourcePackRepositoryUrl;
+
+    [JsonPropertyName("shaderPackRepository")]
+    public string ShaderPackRepository { get; set; } = DefaultShaderPackRepositoryUrl;
+
+    [JsonPropertyName("resourcePackBranch")]
+    public string ResourcePackBranch { get; set; } = "main";
+
+    [JsonPropertyName("shaderPackBranch")]
+    public string ShaderPackBranch { get; set; } = "main";
+
     [JsonPropertyName("savedRepositories")]
     public List<string> SavedRepositories { get; set; } = new() { DefaultRepositoryUrl };
 

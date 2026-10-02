@@ -214,6 +214,7 @@
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Resource Packs" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ResourceRepoText" Text="4stoogies-resourcepack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                                     <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -226,6 +227,7 @@
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Shaders" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ShaderRepoText" Text="4stoogies-shaderpack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                                     <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -332,7 +334,8 @@
                 </StackPanel>
 
                 <!-- Main Actions Area -->
-                <StackPanel Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center" Width="360">
+                <ScrollViewer x:Name="ActionsScrollViewer" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Center">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="420">
                     
                     <!-- Progress Card (Visible during active tasks) -->
                     <Border x:Name="ProgressArea"
@@ -444,7 +447,7 @@
 
                         <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
 
-                        <Button Content="Repository"
+                        <Button Content="Repositories"
                                 Style="{StaticResource GhostButtonStyle}"
                                 Click="SwitchRepo_Click" />
 
@@ -467,6 +470,7 @@
                                 ToolTip="Backup existing mods and restore a fresh copy from the repository" />
                     </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
 
                 <!-- Feedback / Toast Card (Bottom notification area) -->
                 <Border x:Name="FeedbackCard"
@@ -624,38 +628,42 @@
 
                         <!-- ================= 3. SWITCH REPOSITORY MODAL ================= -->
                         <StackPanel x:Name="SwitchRepoSheet" Visibility="Collapsed">
-                            <TextBlock Text="Switch Repository"
+                            <TextBlock Text="Repositories"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource PrimaryTextBrush}"
                                        Margin="0,0,0,4" />
-                            <TextBlock Text="Change the authoritative mod repository URL."
+                            <TextBlock Text="Each category syncs and pushes independently."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Margin="0,0,0,14" />
 
-                            <TextBlock Text="Repository URL"
-                                       FontSize="11"
-                                       FontWeight="Medium"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Margin="0,0,0,4" />
-                            <TextBox x:Name="RepoUrlInputBox"
-                                     Style="{StaticResource MinimalTextBoxStyle}"
-                                     Margin="0,0,0,10" />
-
-                            <Button Content="Reset to Default (zyione/4stoogies-mod-list)"
-                                    Style="{StaticResource GhostButtonStyle}"
-                                    HorizontalAlignment="Left"
-                                    Margin="0,0,0,16"
-                                    Click="ResetDefaultRepo_Click" />
-
+                            <TextBlock Text="Mods" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5" />
+                            <TextBox x:Name="RepoUrlInputBox" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Margin="0,0,0,5" AutomationProperties.Name="Mods repository URL" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <TextBlock Text="Branch" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBox x:Name="ModsBranchInput" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Width="130" Height="32" Padding="10,4" AutomationProperties.Name="Mods branch" />
+                            </StackPanel>
+                            <TextBlock Text="Resource Packs" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5" />
+                            <TextBox x:Name="ResourceRepoUrlInput" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Margin="0,0,0,5" AutomationProperties.Name="Resource Packs repository URL" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <TextBlock Text="Branch" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBox x:Name="ResourceBranchInput" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Width="130" Height="32" Padding="10,4" AutomationProperties.Name="Resource Packs branch" />
+                            </StackPanel>
+                            <TextBlock Text="Shaders" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5" />
+                            <TextBox x:Name="ShaderRepoUrlInput" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Margin="0,0,0,5" AutomationProperties.Name="Shaders repository URL" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                <TextBlock Text="Branch" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <TextBox x:Name="ShaderBranchInput" Style="{StaticResource MinimalTextBoxStyle}" FontSize="12" Width="130" Height="32" Padding="10,4" AutomationProperties.Name="Shaders branch" />
+                            </StackPanel>
+                            <Button Content="Use Default Repositories" Style="{StaticResource GhostButtonStyle}" HorizontalAlignment="Left" Margin="0,0,0,12" Click="ResetDefaultRepo_Click" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button Content="Cancel"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Width="80"
                                         Margin="0,0,10,0"
                                         Click="CloseModal_Click" />
-                                <Button Content="Switch"
+                                <Button Content="Save"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Height="42"
                                         Width="90"
@@ -676,15 +684,15 @@
                                     Padding="14,12"
                                     Margin="0,0,0,16">
                                 <StackPanel>
-                                    <TextBlock x:Name="StatusDialogRepoText"
+                                    <TextBlock x:Name="StatusDialogRepoText" TextWrapping="Wrap"
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,4" />
-                                    <TextBlock x:Name="StatusDialogBranchText"
+                                    <TextBlock x:Name="StatusDialogBranchText" TextWrapping="Wrap"
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,4" />
-                                    <TextBlock x:Name="StatusDialogCommitText"
+                                    <TextBlock x:Name="StatusDialogCommitText" TextWrapping="Wrap"
                                                FontSize="12"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,4" />

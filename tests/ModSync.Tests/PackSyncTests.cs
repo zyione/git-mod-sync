@@ -21,6 +21,8 @@ public class PackSyncTests
         _root = Path.Combine(Path.GetTempPath(), "ModSync_PackTests_" + Guid.NewGuid().ToString("N"));
         _logger = new LoggingService();
         _config = new ConfigService(_logger);
+        _config.Config.ResourcePackRepository = "";
+        _config.Config.ShaderPackRepository = "";
         _config.Config.RepositoryFolder = Path.Combine(_root, "repository");
         _config.Config.ModsFolder = Path.Combine(_root, "instance", "mods");
         _config.Config.RequireConfirmationBeforeSync = false;
@@ -463,7 +465,7 @@ public class PackSyncTests
         public Task<(bool Success, string? Error)> CloneAsync(string repositoryUrl, string targetDir, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult<(bool, string?)>((true, null));
         public Task<(bool Success, string? Error)> FetchAsync(string repoDir, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult<(bool, string?)>((true, null));
         public Task<(bool Success, string? Error)> PullOrResetToRemoteAsync(string repoDir, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult<(bool, string?)>((true, null));
-        public Task<GitStatusInfo> GetStatusAsync(string repoDir, string repositoryUrl, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult(new GitStatusInfo());
+        public Task<GitStatusInfo> GetStatusAsync(string repoDir, string repositoryUrl, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult(new GitStatusInfo { IsConnected = true, IsCloned = true });
         public Task<(bool Success, string? Error)> StageAndCommitAsync(string repoDir, string commitMessage, Action<SyncProgressInfo>? progressCallback = null, IReadOnlyList<string>? paths = null) => Task.FromResult<(bool, string?)>((true, null));
         public Task<(bool Success, string? Error)> PushAsync(string repoDir, string branch, string? token = null, Action<SyncProgressInfo>? progressCallback = null) => Task.FromResult<(bool, string?)>((true, null));
     }

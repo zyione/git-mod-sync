@@ -4,6 +4,10 @@
     "https://github.com/zyione/4stoogies-mod-list.git"
   ],
   "branch": "main",
+  "resourcePackRepository": "https://github.com/zyione/4stoogies-resourcepack-list.git",
+  "resourcePackBranch": "main",
+  "shaderPackRepository": "https://github.com/zyione/4stoogies-shaderpack-list.git",
+  "shaderPackBranch": "main",
   "modsFolder": "./mods",
   "repositoryFolder": "./repository",
   "requireConfirmationBeforePush": true,

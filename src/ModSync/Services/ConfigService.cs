@@ -35,6 +35,11 @@ public class ConfigService
     /// </summary>
     public string ResolvedRepositoryFolder => PathUtils.ResolveAppPath(Config.RepositoryFolder);
 
+    public string ResolvedResourcePackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ResourcePackRepository)
+        ? ResolvedRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-resourcepacks";
+    public string ResolvedShaderPackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ShaderPackRepository)
+        ? ResolvedRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-shaderpacks";
+
     public string MinecraftFolder => Path.GetDirectoryName(ResolvedModsFolder)!;
     public string ResolvedResourcePacksFolder => ResolveAssetFolder(Config.ResourcePacksFolder);
     public string ResolvedShaderPacksFolder => ResolveAssetFolder(Config.ShaderPacksFolder);

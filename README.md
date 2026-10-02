@@ -1,6 +1,6 @@
 # ModSync
 
-**ModSync** is a lightweight Windows application for synchronizing Minecraft mods, resource packs, and shaderpacks with one authoritative GitHub repository.
+**ModSync** is a lightweight Windows application for synchronizing Minecraft mods, resource packs, and shaderpacks with independent GitHub repositories.
 
 Designed specifically for non-technical players, ModSync requires no Git knowledge or manual terminal commands, while providing mod pack administrators with safe, one-click push capabilities and secure credential storage.
 
@@ -34,7 +34,7 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
   - **Push (Upload):** `../mods` $\to$ Internal Repository $\to$ GitHub Remote
 - **Non-Destructive File Protection:** Only synchronizes specified mod files (`*.jar`). Never deletes unrelated files such as `README.txt`, configs, or `disabled-mods/`.
 - **SHA-256 Checksums:** Compares mod files by cryptographic content hash rather than relying solely on filenames or timestamps.
-- **Single Repository Modpacks:** Sync mods, resource packs (ZIPs or extracted folders), shader ZIPs, resource pack precedence, and an optional active shader in one pass. Existing repositories with root-level JARs remain supported.
+- **Independent Modpack Repositories:** Sync mods, resource packs, and shaders from their own repositories. Sync All refreshes them concurrently, then validates and applies one combined plan. Existing root-JAR and single-repository layouts remain supported.
 - **Atomic File Updates:** Copies incoming mods to `.tmp` files before renaming/replacing to prevent corrupted partial downloads. Includes automatic retry logic for locked files.
 - **Active Minecraft Detection:** Warns users if Java/Minecraft or popular launchers (`javaw.exe`, `MinecraftLauncher.exe`) are currently open.
 - **Automatic Application Updates:** In-app updater checks for new releases on GitHub, previews release notes and file sizes, streams downloads with live progress, and cleanly restarts ModSync via an atomic self-deleting batch process.
@@ -402,30 +402,48 @@ To give another admin push permissions:
 ### Will ModSync Delete My Configs or Shaders?
 - ModSync preserves unrelated files, worlds, screenshots, and settings. When visual asset synchronization is enabled, it updates repository resource packs and shaderpacks. Personal packs remain on disk during downloads. Optional declarations change only the resource pack list and active shader settings.
 
-## Resource Packs and Shaders in One Repository
+## Independent Mods, Resource Packs, and Shader Repositories (v1.3.0)
 
-Use this layout in the modpack repository (separate from the ModSync application source):
+The default sources are separate from the ModSync application source:
+
+| Category | Repository | Branch |
+|---|---|---|
+| Mods and Fabric metadata | `zyione/4stoogies-mod-list` | `main` |
+| Resource packs and their priority | `zyione/4stoogies-resourcepack-list` | `main` |
+| Shaders and selected shader declaration | `zyione/4stoogies-shaderpack-list` | `main` |
+
+Use **Repositories** on the dashboard to edit each URL and branch. The original `repository` and `branch` configuration keys still control mods. New keys are `resourcePackRepository`, `resourcePackBranch`, `shaderPackRepository`, and `shaderPackBranch`. Older config files without these keys automatically get the dedicated default repositories. An explicitly blank pack repository URL uses the mods repository for that category, preserving the earlier single-repository setup.
+
+Recommended layouts:
 
 ```text
-my-modpack-repo/
-├── fabric-version.txt
-├── minecraft-version.txt
-├── resourcepack-order.txt       # Optional: highest priority first
-├── active-shader.txt            # Optional: one shader ZIP filename
+4stoogies-mod-list/
 ├── mods/
 │   └── example.jar
-├── resourcepacks/
-│   ├── CustomUI.zip
-│   └── BaseTextures/
-│       ├── pack.mcmeta
-│       └── assets/
-└── shaderpacks/
-    └── Complementary.zip
+├── fabric-version.txt
+└── minecraft-version.txt
+
+4stoogies-resourcepack-list/
+├── CustomUI.zip
+├── BaseTextures/
+│   ├── pack.mcmeta
+│   └── assets/
+└── resourcepack-order.txt       # Optional; highest priority first
+
+4stoogies-shaderpack-list/
+├── Complementary.zip
+└── active-shader.txt            # Optional; one existing shader ZIP filename
 ```
 
-Click **Sync All** to download all enabled asset types and apply the optional declarations. **Push Modpack** uploads local mods and enabled visual assets to their corresponding folders in the same repository, using one branch and one login. Resource pack order can be published explicitly from Minecraft with the Settings switch described below. **Push** beside Resource Packs uploads only resource packs and their published order; **Push** beside Shaders uploads only shader ZIPs. Each action previews its own category and leaves other categories out of the commit. Shader declarations remain administrator-managed repository metadata; pushing does not upload your personal Minecraft settings.
+Dedicated pack repositories support packs at the root or in a `resourcepacks/` / `shaderpacks/` subfolder. If the named subfolder exists, it is authoritative. The order and active-shader declarations always live at the root of their respective repositories. Mods continue to use `mods/`, with legacy root JARs supported.
 
-Root-level JAR repositories remain supported. If `mods/` exists, ModSync uses it as the authoritative mod source. Visual assets always use repository folders named `resourcepacks/` and `shaderpacks/`. Missing visual folders are skipped during downloads, so existing mod-only repositories leave player visuals untouched. Keep a folder present (for example with a README) when removing its last managed pack.
+**Sync** or **Push** beside Resource Packs contacts only its repository. Shaders work the same way. New mods do not block a pack upload; newer changes in the selected pack repository still require syncing that category first. The upload preview names the exact selected files. Resource pack order is included when **Publish Resource Pack Order** is enabled; shader selection remains administrator-managed `active-shader.txt` metadata.
+
+**Sync All** downloads all enabled repositories concurrently using separate caches. Every download and declaration is validated before Minecraft file writes begin. Asset writes, settings, and the shared pack-ownership manifest are applied together in sequence to avoid concurrent settings/manifest writes. If any repository cannot refresh, Minecraft files remain untouched. Matching files remain unchanged.
+
+**Push Modpack** preflights all enabled repositories, then commits and uploads changed categories independently. Multiple repository uploads are not a transaction: if a later upload fails, the error names categories already uploaded. A failed dedicated-pack upload can be retried from that category's Push button without syncing mods, even if there are no new file differences.
+
+The mods cache keeps the original `repositoryFolder` path. Separate pack caches are its sibling paths with `-resourcepacks` and `-shaderpacks` suffixes. Caches, local asset folders, and backups must remain separate; linked cache paths are rejected. Switching a repository preserves existing Minecraft assets until an explicit sync.
 
 These configuration keys apply to the local Minecraft instance:
 
@@ -461,11 +479,11 @@ ModSync sets `shaderPack` and `enableShaders=true` in `config/iris.properties`, 
 
 Incoming assets and settings use temporary files followed by atomic replacement. This protects individual files; a whole sync is not a filesystem transaction. A failure can leave some assets updated, so retry after resolving the reported error. Settings and pack ownership tracking are applied only after asset copies/deletions succeed.
 
-ModSync tracks downloaded pack files in `.modsync-managed-packs.json` in the Minecraft instance. Later downloads remove only previously managed pack files that have disappeared from an existing repository asset folder, preserving local-only personal packs and unrelated files. Push treats local supported packs as authoritative, including local-only ZIPs; review the preview before uploading personal packs. Size limits apply to added/updated visual files as well as mods. Large packs may require a separately configured Git LFS workflow; this feature does not add automatic Git LFS provisioning.
+ModSync tracks downloaded pack files in `.modsync-managed-packs.json` in the Minecraft instance. Later downloads remove only previously managed pack files that have disappeared from a successfully refreshed repository asset source, preserving local-only personal packs and unrelated files. Push treats local supported packs as authoritative, including local-only ZIPs; review the preview before uploading personal packs. Size limits apply to added/updated visual files as well as mods. Large packs may require a separately configured Git LFS workflow; this feature does not add automatic Git LFS provisioning.
 
 ## Separate Sync Actions (v1.1.0)
 
-The dashboard keeps **Sync All** as its primary action, with three smaller actions below it:
+The dashboard keeps **Sync All** as its primary action, with Sync buttons beside each category:
 
 | Action | What it updates |
 |---|---|
@@ -474,7 +492,7 @@ The dashboard keeps **Sync All** as its primary action, with three smaller actio
 | **Shaders** | Shader ZIPs and the optional selected shader |
 | **Sync All** | All enabled categories and Fabric Loader |
 
-Each action refreshes the one shared repository, compares content only for the selected categories, and leaves matching files untouched. Unselected categories and their declarations are skipped, even if they need updates. The confirmation preview uses the refreshed clone. Changes are checked again before applying because files can change while the preview is open. Matching files and matching settings are not rewritten. Dashboard count refreshes inspect filenames/metadata without hashing large packs. Actual synchronization uses SHA-256 and checks copied data before replacement; unreadable files abort the operation instead of being treated as absent.
+Each action refreshes only its selected repositories, compares content only for those categories, and leaves matching files untouched. Unselected categories and their declarations are skipped, even if they need updates. The confirmation preview uses the refreshed clone. Changes are checked again before applying because files can change while the preview is open. Matching files and matching settings are not rewritten. Dashboard count refreshes inspect filenames/metadata without hashing large packs. Actual synchronization uses SHA-256 and checks copied data before replacement; unreadable files abort the operation instead of being treated as absent.
 
 Settings changed while files are being synchronized are preserved: ModSync stops rather than overwriting those newer preferences. A whole sync is still not a transaction; completed asset changes remain if a later operation fails, and a retry finishes the remaining work.
 

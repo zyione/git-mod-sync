@@ -18,6 +18,16 @@ public class PackSyncService
         return Directory.Exists(Path.Combine(repository, "mods")) || !legacy ? Path.Combine(repository, "mods") : repository;
     }
 
+    public string AssetRepositoryFolder(bool resource) => resource ? _config.ResolvedResourcePackRepositoryFolder : _config.ResolvedShaderPackRepositoryFolder;
+
+    public string AssetSourceFolder(bool resource)
+    {
+        string repository = AssetRepositoryFolder(resource);
+        string named = Path.Combine(repository, resource ? "resourcepacks" : "shaderpacks");
+        bool dedicated = !string.IsNullOrWhiteSpace(resource ? _config.Config.ResourcePackRepository : _config.Config.ShaderPackRepository);
+        return !dedicated || Directory.Exists(named) ? named : repository;
+    }
+
     // Walk explicitly so junctions/symlinks cannot escape the managed directories.
     internal static IEnumerable<string> SafeFiles(string directory, bool recursive = true)
     {
@@ -120,7 +130,7 @@ public class PackSyncService
             ("resourcepacks", _config.ResolvedResourcePacksFolder, cfg.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks), true),
             ("shaderpacks", _config.ResolvedShaderPacksFolder, cfg.SyncShaderPacks && scope.HasFlag(SyncScope.Shaders), false) })
         {
-            var remote = Path.Combine(repository, kind);
+            var remote = AssetSourceFolder(resource);
             if (!enabled || (!push && !Directory.Exists(remote))) continue;
             ValidateDestination(local, repository);
             var repoFiles = ScanPacks(remote, resource);
@@ -147,11 +157,11 @@ public class PackSyncService
         if (push)
         {
             if (cfg.PublishResourcePackOrder && cfg.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks))
-                PlanPublishedOrder(summary, repository);
+                PlanPublishedOrder(summary, AssetRepositoryFolder(true));
             return summary;
         }
-        var orderFile = Path.Combine(repository, "resourcepack-order.txt");
-        if (scope.HasFlag(SyncScope.ResourcePacks) && cfg.SyncResourcePacks && cfg.EnforcePackOrder && Directory.Exists(Path.Combine(repository, "resourcepacks")) && File.Exists(orderFile))
+        var orderFile = Path.Combine(AssetRepositoryFolder(true), "resourcepack-order.txt");
+        if (scope.HasFlag(SyncScope.ResourcePacks) && cfg.SyncResourcePacks && cfg.EnforcePackOrder && Directory.Exists(AssetSourceFolder(true)) && File.Exists(orderFile))
         {
             var options = Path.Combine(_config.MinecraftFolder, "options.txt");
             var names = resources.Keys.Select(x => x.Split('/')[0]).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -159,8 +169,8 @@ public class PackSyncService
             PlanText(summary, options, ApplyPackOrder(File.Exists(options) ? File.ReadAllText(options) : "",
                 ReadDeclaration(orderFile), names, old), "options.txt (resource pack order)");
         }
-        var shaderFile = Path.Combine(repository, "active-shader.txt");
-        if (scope.HasFlag(SyncScope.Shaders) && cfg.SyncShaderPacks && cfg.EnforceActiveShader && Directory.Exists(Path.Combine(repository, "shaderpacks")) && File.Exists(shaderFile))
+        var shaderFile = Path.Combine(AssetRepositoryFolder(false), "active-shader.txt");
+        if (scope.HasFlag(SyncScope.Shaders) && cfg.SyncShaderPacks && cfg.EnforceActiveShader && Directory.Exists(AssetSourceFolder(false)) && File.Exists(shaderFile))
         {
             var declaration = ReadDeclaration(shaderFile);
             if (declaration.Length != 1 || !shaders.ContainsKey(ValidatePackName(declaration[0])))
@@ -190,7 +200,7 @@ public class PackSyncService
         var selected = JsonSerializer.Deserialize<List<string>>(match.Groups[1].Value)
             ?? throw new InvalidDataException("Invalid Minecraft resource pack selection.");
         // Only already shared packs that remain locally available are eligible. Personal packs never enter the declaration.
-        var shared = ScanPacks(Path.Combine(repository, "resourcepacks"), true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var shared = ScanPacks(AssetSourceFolder(true), true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var local = ScanPacks(_config.ResolvedResourcePacksFolder, true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (selected.Any(x => x == null)) throw new InvalidDataException("Invalid Minecraft resource pack selection.");
         var names = selected.Where(x => x.StartsWith("file/", StringComparison.Ordinal))
@@ -205,7 +215,7 @@ public class PackSyncService
     private void ValidateDestination(string path, string repository)
     {
         var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
-        foreach (var protectedPath in new[] { repository, _config.ResolvedModsFolder, _config.MinecraftFolder })
+        foreach (var protectedPath in new[] { repository, _config.ResolvedResourcePackRepositoryFolder, _config.ResolvedShaderPackRepositoryFolder, _config.ResolvedModsFolder, Path.Combine(_config.MinecraftFolder, "modsync_backups"), _config.MinecraftFolder })
         {
             var root = Path.GetFullPath(protectedPath).TrimEnd(Path.DirectorySeparatorChar);
             if (full.Equals(root, StringComparison.OrdinalIgnoreCase) ||
@@ -245,7 +255,7 @@ public class PackSyncService
         var legacy = Path.Combine(_config.MinecraftFolder, "optionsshaders.txt");
         var text = File.Exists(iris) ? File.ReadAllText(iris) : File.Exists(legacy) ? File.ReadAllText(legacy) : "";
         var active = Regex.Match(text, @"(?m)^shaderPack=([^\r\n]*)");
-        return ($"{Count(_config.ResolvedResourcePacksFolder, true)} local / {Count(Path.Combine(repo, "resourcepacks"), true)} repository",
-            $"{Count(_config.ResolvedShaderPacksFolder, false)} local / {Count(Path.Combine(repo, "shaderpacks"), false)} repository • Active: {(active.Success ? active.Groups[1].Value : "None")}");
+        return ($"{Count(_config.ResolvedResourcePacksFolder, true)} local / {Count(AssetSourceFolder(true), true)} repository",
+            $"{Count(_config.ResolvedShaderPacksFolder, false)} local / {Count(AssetSourceFolder(false), false)} repository • Active: {(active.Success ? active.Groups[1].Value : "None")}");
     }
 }

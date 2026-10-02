@@ -83,6 +83,10 @@ public partial class MainWindow : Window
     private void UpdateStatusCard()
     {
         var cfg = _configService.Config;
+        ResourceRepoText.Text = string.IsNullOrWhiteSpace(cfg.ResourcePackRepository) ? GetShortRepoName(cfg.Repository) : GetShortRepoName(cfg.ResourcePackRepository);
+        ShaderRepoText.Text = string.IsNullOrWhiteSpace(cfg.ShaderPackRepository) ? GetShortRepoName(cfg.Repository) : GetShortRepoName(cfg.ShaderPackRepository);
+        ResourceRepoText.ToolTip = cfg.ResourcePackRepository;
+        ShaderRepoText.ToolTip = cfg.ShaderPackRepository;
         string repoName = GetShortRepoName(cfg.Repository);
         StatusSubText.Text = $"{repoName} • {cfg.Branch}";
         ModsFolderPathText.Text = _configService.ResolvedModsFolder;
@@ -107,11 +111,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshLocalModCountAsync()
+    private async Task RefreshLocalModCountAsync(bool fetchRemote = true)
     {
         try
         {
-            var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync());
+            var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync(fetchRemote));
             UpdateModCountBadge(localCount, expectedCount);
             var (resources, shaders) = await Task.Run(() => new PackSyncService(_configService).SectionStatus());
             PackStatusText.Text = resources;
@@ -448,7 +452,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            await RefreshLocalModCountAsync();
+            await RefreshLocalModCountAsync(fetchRemote: _syncScope.HasFlag(SyncScope.Mods));
             RefreshFabricStatusUI();
             SetBusy(false);
         }
@@ -489,7 +493,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RefreshLocalModCountAsync();
+        if (scope.HasFlag(SyncScope.Mods)) await RefreshLocalModCountAsync();
         SetBusy(true, "Checking local modifications...");
         DismissFeedback();
 
@@ -516,6 +520,7 @@ public partial class MainWindow : Window
             if (modChanges.UpdatedCount > 0) pushParts.Add($"~{modChanges.UpdatedCount} updated");
             if (modChanges.RemovedCount > 0) pushParts.Add($"-{modChanges.RemovedCount} removed");
             if (modChanges.IgnoredCount > 0) pushParts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+            if (modChanges.PendingRepositories.Count > 0) pushParts.Add("pending upload to retry");
             PushConfirmSummaryText.Text = $"Changes to upload: {string.Join(", ", pushParts)}";
 
             var sb = new System.Text.StringBuilder();
@@ -523,6 +528,7 @@ public partial class MainWindow : Window
             foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
             foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
             foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept local)");
+            foreach (var repo in modChanges.PendingRepositories) sb.AppendLine($"Retry pending upload: {repo}");
             PushDetailsText.Text = sb.ToString().TrimEnd();
 
             SetBusy(false);
@@ -563,7 +569,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            await RefreshLocalModCountAsync();
+            await RefreshLocalModCountAsync(fetchRemote: _pushScope.HasFlag(SyncScope.Mods));
             SetBusy(false);
         }
     }
@@ -678,44 +684,45 @@ public partial class MainWindow : Window
     private void SwitchRepo_Click(object sender, RoutedEventArgs e)
     {
         RepoUrlInputBox.Text = _configService.Config.Repository;
+        ModsBranchInput.Text = _configService.Config.Branch;
+        ResourceRepoUrlInput.Text = _configService.Config.ResourcePackRepository;
+        ResourceBranchInput.Text = _configService.Config.ResourcePackBranch;
+        ShaderRepoUrlInput.Text = _configService.Config.ShaderPackRepository;
+        ShaderBranchInput.Text = _configService.Config.ShaderPackBranch;
         ShowModal(SwitchRepoSheet);
     }
 
     private void ResetDefaultRepo_Click(object sender, RoutedEventArgs e)
     {
         RepoUrlInputBox.Text = AppConfig.DefaultRepositoryUrl;
+        ResourceRepoUrlInput.Text = AppConfig.DefaultResourcePackRepositoryUrl;
+        ShaderRepoUrlInput.Text = AppConfig.DefaultShaderPackRepositoryUrl;
+        ModsBranchInput.Text = ResourceBranchInput.Text = ShaderBranchInput.Text = "main";
     }
 
-    private async void SubmitSwitchRepo_Click(object sender, RoutedEventArgs e)
+    private void SubmitSwitchRepo_Click(object sender, RoutedEventArgs e)
     {
-        string newUrl = RepoUrlInputBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(newUrl))
+        if (_isBusy) return;
+        static bool ValidUrl(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath.Trim('/').Split('/').Length == 2;
+        var urls = new[] { RepoUrlInputBox.Text.Trim(), ResourceRepoUrlInput.Text.Trim(), ShaderRepoUrlInput.Text.Trim() };
+        var branches = new[] { ModsBranchInput.Text.Trim(), ResourceBranchInput.Text.Trim(), ShaderBranchInput.Text.Trim() };
+        if (!ValidUrl(urls[0]) || urls.Skip(1).Any(url => url.Length > 0 && !ValidUrl(url)) || branches.Any(branch => !RepositorySyncService.ValidBranch(branch)))
         {
+            MessageBox.Show("Enter valid GitHub repository URLs and branch names.", "Repositories", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-
+        var cfg = _configService.Config;
+        var previous = (cfg.Repository, cfg.Branch, cfg.ResourcePackRepository, cfg.ResourcePackBranch, cfg.ShaderPackRepository, cfg.ShaderPackBranch);
+        (cfg.Repository, cfg.Branch, cfg.ResourcePackRepository, cfg.ResourcePackBranch, cfg.ShaderPackRepository, cfg.ShaderPackBranch) = (urls[0], branches[0], urls[1], branches[1], urls[2], branches[2]);
+        if (!_configService.Save())
+        {
+            (cfg.Repository, cfg.Branch, cfg.ResourcePackRepository, cfg.ResourcePackBranch, cfg.ShaderPackRepository, cfg.ShaderPackBranch) = previous;
+            ShowFeedback("Could not save the repositories.", true);
+            return;
+        }
         CloseModal();
-        SetBusy(true, "Switching repository...");
-
-        try
-        {
-            bool switched = _configService.SwitchRepository(newUrl);
-            if (switched)
-            {
-                await _gitService.VerifyOrResetRemoteAsync(_configService.ResolvedRepositoryFolder, newUrl);
-                UpdateStatusCard();
-                ShowFeedback($"✓ Switched to {GetShortRepoName(newUrl)}. Click 'Sync Mods' to update.", false);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Error("Switch repo error", ex);
-            ShowFeedback($"Failed to switch repository: {ex.Message}", true);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
+        UpdateStatusCard();
+        ShowFeedback("Repositories saved. Sync a section or use Sync All to download updates.", false);
     }
 
     #endregion
