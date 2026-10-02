@@ -18,7 +18,7 @@
             BorderThickness="1"
             CornerRadius="16"
             SnapsToDevicePixels="True">
-        
+
         <Grid>
             <!-- Main Content Layout -->
             <Grid Margin="24,14,24,20">
@@ -348,7 +348,7 @@
                 <!-- Main Actions Area -->
                 <ScrollViewer x:Name="ActionsScrollViewer" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Center">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="420">
-                    
+
                     <!-- Progress Card (Visible during active tasks) -->
                     <Border x:Name="ProgressArea"
                             Visibility="Collapsed"
@@ -449,7 +449,7 @@
                         <Button Content="Check Status"
                                 Style="{StaticResource GhostButtonStyle}"
                                 Click="CheckStatus_Click" />
-                        
+
                         <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
 
                         <Button x:Name="AuthButton"
@@ -530,7 +530,7 @@
             <Grid x:Name="ModalBackdrop"
                   Background="{DynamicResource ModalBackdropBrush}"
                   Visibility="Collapsed">
-                
+
                 <!-- Centered Sheet Card -->
                 <Border Background="{DynamicResource CardBackgroundBrush}"
                         BorderBrush="{DynamicResource CardBorderBrush}"
@@ -835,26 +835,19 @@
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <TextBlock Text="Sync Resource Packs" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
                                                 <CheckBox x:Name="SyncResourcePacksToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
-                                            </Grid>                                            <Grid Margin="0,7">
+                                            </Grid>
+                                            <Grid Margin="0,7">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <TextBlock Text="Sync Shaderpacks" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
                                                 <CheckBox x:Name="SyncShaderPacksToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
-                                            </Grid>                                            <Grid Margin="0,7">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                <TextBlock Text="Enforce Resource Pack Order" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
-                                                <CheckBox x:Name="EnforcePackOrderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
-                                            </Grid>                                            <Grid Margin="0,7">
+                                            </Grid>
+                                            <Grid Margin="0,7">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                                 <TextBlock Text="Use Repository Active Shader" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" />
                                                 <CheckBox x:Name="EnforceActiveShaderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
-                                            </Grid>                                            <Grid Margin="0,7">
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                <StackPanel Margin="0,0,12,0">
-                                                    <TextBlock Text="Publish Resource Pack Order" FontSize="13" Foreground="{DynamicResource PrimaryTextBrush}" />
-                                                    <TextBlock Text="Include shared pack priority from Minecraft when pushing" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,2,0,0" />
-                                                </StackPanel>
-                                                <CheckBox x:Name="PublishPackOrderToggle" Grid.Column="1" Style="{StaticResource AppleToggleSwitchStyle}" Click="SettingToggle_Click" />
                                             </Grid>
+
+                                            <TextBlock Text="Resource pack sync and push include shared pack order." FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,6,0,10" />
                                             <!-- Sync Fabric Loader Toggle -->
                                             <Grid Margin="0,5">
                                                 <Grid.ColumnDefinitions>
@@ -1141,7 +1134,7 @@
                                                FontWeight="SemiBold"
                                                Foreground="{DynamicResource PrimaryTextBrush}"
                                                Margin="0,0,0,8" />
-                                    
+
                                     <StackPanel Margin="0,0,0,6">
                                         <TextBlock x:Name="ReinstallStepOneText" TextWrapping="Wrap" Text="1. Backs up mods, enabled packs, and pack settings:"
                                                    FontSize="12"

@@ -366,6 +366,44 @@ public class MultiRepositoryTests
         Assert.IsFalse(File.Exists(Path.Combine(PacksRepo, "resourcepack-order.txt")));
     }
 
+
+    [TestMethod]
+    public async Task PackPushPublishesNewPacksAndPriorityTogetherAndSyncAppliesBothWithLegacyTogglesOff()
+    {
+        _config.Config.PublishResourcePackOrder = false; _config.Config.EnforcePackOrder = false;
+        foreach (var name in new[] { "Top.zip", "Base.zip", "Disabled.zip" })
+            Write(Path.Combine(_config.ResolvedResourcePacksFolder, name), "pack-" + name);
+        var options = Path.Combine(_config.MinecraftFolder, "options.txt");
+        Write(options, "music:0.4\nresourcePacks:[\"vanilla\",\"fabric\",\"file/Base.zip\",\"file/Top.zip\"]\n");
+        var push = await Engine().PushModsAsync(scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(push.Success, push.Message);
+        CollectionAssert.AreEquivalent(new[] { "Top.zip", "Base.zip", "Disabled.zip", "resourcepack-order.txt" }, _git.CommitPaths[PacksRepo]);
+        var names = File.ReadAllLines(Path.Combine(PacksRepo, "resourcepack-order.txt")).Where(line => !line.StartsWith('#') && line.Length > 0).ToArray();
+        CollectionAssert.AreEqual(new[] { "Top.zip", "Base.zip" }, names);
+        Directory.Delete(_config.ResolvedResourcePacksFolder, true);
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal");
+        Write(options, "music:0.4\nresourcePacks:[\"vanilla\",\"fabric\",\"file/Personal.zip\"]\n");
+        var sync = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(sync.Success, sync.Message);
+        Assert.IsTrue(File.Exists(Path.Combine(_config.ResolvedResourcePacksFolder, "Disabled.zip")));
+        Assert.AreEqual("music:0.4\nresourcePacks:[\"vanilla\",\"fabric\",\"file/Base.zip\",\"file/Top.zip\",\"file/Personal.zip\"]\n", File.ReadAllText(options));
+        var repeat = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(repeat.Success, repeat.Message);
+        Assert.IsFalse(repeat.Summary!.HasChanges);
+        Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
+    }
+
+    [TestMethod]
+    public async Task PackPushWithoutSavedSelectionPreservesExistingPublishedOrder()
+    {
+        Write(Path.Combine(PacksRepo, "resourcepack-order.txt"), "# Existing priority\nPack.zip\n");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip"), "pack");
+        var result = await Engine().PushModsAsync(scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.AreEqual("# Existing priority\nPack.zip\n", File.ReadAllText(Path.Combine(PacksRepo, "resourcepack-order.txt")));
+        CollectionAssert.AreEqual(new[] { "Pack.zip" }, _git.CommitPaths[PacksRepo]);
+    }
+
     private sealed class FakeGit : IGitService
     {
         public ConcurrentBag<string> Touched = new();

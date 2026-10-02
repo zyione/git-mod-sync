@@ -51,12 +51,14 @@ public class AppConfig
     public bool SyncShaderPacks { get; set; } = true;
 
     [JsonPropertyName("enforcePackOrder")]
+    // Legacy preference retained for config compatibility; resource-pack sync always applies shared order.
     public bool EnforcePackOrder { get; set; } = true;
 
     [JsonPropertyName("enforceActiveShader")]
     public bool EnforceActiveShader { get; set; } = true;
 
     [JsonPropertyName("publishResourcePackOrder")]
+    // Legacy preference retained for config compatibility; resource-pack push always includes saved order.
     public bool PublishResourcePackOrder { get; set; } = false;
 
     [JsonPropertyName("repositoryFolder")]

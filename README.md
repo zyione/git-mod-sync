@@ -437,7 +437,7 @@ Recommended layouts:
 
 Dedicated pack repositories support packs at the root or in a `resourcepacks/` / `shaderpacks/` subfolder. If the named subfolder exists, it is authoritative. The order and active-shader declarations always live at the root of their respective repositories. Mods continue to use `mods/`, with legacy root JARs supported.
 
-**Sync** or **Push** beside Resource Packs contacts only its repository. Shaders work the same way. New mods do not block a pack upload; newer changes in the selected pack repository still require syncing that category first. The upload preview names the exact selected files. Resource pack order is included when **Publish Resource Pack Order** is enabled; shader selection remains administrator-managed `active-shader.txt` metadata.
+**Sync** or **Push** beside Resource Packs contacts only its repository. Shaders work the same way. New mods do not block a pack upload; newer changes in the selected pack repository still require syncing that category first. The upload preview names the exact selected files. Resource pack push includes the saved order automatically; shader selection remains administrator-managed `active-shader.txt` metadata.
 
 **Sync All** downloads all enabled repositories concurrently using separate caches. Every download and declaration is validated before Minecraft file writes begin. Asset writes, settings, and the shared pack-ownership manifest are applied together in sequence to avoid concurrent settings/manifest writes. If any repository cannot refresh, Minecraft files remain untouched. Matching files remain unchanged.
 
@@ -467,7 +467,7 @@ CustomUI.zip
 BaseTextures
 ```
 
-ModSync writes the reverse order into `options.txt`: built-in packs (with `vanilla` first), declared repository packs from lowest to highest priority, then existing personal packs. Personal packs therefore retain priority above the shared stack. Only declared repository packs are activated; other repository packs are still downloaded. Blank lines and `#` comments are ignored. Duplicate, unsafe, or missing pack names stop synchronization before asset writes. Malformed existing `resourcePacks` JSON also stops order enforcement; disable enforcement to keep that setting untouched.
+ModSync writes the reverse order into `options.txt`: built-in packs (with `vanilla` first), declared repository packs from lowest to highest priority, then existing personal packs. Personal packs therefore retain priority above the shared stack. Only declared repository packs are activated; other repository packs are still downloaded. Blank lines and `#` comments are ignored. Duplicate, unsafe, or missing pack names stop synchronization before asset writes. Malformed existing `resourcePacks` JSON also stops synchronization before any pack changes; fix the saved selection in Minecraft before retrying.
 
 Example `active-shader.txt`:
 
@@ -475,7 +475,7 @@ Example `active-shader.txt`:
 Complementary.zip
 ```
 
-ModSync sets `shaderPack` and `enableShaders=true` in `config/iris.properties`, preserving other properties. It uses an existing `optionsshaders.txt` as a legacy fallback when Iris is absent. Iris detection includes mods incoming from the repository. If no shader configuration exists, it creates Iris settings; the shader loader must still be installed as a mod. Shader names are escaped for Java properties. Disabling enforcement or omitting either declaration leaves its corresponding player settings unchanged.
+ModSync sets `shaderPack` and `enableShaders=true` in `config/iris.properties`, preserving other properties. It uses an existing `optionsshaders.txt` as a legacy fallback when Iris is absent. Iris detection includes mods incoming from the repository. If no shader configuration exists, it creates Iris settings; the shader loader must still be installed as a mod. Shader names are escaped for Java properties. Disabling shader enforcement leaves shader settings unchanged. Omitting a declaration leaves its corresponding player settings unchanged.
 
 Incoming assets and settings use temporary files followed by atomic replacement. This protects individual files; a whole sync is not a filesystem transaction. A failure can leave some assets updated, so retry after resolving the reported error. Settings and pack ownership tracking are applied only after asset copies/deletions succeed.
 
@@ -498,13 +498,12 @@ Settings changed while files are being synchronized are preserved: ModSync stops
 
 ### Publishing Resource Pack Priority
 
-1. Upload new shared packs with **Push** beside Resource Packs first.
-2. In Minecraft, enable the shared packs and arrange them in the desired order. The pack at the top has highest priority. Close Minecraft so its selection is saved.
-3. In ModSync Settings, enable **Publish Resource Pack Order**.
-4. Click **Push** beside Resource Packs and review `resourcepack-order.txt (shared pack priority)` in the changes.
-5. Push. Other players apply the declaration with **Resource Packs** or **Sync All**, when order enforcement is enabled.
+1. Enable and arrange the packs in Minecraft, with highest priority at the top, then close Minecraft to save the selection.
+2. Click **Push** beside Resource Packs to publish files and saved order in the same upload. New packs participate immediately. Review both files and `resourcepack-order.txt` before confirming.
+3. Other players click **Sync** beside Resource Packs or **Sync All** to download packs and apply their order together.
+4. Use **Push Order** or **Sync Order** when only priority should change. Push Order includes only packs already shared and installed locally; it does not upload personal files.
 
-The published declaration includes only enabled packs already present in the repository and still available locally. Built-in packs and local-only personal packs never enter the declaration. Disabled shared packs are omitted. An empty published order disables the shared packs while preserving built-in and personal selections on players' machines. Leave the publishing switch off for ordinary player use. It controls the declaration only; review the separate file uploads when pushing.
+Combined Resource Pack Push makes every uploaded pack shared, so newly uploaded selected packs enter the order. Disabled packs are uploaded but omitted from the enabled selection. Built-ins are excluded. An explicitly empty selection publishes an empty shared order; missing saved selection preserves the existing declaration. Personal selections on downloading players remain enabled and can override the shared stack. The former publishing/order-enforcement toggles are no longer required or shown.
 
 ## Verified Portable Updates and Delta Downloads (v1.1.0)
 
@@ -529,11 +528,11 @@ GitHub Actions caches dependency downloads, tests the app, publishes the EXE, ge
 
 Use **Reinstall…** beside Resource Packs or Shaders to refresh only that category's repository and replace every shared pack with a fresh, verified copy, including matching files. Before replacing anything, ModSync snapshots the selected pack folder (including personal files), its selection settings, and tracking metadata into `modsync_backups/`. Obsolete managed files are removed; local-only personal packs remain. Other categories and worlds stay untouched. Settings' Clean Reinstall action reinstalls only mods; the main Modpack reinstall retains its existing combined behavior.
 
-Use **Sync Order** beside Resource Packs to apply `resourcepack-order.txt` without replacing installed pack files. This explicit action also works when automatic order enforcement is off. The declaration lists highest priority first; Minecraft's stored list is reversed, with built-in and personal selections preserved. Required shared packs must already be installed; otherwise ModSync asks you to Sync Resource Packs first and leaves options unchanged. A missing declaration is reported rather than clearing your selection. Unchanged order makes no file changes or new backup. Changed options are backed up before replacement.
+Use **Sync Order** beside Resource Packs to apply `resourcepack-order.txt` without replacing installed pack files. The declaration lists highest priority first; Minecraft's stored list is reversed, with built-in and personal selections preserved. Required shared packs must already be installed; otherwise ModSync asks you to Sync Resource Packs first and leaves options unchanged. A missing declaration is reported rather than clearing your selection. Unchanged order makes no file changes or new backup. Changed options are backed up before replacement.
 
 These actions refresh their repository cache normally; Sync Order avoids copying or hashing pack contents in the Minecraft instance, but its repository refresh may still download new pack data. Backups can be opened from Settings or the reinstall success message and include `restore-paths.json` for manual recovery. If a later file operation fails, earlier completed replacements may remain; the snapshot is retained for recovery.
 
 
-**Publish order separately:** Arrange and enable shared packs in Minecraft, with the highest priority at the top, then close Minecraft to save the selection. Click **Push Order** beside Resource Packs, review the change, and confirm. This action publishes only `resourcepack-order.txt`, regardless of the Publish Resource Pack Order setting; it does not upload pack files. Upload new packs with the ordinary pack Push first. Built-in and local-only personal packs are excluded. Other players click **Sync Order** to apply the published selection independently of pack-file sync. Automatic order enforcement also applies it during Resource Packs sync, Sync All, and Resource Pack Reinstall when enabled. Personal selections stay above shared packs, so personal packs may override them.
+**Publish order separately:** Arrange and enable shared packs in Minecraft, with the highest priority at the top, then close Minecraft to save the selection. Click **Push Order** beside Resource Packs, review the change, and confirm. This action publishes only `resourcepack-order.txt`, it does not upload pack files. Upload new packs with the ordinary pack Push first. Built-in and local-only personal packs are excluded. Other players click **Sync Order** to apply the published selection independently of pack-file sync. Resource Packs sync, Sync All, and Resource Pack Reinstall automatically apply the order. Personal selections stay above shared packs, so personal packs may override them.
 
 Push Order can refresh an outdated repository cache without changing your installed packs or saved selection. It refuses to include unfinished uploads from earlier operations; finish those uploads first.

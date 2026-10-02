@@ -1,15 +1,14 @@
-# ModSync v1.4.0 continuation record
+# ModSync continuation record
 
-Resumed on October 3, 2026 after the user's pause. Implementation and local verification are complete; release publication is being verified.
+October 3, 2026: v1.4.0 was published successfully. The user's follow-up requires ordinary Resource Pack Push and Sync to include order automatically; v1.4.1 implements this and is ready for release verification.
 
-- Resource Packs and Shaders have independent Reinstall actions with full selected-folder/settings backups; matching shared files are replaced and personal files remain.
-- Sync Order applies shared resourcepack-order.txt to installed packs, with highest-first converted to Minecraft's stored order. It leaves pack contents untouched, backs up changed options, and rejects missing required local packs.
-- Push Order publishes only the saved Minecraft selection for already shared, locally available packs. It ignores the automatic publishing toggle, excludes personal/built-in packs, refreshes an outdated repository cache without changing installed files/selection, and blocks previous unfinished commits.
-- Normal pack sync and reinstall apply priority automatically when order enforcement is enabled. Personal selections are preserved and can override shared packs.
-- Settings Clean Reinstall affects mods only; main Modpack reinstall retains combined behavior.
-- 76 automated tests passed; light/dark dashboards and scoped confirmation sheets were inspected. git diff --check passed.
-- Local version fields are 1.4.0. Release notes: docs/releases/v1.4.0.md. Release pipeline runs tests again and verifies delta reconstruction before publication.
+- Resource Pack Push uploads pack files plus their saved Minecraft order in the same commit, including newly uploaded selected packs. Missing saved selection preserves existing order; explicitly empty selection clears shared activation. Malformed selection aborts before writes.
+- Resource Pack Sync, Sync All, and Resource Pack Reinstall apply the shared declaration automatically, regardless of legacy order preferences. Personal selections remain and may override shared packs.
+- Push Order / Sync Order remain separate priority-only actions. Push Order excludes unshared personal packs.
+- Independent resource/shader reinstalls retain verified backups and category isolation; worlds remain untouched.
+- Obsolete order toggles removed from Settings; old config keys are accepted for compatibility but no longer gate order behavior.
+- 78 automated tests passed after Settings controls were removed. Final whitespace cleanup is complete; verify release workflow before reporting publication.
 
-Default repositories remain zyione/4stoogies-mod-list, zyione/4stoogies-resourcepack-list, and zyione/4stoogies-shaderpack-list. The user will publish the desired resource-pack order from Minecraft using the new Push Order action; no arbitrary order was seeded.
+Default repositories remain zyione/4stoogies-mod-list, zyione/4stoogies-resourcepack-list, and zyione/4stoogies-shaderpack-list. The user will publish the desired pack order from Minecraft.
 
-Important limits: repository refresh may download pack data even for order-only actions. Reinstalls are not whole-category transactions; retained verified backups support recovery if a later write fails. Worlds and other categories remain untouched. Use C:/Users/PC/.dotnet/dotnet.exe for tests on this host.
+Use C:/Users/PC/.dotnet/dotnet.exe for tests. Repository refresh may download pack data even for priority-only operations. Reinstalls are not whole-category transactions; verified snapshots support recovery. Push and release once checks pass are authorized by the user.

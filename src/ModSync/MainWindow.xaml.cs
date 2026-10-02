@@ -742,9 +742,7 @@ public partial class MainWindow : Window
         SyncFabricLoaderToggle.IsChecked = cfg.SyncFabricLoader;
         SyncResourcePacksToggle.IsChecked = cfg.SyncResourcePacks;
         SyncShaderPacksToggle.IsChecked = cfg.SyncShaderPacks;
-        EnforcePackOrderToggle.IsChecked = cfg.EnforcePackOrder;
         EnforceActiveShaderToggle.IsChecked = cfg.EnforceActiveShader;
-        PublishPackOrderToggle.IsChecked = cfg.PublishResourcePackOrder;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 
@@ -776,9 +774,7 @@ public partial class MainWindow : Window
         cfg.SyncFabricLoader = SyncFabricLoaderToggle.IsChecked == true;
         cfg.SyncResourcePacks = SyncResourcePacksToggle.IsChecked == true;
         cfg.SyncShaderPacks = SyncShaderPacksToggle.IsChecked == true;
-        cfg.EnforcePackOrder = EnforcePackOrderToggle.IsChecked == true;
         cfg.EnforceActiveShader = EnforceActiveShaderToggle.IsChecked == true;
-        cfg.PublishResourcePackOrder = PublishPackOrderToggle.IsChecked == true;
         _configService.Save();
         _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}, SyncFabricLoader={cfg.SyncFabricLoader}");
         RefreshFabricStatusUI();

@@ -158,8 +158,14 @@ public class PackSyncService
         {
             if (scope == SyncScope.ResourcePackOrder && !cfg.SyncResourcePacks)
                 throw new InvalidOperationException("Enable Resource Pack sync in Settings first.");
-            if (cfg.SyncResourcePacks && (scope == SyncScope.ResourcePackOrder || cfg.PublishResourcePackOrder && scope.HasFlag(SyncScope.ResourcePacks)))
-                PlanPublishedOrder(summary, AssetRepositoryFolder(true));
+            if (cfg.SyncResourcePacks && (scope == SyncScope.ResourcePackOrder || scope.HasFlag(SyncScope.ResourcePacks)))
+            {
+                // A pack upload makes every uploaded pack shared in this same commit.
+                var uploadedNames = scope.HasFlag(SyncScope.ResourcePacks)
+                    ? summary.Changes.Where(c => c.SourceItem != null && c.RelativePath.StartsWith("resourcepacks/", StringComparison.Ordinal))
+                        .Select(c => c.RelativePath.Split('/')[1]) : null;
+                PlanPublishedOrder(summary, AssetRepositoryFolder(true), uploadedNames, requireSelection: scope == SyncScope.ResourcePackOrder);
+            }
             return summary;
         }
         bool orderOnly = scope == SyncScope.ResourcePackOrder;
@@ -176,7 +182,7 @@ public class PackSyncService
                 if (!installed.Contains(ValidatePackName(name)))
                     throw new InvalidDataException($"Resource pack '{name}' is not installed. Sync Resource Packs first, then sync their order.");
         }
-        if ((scope.HasFlag(SyncScope.ResourcePacks) || orderOnly) && cfg.SyncResourcePacks && (cfg.EnforcePackOrder || orderOnly) && Directory.Exists(AssetSourceFolder(true)) && File.Exists(orderFile))
+        if ((scope.HasFlag(SyncScope.ResourcePacks) || orderOnly) && cfg.SyncResourcePacks && Directory.Exists(AssetSourceFolder(true)) && File.Exists(orderFile))
         {
             var options = Path.Combine(_config.MinecraftFolder, "options.txt");
             var names = resources.Keys.Select(x => x.Split('/')[0]).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -206,16 +212,24 @@ public class PackSyncService
         return summary;
     }
 
-    private void PlanPublishedOrder(SyncSummary summary, string repository)
+    private void PlanPublishedOrder(SyncSummary summary, string repository, IEnumerable<string>? uploadedNames = null, bool requireSelection = true)
     {
         string options = Path.Combine(_config.MinecraftFolder, "options.txt");
-        if (!File.Exists(options)) throw new InvalidDataException("Open Minecraft and select resource packs before publishing their order.");
+        if (!File.Exists(options))
+        {
+            if (requireSelection) throw new InvalidDataException("Open Minecraft and select resource packs before publishing their order.");
+            return; // Never replace a published order with an invented empty selection.
+        }
         var match = Regex.Match(File.ReadAllText(options), @"(?m)^resourcePacks:([^\r\n]*)");
-        if (!match.Success) throw new InvalidDataException("Minecraft has no resource pack selection to publish.");
+        if (!match.Success)
+        {
+            if (requireSelection) throw new InvalidDataException("Minecraft has no resource pack selection to publish.");
+            return;
+        }
         var selected = JsonSerializer.Deserialize<List<string>>(match.Groups[1].Value)
             ?? throw new InvalidDataException("Invalid Minecraft resource pack selection.");
-        // Only already shared packs that remain locally available are eligible. Personal packs never enter the declaration.
-        var shared = ScanPacks(AssetSourceFolder(true), true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Order-only publishing uses existing shared packs; combined publishing includes packs uploaded in this plan.
+        var shared = (uploadedNames ?? ScanPacks(AssetSourceFolder(true), true, false).Keys.Select(x => x.Split('/')[0])).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var local = ScanPacks(_config.ResolvedResourcePacksFolder, true, false).Keys.Select(x => x.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (selected.Any(x => x == null)) throw new InvalidDataException("Invalid Minecraft resource pack selection.");
         var names = selected.Where(x => x.StartsWith("file/", StringComparison.Ordinal))

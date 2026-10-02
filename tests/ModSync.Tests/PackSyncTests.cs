@@ -163,6 +163,8 @@ public class PackSyncTests
         _config.Config.SyncShaderPacks = true;
         _config.Config.EnforcePackOrder = false;
         _config.Config.EnforceActiveShader = false;
+        Assert.ThrowsException<InvalidDataException>(() => new PackSyncService(_config).Plan());
+        Write(Path.Combine(Repo, "resourcepack-order.txt"), "Pack.zip");
         Assert.IsTrue(new PackSyncService(_config).Plan().HasChanges);
     }
 
@@ -303,13 +305,13 @@ public class PackSyncTests
         var options = "resourcePacks:[\"vanilla\",\"file/Base.zip\",\"file/Top.zip\",\"file/Personal.zip\"]\nfov:90\n";
         Write(Path.Combine(Instance, "options.txt"), options);
         _config.Config.PublishResourcePackOrder = true;
-        var plan = new PackSyncService(_config).Plan(push: true);
+        var plan = new PackSyncService(_config).Plan(push: true, scope: SyncScope.ResourcePackOrder);
         var order = plan.Added.Single(x => x.RelativePath.StartsWith("resourcepack-order.txt"));
         Assert.IsTrue(order.NewContent!.EndsWith("Top.zip\nBase.zip\n"));
         Assert.IsFalse(order.NewContent.Contains("Personal"));
         Assert.AreEqual(options, File.ReadAllText(Path.Combine(Instance, "options.txt")));
         Write(Path.Combine(Repo, "resourcepack-order.txt"), order.NewContent);
-        Assert.IsFalse(new PackSyncService(_config).Plan(push: true).Changes.Any(x => x.RelativePath.StartsWith("resourcepack-order.txt")));
+        Assert.IsFalse(new PackSyncService(_config).Plan(push: true, scope: SyncScope.ResourcePackOrder).Changes.Any(x => x.RelativePath.StartsWith("resourcepack-order.txt")));
     }
 
     [TestMethod]
