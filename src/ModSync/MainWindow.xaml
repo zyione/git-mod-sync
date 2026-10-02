@@ -196,14 +196,14 @@
                                                    Foreground="{DynamicResource PrimaryTextBrush}" />
                                     </StackPanel>
                                 </Border>
-                                <Button x:Name="SyncOnlyModsButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Margin="0,2,0,4" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" AutomationProperties.Name="Sync mods" />
-                                <Button Content="Open Folder"
-                                        Style="{StaticResource GhostButtonStyle}"
-                                        FontSize="11"
-                                        Padding="6,2"
-                                        HorizontalAlignment="Right"
-                                        Click="OpenModsFolder_Click"
-                                        ToolTip="Open mods folder in Windows File Explorer" />
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
+                                    <Button x:Name="SyncOnlyModsButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" AutomationProperties.Name="Sync mods" />
+                                    <Button x:Name="PushOnlyModsButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushOnlyMods_Click" ToolTip="Upload only mods to GitHub" AutomationProperties.Name="Push mods" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="Open Folder" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="OpenModsFolder_Click" ToolTip="Open mods folder in Windows File Explorer" />
+                                    <Button x:Name="ReinstallModsButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallMods_Click" ToolTip="Back up and reinstall mods; excluded mods and other categories stay" AutomationProperties.Name="Clean reinstall mods" />
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>

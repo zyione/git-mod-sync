@@ -316,6 +316,7 @@ public class MultiRepositoryTests
     [TestMethod]
     public async Task ModsReinstallUsesOnlyModsRepositoryAndDisabledPackReinstallDoesNothing()
     {
+        Write(Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json"), "invalid unrelated metadata");
         Write(Path.Combine(ModsRepo, "mods", "New.jar"), "new");
         Write(Path.Combine(_config.ResolvedModsFolder, "Old.jar"), "old");
         var options = Path.Combine(_config.MinecraftFolder, "options.txt"); Write(options, "original");
@@ -402,6 +403,25 @@ public class MultiRepositoryTests
         Assert.IsTrue(result.Success, result.Message);
         Assert.AreEqual("# Existing priority\nPack.zip\n", File.ReadAllText(Path.Combine(PacksRepo, "resourcepack-order.txt")));
         CollectionAssert.AreEqual(new[] { "Pack.zip" }, _git.CommitPaths[PacksRepo]);
+    }
+
+
+    [TestMethod]
+    public async Task ModsOnlyPushWorksDespiteNewerPacksAndInvalidPackTracking()
+    {
+        _git.Behind[PacksRepo] = 10; _git.Behind[ShadersRepo] = 10;
+        Write(Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json"), "invalid pack tracking");
+        Write(Path.Combine(ModsRepo, "mods", "Old.jar"), "old");
+        Write(Path.Combine(_config.ResolvedModsFolder, "New.jar"), "new");
+        Write(Path.Combine(PacksRepo, "Pack.zip"), "pack");
+        var preview = await Engine().GetPushChangesAsync(scope: SyncScope.Mods);
+        Assert.IsTrue(preview.Success, preview.Message);
+        var result = await Engine().PushModsAsync(scope: SyncScope.Mods);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.IsTrue(_git.Touched.All(folder => folder == ModsRepo));
+        CollectionAssert.AreEquivalent(new[] { "mods/New.jar", "mods/Old.jar" }, _git.CommitPaths[ModsRepo]);
+        Assert.AreEqual("pack", File.ReadAllText(Path.Combine(PacksRepo, "Pack.zip")));
+        Assert.AreEqual("invalid pack tracking", File.ReadAllText(Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json")));
     }
 
     private sealed class FakeGit : IGitService

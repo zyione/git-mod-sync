@@ -488,6 +488,7 @@ public partial class MainWindow : Window
     #region Push Action
 
     private async void PushMods_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.All);
+    private async void PushOnlyMods_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.Mods);
     private async void PushResources_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.ResourcePacks);
     private async void PushOrder_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.ResourcePackOrder);
     private async void PushShaders_Click(object sender, RoutedEventArgs e) => await PreviewPushAsync(SyncScope.Shaders);
@@ -505,7 +506,7 @@ public partial class MainWindow : Window
             return;
         }
         _pushScope = scope;
-        PushConfirmTitleText.Text = scope == SyncScope.ResourcePackOrder ? "Push Resource Pack Order?" : scope == SyncScope.ResourcePacks ? "Push Resource Packs?" : scope == SyncScope.Shaders ? "Push Shaders?" : "Push Modpack Changes?";
+        PushConfirmTitleText.Text = scope == SyncScope.Mods ? "Push Mods?" : scope == SyncScope.ResourcePackOrder ? "Push Resource Pack Order?" : scope == SyncScope.ResourcePacks ? "Push Resource Packs?" : scope == SyncScope.Shaders ? "Push Shaders?" : "Push Modpack Changes?";
 
         // Check authentication first
         var (isValid, _, authMsg) = await _authService.CheckAuthStatusAsync();
@@ -821,6 +822,7 @@ public partial class MainWindow : Window
 
     private void OpenCleanReinstallConfirm_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.Mods, fromSettings: true);
     private void OpenCleanReinstallFromMain_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.All);
+    private void ReinstallMods_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.Mods);
     private void ReinstallResources_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.ResourcePacks);
     private void ReinstallShaders_Click(object sender, RoutedEventArgs e) => ShowReinstallConfirmation(SyncScope.Shaders);
 
@@ -1065,6 +1067,8 @@ public partial class MainWindow : Window
         _isBusy = busy;
         SyncModsButton.IsEnabled = !busy;
         SyncOnlyModsButton.IsEnabled = !busy;
+        PushOnlyModsButton.IsEnabled = !busy;
+        ReinstallModsButton.IsEnabled = !busy;
         SyncResourcesButton.IsEnabled = !busy;
         SyncOrderButton.IsEnabled = !busy;
         PushOrderButton.IsEnabled = !busy;

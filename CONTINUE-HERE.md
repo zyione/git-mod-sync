@@ -1,3 +1,7 @@
+# Complete update: v1.5.1
+
+The user requested Mods Push and Reinstall before publication. The v1.5.0 workflow (37036948875) was canceled successfully before release creation; its tag remains as history. Mods controls were added beside the counter, scoped to Mods only. Unrelated malformed pack tracking no longer blocks mods actions. All 87 tests passed; dashboard and Mods confirmation were inspected in light/dark themes. Publish v1.5.1 only after these completed checks; verify its workflow and assets.
+
 # ModSync continuation record
 
 October 3, 2026: v1.4.1 was published successfully. The requested instance selection, front-screen update check, category verification statuses, and useful error recovery are implemented for v1.5.0.

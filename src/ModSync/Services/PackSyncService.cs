@@ -117,6 +117,7 @@ public class PackSyncService
     public SyncSummary Plan(bool push = false, SyncScope scope = SyncScope.All)
     {
         var summary = new SyncSummary();
+        if ((scope & (SyncScope.ResourcePacks | SyncScope.Shaders | SyncScope.ResourcePackOrder)) == 0) return summary;
         var cfg = _config.Config;
         var repository = _config.ResolvedRepositoryFolder;
         var manifestPath = Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json");

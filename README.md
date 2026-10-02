@@ -538,7 +538,7 @@ These actions refresh their repository cache normally; Sync Order avoids copying
 Push Order can refresh an outdated repository cache without changing your installed packs or saved selection. It refuses to include unfinished uploads from earlier operations; finish those uploads first.
 
 
-## Instance Selection, Status, and Recovery (v1.5.0)
+## Instance Selection, Status, and Recovery (v1.5.1)
 
 The first launch asks you to confirm a Minecraft instance before changing its files. The app folder is suggested when it contains Minecraft files. The picker detects the default Minecraft folder and common PrismLauncher, MultiMC, Modrinth, and CurseForge instance folders, plus custom game directories declared in official launcher profiles. Discovery is bounded and does not search your whole disk. Use **Browse…** for portable launchers or custom locations; select the game folder containing options.txt or saves, not the launcher folder. Selecting a mods folder through Browse uses its parent. Launch a new game instance once before selecting it.
 
@@ -547,3 +547,5 @@ The confirmed folder is stored in config.json and survives executable updates. O
 **Check for Updates** is now available on the main screen. Category counts remain separate from verification: matching numbers do not prove matching files. Each category shows Not checked, Checking, Changes available, Up to date (last check), Published (sync to verify), Failed, or Disabled. A successful sync/check verifies the selected categories; reopening the app starts at Not checked. Fabric retains its installed-versus-required status. Background count checks do not hash every large pack or claim synchronization.
 
 Failures now offer an appropriate action: retry the relevant preview/confirmation, sign in again, choose an instance, sync the selected section before pushing, open backups, or view logs. Close Minecraft before retrying locked files. No recovery action silently performs a clean reinstall or deletes backups. A whole sync is still not a transaction; completed file changes may remain after a later failure, so retained backups and retries remain important.
+
+**Mods controls:** Sync, Push, and Reinstall… now sit beside Mods. Mods Push uploads only JAR changes in the mods repository. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. The main Push Modpack action still publishes all enabled categories.
