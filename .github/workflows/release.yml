@@ -27,9 +27,19 @@ jobs:
       - name: Run Tests
         run: dotnet test ModSync.sln -c Release
 
+      - name: Extract Version From Tag
+        id: get_version
+        shell: pwsh
+        run: |
+          $rawTag = '${{ github.ref_name }}'
+          $cleanVer = $rawTag.TrimStart('v').Trim()
+          if ([string]::IsNullOrWhiteSpace($cleanVer)) { $cleanVer = "1.0.0" }
+          Write-Host "Publishing version: $cleanVer"
+          "version=$cleanVer" >> $env:GITHUB_OUTPUT
+
       - name: Publish Single-File Executable
         run: |
-          dotnet publish src/ModSync/ModSync.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ./publish
+          dotnet publish src/ModSync/ModSync.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:Version=${{ steps.get_version.outputs.version }} -p:AssemblyVersion=${{ steps.get_version.outputs.version }}.0 -p:FileVersion=${{ steps.get_version.outputs.version }}.0 -o ./publish
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

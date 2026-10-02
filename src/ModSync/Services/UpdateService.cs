@@ -39,6 +39,17 @@ public class UpdateService
             try
             {
                 var asm = Assembly.GetExecutingAssembly();
+                var infoVer = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+                if (!string.IsNullOrWhiteSpace(infoVer))
+                {
+                    // Strip git commit hash if present (e.g., 1.0.11+76c36db)
+                    string clean = infoVer.Split('+')[0].Trim();
+                    if (!string.IsNullOrWhiteSpace(clean))
+                    {
+                        return clean.TrimStart('v', 'V');
+                    }
+                }
+
                 var ver = asm.GetName().Version;
                 if (ver != null)
                 {
@@ -253,21 +264,37 @@ chcp 65001 >nul
 set ""PID={currentPid}""
 set ""TARGET={currentExePath}""
 set ""UPDATE={newExePath}""
+set ""DIR={appDir}""
 
+:: Wait up to 5 seconds for process to exit gracefully
+set /a count=0
 :wait_loop
 timeout /t 1 /nobreak >nul
+set /a count+=1
 tasklist /fi ""PID eq %PID%"" 2>nul | findstr /i ""%PID%"" >nul
-if not errorlevel 1 goto wait_loop
+if not errorlevel 1 (
+    if %count% geq 5 (
+        taskkill /F /PID %PID% >nul 2>&1
+    ) else (
+        goto wait_loop
+    )
+)
 
+:: Attempt copy/replace with retry
+set /a retries=0
 :copy_loop
 copy /y ""%UPDATE%"" ""%TARGET%"" >nul 2>&1
 if errorlevel 1 (
+    set /a retries+=1
+    if %retries% geq 10 goto finish
     timeout /t 1 /nobreak >nul
     goto copy_loop
 )
 
 del /f /q ""%UPDATE%"" >nul 2>&1
-start """" ""%TARGET%""
+
+:finish
+start """" /d ""%DIR%"" ""%TARGET%""
 (goto) 2>nul & del ""%~f0""
 ";
 
@@ -287,11 +314,16 @@ start """" ""%TARGET%""
             Process.Start(psi);
 
             // Clean shutdown of current instance
-            Application.Current.Dispatcher.Invoke(() =>
+            try
             {
-                Application.Current.Shutdown();
-            });
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    Application.Current.Shutdown();
+                });
+            }
+            catch { }
 
+            Environment.Exit(0);
             return (true, null);
         }
         catch (Exception ex)
