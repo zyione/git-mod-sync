@@ -204,29 +204,146 @@ public class FabricService
     }
 
     /// <summary>
+    /// Resolves the target Minecraft version from the repository source (Option A: minecraft-version.txt)
+    /// or falls back to AppConfig if specified (defaults to "1.20.1").
+    /// </summary>
+    public async Task<string> ResolveTargetMinecraftVersionAsync()
+    {
+        // 1. Check local cloned repository folder (minecraft-version.txt)
+        var localResult = ResolveTargetMinecraftVersionFromLocalRepo();
+        if (localResult != null)
+        {
+            return localResult;
+        }
+
+        // 2. Check remote GitHub raw URL if repository is configured
+        string repoUrl = _configService.Config.Repository;
+        if (!string.IsNullOrWhiteSpace(repoUrl))
+        {
+            var (owner, repo) = PathUtils.ParseGitHubOwnerAndRepo(repoUrl);
+            if (!string.IsNullOrEmpty(owner) && !string.IsNullOrEmpty(repo))
+            {
+                string branch = !string.IsNullOrWhiteSpace(_configService.Config.Branch)
+                    ? _configService.Config.Branch.Trim()
+                    : "main";
+                string rawUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/minecraft-version.txt";
+
+                try
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, rawUrl);
+                    request.Headers.Add("User-Agent", "ModSync-Fabric-Version-Checker");
+
+                    string? token = _authService?.GetStoredToken();
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                    }
+
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    using var response = await HttpClient.SendAsync(request, cts.Token);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string content = (await response.Content.ReadAsStringAsync()).Trim();
+                        string clean = CleanVersionString(content);
+                        if (!string.IsNullOrWhiteSpace(clean))
+                        {
+                            _logger.Info($"Resolved Minecraft version '{clean}' from remote repository: {rawUrl}");
+                            return clean;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Could not fetch remote minecraft-version.txt from {rawUrl}: {ex.Message}");
+                }
+            }
+        }
+
+        // 3. Fallback to local config.json or default 1.20.1
+        return ResolveTargetMinecraftVersionLocalFast();
+    }
+
+    /// <summary>
+    /// Fast synchronous resolution of target Minecraft version from local repo or config.
+    /// </summary>
+    public string ResolveTargetMinecraftVersionLocalFast()
+    {
+        var localResult = ResolveTargetMinecraftVersionFromLocalRepo();
+        if (localResult != null)
+        {
+            return localResult;
+        }
+
+        string? configVersion = _configService.Config.MinecraftVersion?.Trim();
+        if (!string.IsNullOrWhiteSpace(configVersion))
+        {
+            return CleanVersionString(configVersion);
+        }
+
+        return "1.20.1";
+    }
+
+    private string? ResolveTargetMinecraftVersionFromLocalRepo()
+    {
+        try
+        {
+            string repoDir = !string.IsNullOrWhiteSpace(CustomRepositoryDirectory)
+                ? CustomRepositoryDirectory
+                : _configService.ResolvedRepositoryFolder;
+
+            if (Directory.Exists(repoDir))
+            {
+                string[] candidates = { "minecraft-version.txt", "mc-version.txt", ".minecraft-version" };
+                foreach (var candidate in candidates)
+                {
+                    string txtPath = Path.Combine(repoDir, candidate);
+                    if (File.Exists(txtPath))
+                    {
+                        string content = File.ReadAllText(txtPath).Trim();
+                        string clean = CleanVersionString(content);
+                        if (!string.IsNullOrWhiteSpace(clean))
+                        {
+                            _logger.Info($"Resolved Minecraft version '{clean}' from local repo: {txtPath}");
+                            return clean;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Error reading local minecraft-version.txt: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Asynchronously inspects the repository source and local .minecraft directory.
     /// </summary>
     public async Task<FabricStatusInfo> DetectFabricStatusAsync()
     {
         var (targetVersion, source) = await ResolveTargetFabricLoaderVersionAsync();
-        return DetectFabricStatusInternal(targetVersion, source);
+        string? targetMcVersion = await ResolveTargetMinecraftVersionAsync();
+        return DetectFabricStatusInternal(targetVersion, source, targetMcVersion);
     }
 
     /// <summary>
     /// Inspects the local .minecraft directory and compares against the target version.
     /// </summary>
-    public FabricStatusInfo DetectFabricStatus(string? targetVersionOverride = null, string? sourceOverride = null)
+    public FabricStatusInfo DetectFabricStatus(string? targetVersionOverride = null, string? sourceOverride = null, string? mcVersionOverride = null)
     {
         if (targetVersionOverride != null)
         {
-            return DetectFabricStatusInternal(targetVersionOverride, sourceOverride ?? "Specified Version");
+            return DetectFabricStatusInternal(targetVersionOverride, sourceOverride ?? "Specified Version", mcVersionOverride);
         }
 
         var (targetVersion, source) = ResolveTargetFabricLoaderVersionLocalFast();
-        return DetectFabricStatusInternal(targetVersion, source);
+        string targetMc = mcVersionOverride ?? ResolveTargetMinecraftVersionLocalFast();
+        return DetectFabricStatusInternal(targetVersion, source, targetMc);
     }
 
-    private FabricStatusInfo DetectFabricStatusInternal(string? targetVersion, string? versionSource)
+    private FabricStatusInfo DetectFabricStatusInternal(string? targetVersion, string? versionSource, string? targetMcVersion = null)
     {
         bool isConfigured = !string.IsNullOrWhiteSpace(targetVersion);
         string mcDir = GetMinecraftDirectory();
@@ -243,6 +360,7 @@ public class FabricService
 
         if (!mcFound)
         {
+            info.MinecraftVersion = targetMcVersion ?? TryDetectMcVersionFromModsFolder() ?? ResolveTargetMinecraftVersionLocalFast();
             info.Details = $"Local .minecraft folder was not found at '{mcDir}'.";
             _logger.Warning($"Fabric check: .minecraft folder not found at '{mcDir}'");
             return info;
@@ -387,8 +505,14 @@ public class FabricService
                 detectedMcVersion = TryDetectMcVersionFromModsFolder();
             }
 
+            // 5. Fallback: check repository minecraft-version.txt or AppConfig
+            if (detectedMcVersion == null)
+            {
+                detectedMcVersion = targetMcVersion ?? ResolveTargetMinecraftVersionLocalFast();
+            }
+
             info.InstalledLoaderVersion = installedLoader;
-            info.MinecraftVersion = detectedMcVersion;
+            info.MinecraftVersion = detectedMcVersion ?? "1.20.1";
 
             if (!isConfigured)
             {
@@ -591,58 +715,79 @@ public class FabricService
     }
 
     /// <summary>
-    /// Helper to inspect JAR files in the mods folder to extract the Minecraft version dependency.
+    /// Helper to inspect JAR files in the mods or repo folder to extract the Minecraft version dependency.
     /// </summary>
     private string? TryDetectMcVersionFromModsFolder()
     {
         try
         {
+            var searchDirs = new List<string>();
             string modsFolder = _configService.ResolvedModsFolder;
-            if (!Directory.Exists(modsFolder))
-            {
-                return null;
-            }
+            if (Directory.Exists(modsFolder)) searchDirs.Add(modsFolder);
 
-            var jarFiles = Directory.GetFiles(modsFolder, "*.jar", SearchOption.TopDirectoryOnly);
-            foreach (var jarPath in jarFiles)
+            string repoFolder = !string.IsNullOrWhiteSpace(CustomRepositoryDirectory)
+                ? CustomRepositoryDirectory
+                : _configService.ResolvedRepositoryFolder;
+            if (Directory.Exists(repoFolder) && !searchDirs.Contains(repoFolder)) searchDirs.Add(repoFolder);
+
+            foreach (var dir in searchDirs)
             {
-                try
+                var jarFiles = Directory.GetFiles(dir, "*.jar", SearchOption.TopDirectoryOnly);
+
+                // 1. Fast check: filename regex (e.g. AmbientSounds_FABRIC_v6.3.8_mc1.20.1.jar, AttributeFix-Fabric-1.20.1-21.0.4.jar)
+                foreach (var jarPath in jarFiles)
                 {
-                    using var archive = ZipFile.OpenRead(jarPath);
-                    var entry = archive.GetEntry("fabric.mod.json");
-                    if (entry != null)
+                    string fname = Path.GetFileName(jarPath);
+                    var match = Regex.Match(fname, @"(?:mc|fabric)[-_]?(?<mc>1\.\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+                    if (match.Success)
                     {
-                        using var stream = entry.Open();
-                        using var doc = JsonDocument.Parse(stream);
-                        var root = doc.RootElement;
+                        string ver = match.Groups["mc"].Value;
+                        _logger.Info($"Detected Minecraft version '{ver}' from jar filename: {fname}");
+                        return ver;
+                    }
+                }
 
-                        if (root.TryGetProperty("depends", out var dependsProp) && dependsProp.ValueKind == JsonValueKind.Object)
+                // 2. Deep check: read fabric.mod.json
+                foreach (var jarPath in jarFiles)
+                {
+                    try
+                    {
+                        using var archive = ZipFile.OpenRead(jarPath);
+                        var entry = archive.GetEntry("fabric.mod.json");
+                        if (entry != null)
                         {
-                            if (dependsProp.TryGetProperty("minecraft", out var mcProp))
+                            using var stream = entry.Open();
+                            using var doc = JsonDocument.Parse(stream);
+                            var root = doc.RootElement;
+
+                            if (root.TryGetProperty("depends", out var dependsProp) && dependsProp.ValueKind == JsonValueKind.Object)
                             {
-                                string? mcDep = mcProp.ValueKind == JsonValueKind.String ? mcProp.GetString() : null;
-                                if (!string.IsNullOrWhiteSpace(mcDep))
+                                if (dependsProp.TryGetProperty("minecraft", out var mcProp))
                                 {
-                                    var match = Regex.Match(mcDep, @"\d+\.\d+(?:\.\d+)?");
-                                    if (match.Success)
+                                    string? mcDep = mcProp.ValueKind == JsonValueKind.String ? mcProp.GetString() : null;
+                                    if (!string.IsNullOrWhiteSpace(mcDep))
                                     {
-                                        _logger.Info($"Detected Minecraft version '{match.Value}' from mod {Path.GetFileName(jarPath)}");
-                                        return match.Value;
+                                        var match = Regex.Match(mcDep, @"\d+\.\d+(?:\.\d+)?");
+                                        if (match.Success)
+                                        {
+                                            _logger.Info($"Detected Minecraft version '{match.Value}' from fabric.mod.json in {Path.GetFileName(jarPath)}");
+                                            return match.Value;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                catch
-                {
-                    // Ignore individual unreadable jars
+                    catch
+                    {
+                        // Ignore individual unreadable jars
+                    }
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.Warning($"Could not scan mods folder for Minecraft version: {ex.Message}");
+            _logger.Warning($"Could not scan mods/repo folders for Minecraft version: {ex.Message}");
         }
 
         return null;

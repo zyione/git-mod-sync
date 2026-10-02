@@ -86,4 +86,11 @@ public class AppConfig
     /// </summary>
     [JsonPropertyName("syncFabricLoader")]
     public bool SyncFabricLoader { get; set; } = true;
+
+    /// <summary>
+    /// Target or fallback Minecraft version (e.g. "1.20.1").
+    /// Inferred automatically from installed profiles or repository (minecraft-version.txt).
+    /// </summary>
+    [JsonPropertyName("minecraftVersion")]
+    public string MinecraftVersion { get; set; } = "1.20.1";
 }

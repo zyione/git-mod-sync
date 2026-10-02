@@ -366,7 +366,7 @@ public partial class MainWindow : Window
                             fabricTarget = _currentFabricStatus.TargetLoaderVersion;
                             string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
                                 ? _currentFabricStatus.MinecraftVersion
-                                : "1.21.1";
+                                : (!string.IsNullOrWhiteSpace(_configService.Config.MinecraftVersion) ? _configService.Config.MinecraftVersion : "1.20.1");
 
                             UpdateProgress(SyncProgressInfo.Indeterminate("Syncing Fabric Loader...", $"Installing Fabric Loader {fabricTarget}..."));
 
@@ -1536,7 +1536,9 @@ public partial class MainWindow : Window
 
         string installed = _currentFabricStatus.InstalledLoaderVersion ?? "Not installed";
         string target = _currentFabricStatus.TargetLoaderVersion ?? _configService.Config.FabricLoaderVersion ?? "0.16.9";
-        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion) ? _currentFabricStatus.MinecraftVersion : "1.21.1";
+        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
+            ? _currentFabricStatus.MinecraftVersion
+            : (!string.IsNullOrWhiteSpace(_configService.Config.MinecraftVersion) ? _configService.Config.MinecraftVersion : "1.20.1");
 
         FabricModalCurrentVerText.Text = installed;
         FabricModalTargetVerText.Text = target;
@@ -1557,7 +1559,9 @@ public partial class MainWindow : Window
         }
 
         string target = _currentFabricStatus.TargetLoaderVersion ?? _configService.Config.FabricLoaderVersion ?? "0.16.9";
-        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion) ? _currentFabricStatus.MinecraftVersion : "1.21.1";
+        string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
+            ? _currentFabricStatus.MinecraftVersion
+            : (!string.IsNullOrWhiteSpace(_configService.Config.MinecraftVersion) ? _configService.Config.MinecraftVersion : "1.20.1");
 
         SetBusy(true, "Installing Fabric Loader...");
 

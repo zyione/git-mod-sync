@@ -1408,7 +1408,7 @@
                                     <TextBlock x:Name="FabricModalTargetVerText" Grid.Row="1" Grid.Column="1" Text="0.16.9" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,8" />
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Minecraft Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
-                                    <TextBlock x:Name="FabricModalMcVerText" Grid.Row="2" Grid.Column="1" Text="1.21.1" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="FabricModalMcVerText" Grid.Row="2" Grid.Column="1" Text="1.20.1" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
 
                                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Target Instance:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" />
                                     <TextBlock x:Name="FabricModalInstancePathText" Grid.Row="3" Grid.Column="1" Text=".minecraft" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />

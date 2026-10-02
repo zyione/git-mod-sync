@@ -22,7 +22,7 @@ public class FabricStatusInfo
     public string? InstalledLoaderVersion { get; set; }
 
     /// <summary>
-    /// The Minecraft game version detected from the installed profile or modpack (e.g. "1.21.1").
+    /// The Minecraft game version detected from the installed profile, repository, or config (e.g. "1.20.1").
     /// </summary>
     public string? MinecraftVersion { get; set; }
 
