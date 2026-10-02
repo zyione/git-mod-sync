@@ -147,7 +147,7 @@
                             <!-- Status Details -->
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <TextBlock x:Name="StatusHeadingText"
-                                           Text="Mods • Connected to GitHub"
+                                           Text="Mods · Not checked"
                                            FontSize="13"
                                            FontWeight="SemiBold"
                                            Foreground="{DynamicResource PrimaryTextBrush}" />
@@ -215,6 +215,7 @@
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Resource Packs" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock x:Name="ResourceRepoText" Text="4stoogies-resourcepack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="ResourceStateText" Text="Not checked" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                     <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -235,6 +236,7 @@
                                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
                                     <TextBlock Text="Shaders" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock x:Name="ShaderRepoText" Text="4stoogies-shaderpack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                    <TextBlock x:Name="ShaderStateText" Text="Not checked" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                     <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
@@ -444,6 +446,10 @@
                             Margin="0,0,0,16"
                             Click="PushMods_Click" />
 
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                        <Button x:Name="ChooseInstanceButton" Content="Choose Instance" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click" />
+                        <Button x:Name="FrontCheckUpdatesButton" Content="Check for Updates" Style="{StaticResource GhostButtonStyle}" Click="CheckForUpdates_Click" />
+                    </StackPanel>
                     <!-- Tertiary Actions Row -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Button Content="Check Status"
@@ -500,11 +506,12 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="FeedbackMessageText"
+                        <TextBlock x:Name="FeedbackMessageText" TextWrapping="Wrap"
                                    Text="Mods are up to date."
                                    FontSize="12"
                                    Foreground="{DynamicResource PrimaryTextBrush}"
                                    VerticalAlignment="Center" />
+                        <Button x:Name="RecoveryButton" Grid.Column="1" Content="Retry" Visibility="Collapsed" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="8,2" Click="Recovery_Click" />
                         <Button x:Name="FeedbackActionButton"
                                 Grid.Column="1"
                                 Content="Open Backup"
@@ -542,6 +549,34 @@
                         HorizontalAlignment="Center">
 
                     <Grid>
+                <Border x:Name="InstanceSheet" Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Text="Choose your Minecraft instance" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock x:Name="InstanceIntroText" Text="Start with the folder beside ModSync, or select an installed instance. Your choice is remembered across updates." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,8,0,14" />
+                        <ListBox x:Name="InstanceList" MaxHeight="190" Background="{DynamicResource InputBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderBrush="{DynamicResource CardBorderBrush}" SelectionChanged="InstanceSelectionChanged">
+                            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="ItemBackground" Padding="4" Background="Transparent" CornerRadius="6"><ContentPresenter /></Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBackground" Property="Background" Value="{DynamicResource AccentBrush}" /><Setter Property="Foreground" Value="White" /></Trigger>
+                                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="ItemBackground" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}" /><Setter TargetName="ItemBackground" Property="BorderThickness" Value="1" /></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate></Setter.Value></Setter>
+                            </Style></ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4"><TextBlock Text="{Binding Name}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" FontWeight="SemiBold" /><TextBlock Text="{Binding Folder}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" FontSize="11" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock x:Name="InstanceSelectedPathText" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,10,0,0" />
+                        <TextBlock x:Name="InstanceErrorText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource ErrorBrush}" Margin="0,8,0,0" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                            <Button Content="Browse…" Style="{StaticResource GhostButtonStyle}" Click="BrowseInstance_Click" />
+                            <Button x:Name="InstanceCancelButton" Content="Cancel" Style="{StaticResource GhostButtonStyle}" Click="CloseModal_Click" />
+                            <Button x:Name="ConfirmInstanceButton" Content="Use Instance" Style="{StaticResource PrimaryButtonStyle}" Padding="14,8" Click="ConfirmInstance_Click" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                         <!-- ================= 1. PUSH CONFIRMATION MODAL ================= -->
                         <StackPanel x:Name="PushConfirmSheet" Visibility="Collapsed">
                             <TextBlock x:Name="PushConfirmTitleText" Text="Push Modpack Changes?"

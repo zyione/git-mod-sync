@@ -57,7 +57,7 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
         {
-            if (!_isBusy)
+            if (!_isBusy && _configService.Config.InstanceSelectionCompleted)
             {
                 await RefreshLocalModCountAsync();
                 RefreshFabricStatusUI();
@@ -68,8 +68,17 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateStatusCard();
+        RenderCategoryStates();
+        if (!EnsureInstanceSelected()) return;
 
-        // Force check for application updates on every startup
+        await StartDashboardAsync();
+    }
+
+    private async Task StartDashboardAsync()
+    {
+        if (_dashboardStarted) return;
+        _dashboardStarted = true;
+        // Check for application updates when enabled
         if (_configService.Config.AutoCheckUpdates) _ = CheckForUpdatesOnStartupAsync();
 
         await RefreshAuthStatusAsync();
@@ -114,13 +123,17 @@ public partial class MainWindow : Window
 
     private async Task RefreshLocalModCountAsync(bool fetchRemote = true)
     {
+        string instance = _configService.MinecraftFolder;
         try
         {
             var (localCount, expectedCount) = await Task.Run(() => _syncService.GetModCountsAsync(fetchRemote));
+            if (!instance.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase)) return;
             UpdateModCountBadge(localCount, expectedCount);
             var (resources, shaders) = await Task.Run(() => new PackSyncService(_configService).SectionStatus());
+            if (!instance.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase)) return;
             PackStatusText.Text = resources;
             ShaderStatusText.Text = shaders;
+            RenderCategoryStates();
         }
         catch (Exception ex)
         {
@@ -148,8 +161,8 @@ public partial class MainWindow : Window
                 if (localCount == expected)
                 {
                     ModCountStatusIcon.Visibility = Visibility.Visible;
-                    ModCountBadgeBorder.ToolTip = $"All mods synchronized ({localCount} of {expected} installed)";
-                    StatusHeadingText.Text = "All Mods Synchronized";
+                    ModCountBadgeBorder.ToolTip = $"{localCount} installed / {expected} repository files. Use Check Status to verify contents.";
+                    StatusHeadingText.Text = "Mods · Not checked";
                     StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
                 }
                 else if (localCount < expected)
@@ -240,7 +253,9 @@ public partial class MainWindow : Window
 
     private async Task BeginSyncAsync(SyncScope scope)
     {
-        if (_isBusy) return;
+        if (_isBusy || !EnsureInstanceSelected()) return;
+        _activeScope = scope;
+        _retryOperation = () => BeginSyncAsync(scope);
         if ((scope == SyncScope.ResourcePacks || scope == SyncScope.ResourcePackOrder) && !_configService.Config.SyncResourcePacks ||
             scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks)
         {
@@ -248,6 +263,7 @@ public partial class MainWindow : Window
             return;
         }
         _syncScope = scope;
+        SetCategoryState(scope, "Checking…");
         SyncConfirmTitleText.Text = scope switch
         {
             SyncScope.Mods => "Sync Mods from GitHub?",
@@ -265,6 +281,9 @@ public partial class MainWindow : Window
             try
             {
                 var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress, _syncScope, refreshRepository: true));
+
+                if (!gitStatus.IsConnected || gitStatus.ErrorMessage != null) throw new System.IO.IOException(gitStatus.ErrorMessage ?? "Could not connect to GitHub.");
+                SetCheckedStates(_syncScope, modChanges);
 
                 // Check if Fabric Loader also needs update
                 bool fabricNeedsUpdate = false;
@@ -345,6 +364,8 @@ public partial class MainWindow : Window
 
     private async Task PerformSyncAsync(bool skipConfirmation = false)
     {
+        if (!EnsureInstanceSelected()) return;
+        SetCategoryState(_syncScope, "Syncing…");
         SetBusy(true, "Syncing selected files...");
         DismissFeedback();
 
@@ -439,6 +460,7 @@ public partial class MainWindow : Window
                 {
                     ShowFeedback("✓ Already up to date. No files were changed.", false);
                 }
+                MarkSyncComplete(_syncScope);
                 SetStatusDot(true);
             }
             else
@@ -472,7 +494,9 @@ public partial class MainWindow : Window
 
     private async Task PreviewPushAsync(SyncScope scope)
     {
-        if (_isBusy) return;
+        if (_isBusy || !EnsureInstanceSelected()) return;
+        _activeScope = scope;
+        _retryOperation = () => PreviewPushAsync(scope);
 
         if (((scope == SyncScope.ResourcePacks || scope == SyncScope.ResourcePackOrder) && !_configService.Config.SyncResourcePacks) ||
             (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
@@ -548,6 +572,7 @@ public partial class MainWindow : Window
 
     private async void ConfirmPush_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy || !EnsureInstanceSelected()) return;
         CloseModal();
         SetBusy(true, "Pushing selected updates to GitHub...");
 
@@ -559,6 +584,7 @@ public partial class MainWindow : Window
 
             if (success)
             {
+                SetCategoryState(_pushScope, "Published · sync to verify");
                 ShowFeedback("✓ Successfully pushed selected updates to GitHub!", false);
             }
             else
@@ -585,12 +611,18 @@ public partial class MainWindow : Window
     private async void CheckStatus_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy) return;
+        if (!EnsureInstanceSelected()) return;
+        _activeScope = SyncScope.All;
+        _retryOperation = () => { CheckStatus_Click(this, new RoutedEventArgs()); return Task.CompletedTask; };
+        SetCategoryState(SyncScope.All, "Checking…");
         SetBusy(true, "Checking status from GitHub...");
 
         try
         {
-            var (gitStatus, modChanges, localCount, repoCount) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress));
+            var (gitStatus, modChanges, localCount, repoCount) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress, refreshRepository: true));
             UpdateModCountBadge(localCount, repoCount);
+            if (!gitStatus.IsConnected || gitStatus.ErrorMessage != null) throw new System.IO.IOException(gitStatus.ErrorMessage ?? "Could not connect to GitHub.");
+            SetCheckedStates(SyncScope.All, modChanges);
 
             StatusDialogRepoText.Text = $"Repository:  {gitStatus.RepositoryUrl}";
             StatusDialogBranchText.Text = $"Branch:      {gitStatus.Branch} ({gitStatus.StatusMessage})";
@@ -726,6 +758,7 @@ public partial class MainWindow : Window
         }
         CloseModal();
         UpdateStatusCard();
+        _categoryStates.Clear(); RenderCategoryStates();
         ShowFeedback("Repositories saved. Sync a section or use Sync All to download updates.", false);
     }
 
@@ -776,40 +809,13 @@ public partial class MainWindow : Window
         cfg.SyncShaderPacks = SyncShaderPacksToggle.IsChecked == true;
         cfg.EnforceActiveShader = EnforceActiveShaderToggle.IsChecked == true;
         _configService.Save();
+        RenderCategoryStates();
         _logger.Info($"Preferences saved: ConfirmBeforeSync={cfg.RequireConfirmationBeforeSync}, ConfirmBeforePush={cfg.RequireConfirmationBeforePush}, AutoCheckUpdates={cfg.AutoCheckUpdates}, SyncFabricLoader={cfg.SyncFabricLoader}");
         RefreshFabricStatusUI();
     }
 
-    private void ChangeModsFolder_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Select Minecraft mods Folder",
-            InitialDirectory = _configService.ResolvedModsFolder
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            string chosenPath = dialog.FolderName;
-            if (!string.IsNullOrWhiteSpace(chosenPath) && Directory.Exists(chosenPath))
-            {
-                _configService.SetModsFolder(chosenPath);
-                SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
-                UpdateStatusCard();
-                _ = RefreshLocalModCountAsync();
-                ShowFeedback($"✓ Mods folder set to: {_configService.ResolvedModsFolder}", false);
-            }
-        }
-    }
-
-    private void ResetModsFolder_Click(object sender, RoutedEventArgs e)
-    {
-        _configService.SetModsFolder("./mods");
-        SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
-        UpdateStatusCard();
-        _ = RefreshLocalModCountAsync();
-        ShowFeedback("✓ Mods folder reset to default (./mods)", false);
-    }
+    private void ChangeModsFolder_Click(object sender, RoutedEventArgs e) => ChooseInstance_Click(sender, e);
+    private void ResetModsFolder_Click(object sender, RoutedEventArgs e) => ChooseInstance_Click(sender, e);
 
     private bool _reinstallOpenedFromSettings = false;
 
@@ -823,6 +829,9 @@ public partial class MainWindow : Window
         if (_isBusy) return;
         if ((scope == SyncScope.ResourcePacks && !_configService.Config.SyncResourcePacks) || (scope == SyncScope.Shaders && !_configService.Config.SyncShaderPacks))
         { ShowFeedback("Enable this category in Settings first.", true); return; }
+        if (!EnsureInstanceSelected()) return;
+        _activeScope = scope;
+        _retryOperation = () => { ShowReinstallConfirmation(scope); return Task.CompletedTask; };
         _reinstallScope = scope;
         _reinstallOpenedFromSettings = fromSettings;
         ReinstallBackButton.Visibility = fromSettings ? Visibility.Visible : Visibility.Collapsed;
@@ -861,6 +870,7 @@ public partial class MainWindow : Window
 
     private async void ConfirmCleanReinstall_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy || !EnsureInstanceSelected()) return;
         CloseModal();
         DismissFeedback();
         SetBusy(true, "Backing up and reinstalling the selected category…");
@@ -902,6 +912,7 @@ public partial class MainWindow : Window
             if (success)
             {
                 SetStatusDot(true);
+                SetCategoryState(_reinstallScope, "Up to date · last check");
                 _lastBackupFolder = backupDir;
 
                 if (!string.IsNullOrEmpty(backupDir))
@@ -1064,6 +1075,9 @@ public partial class MainWindow : Window
         PushResourcesButton.IsEnabled = !busy;
         PushShadersButton.IsEnabled = !busy;
         FabricUpdateButton.IsEnabled = !busy;
+        ChooseInstanceButton.IsEnabled = !busy;
+        FrontCheckUpdatesButton.IsEnabled = !busy && !_checkingUpdates;
+        RecoveryButton.IsEnabled = !busy;
 
         if (busy)
         {
@@ -1080,15 +1094,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SetStatusDot(bool ok)
-    {
-        StatusDot.Fill = ok
-            ? (Brush)FindResource("SuccessBrush")
-            : (Brush)FindResource("ErrorBrush");
-    }
+    private void SetStatusDot(bool ok) => RenderCategoryStates();
 
     private void ShowFeedback(string message, bool isError, bool showBackupAction = false)
     {
+        if (isError && _isBusy && _activeScope.HasValue) SetCategoryState(_activeScope.Value, "Failed");
+        _recovery = isError ? ErrorRecoveryService.Suggest(message, _retryOperation != null) : null;
+        RecoveryButton.Visibility = isError && !showBackupAction ? Visibility.Visible : Visibility.Collapsed;
+        if (_recovery != null) { RecoveryButton.Content = _recovery.Label; message += "\n" + _recovery.Hint; }
         FeedbackMessageText.Text = message;
         FeedbackMessageText.Foreground = isError
             ? (Brush)FindResource("ErrorBrush")
@@ -1101,6 +1114,7 @@ public partial class MainWindow : Window
     private void DismissFeedback()
     {
         FeedbackCard.Visibility = Visibility.Collapsed;
+        RecoveryButton.Visibility = Visibility.Collapsed;
         FeedbackActionButton.Visibility = Visibility.Collapsed;
     }
 
@@ -1111,6 +1125,7 @@ public partial class MainWindow : Window
 
     private void ShowModal(FrameworkElement sheet)
     {
+        InstanceSheet.Visibility = Visibility.Collapsed;
         PushConfirmSheet.Visibility = Visibility.Collapsed;
         LoginSheet.Visibility = Visibility.Collapsed;
         SwitchRepoSheet.Visibility = Visibility.Collapsed;
@@ -1128,6 +1143,8 @@ public partial class MainWindow : Window
 
     private void CloseModal()
     {
+        if (InstanceSheet.Visibility == Visibility.Visible && (!_configService.Config.InstanceSelectionCompleted || !System.IO.Directory.Exists(_configService.MinecraftFolder))) return;
+        InstanceSheet.Visibility = Visibility.Collapsed;
         PushConfirmSheet.Visibility = Visibility.Collapsed;
         LoginSheet.Visibility = Visibility.Collapsed;
         SwitchRepoSheet.Visibility = Visibility.Collapsed;
@@ -1225,6 +1242,11 @@ public partial class MainWindow : Window
 
     private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy || _checkingUpdates) return;
+        _activeScope = null;
+        _retryOperation = () => { CheckForUpdates_Click(this, new RoutedEventArgs()); return Task.CompletedTask; };
+        _checkingUpdates = true;
+        FrontCheckUpdatesButton.IsEnabled = false;
         CheckAppUpdatesButton.IsEnabled = false;
         DismissFeedback();
 
@@ -1248,12 +1270,17 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _checkingUpdates = false;
+            FrontCheckUpdatesButton.IsEnabled = !_isBusy;
             CheckAppUpdatesButton.IsEnabled = true;
         }
     }
 
     private async void ApplyUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
+        _activeScope = null;
+        _retryOperation = () => { if (_latestUpdateInfo != null) ShowUpdateSheet(_latestUpdateInfo); return Task.CompletedTask; };
         if (_isBusy) return;
         if (_latestUpdateInfo == null || string.IsNullOrWhiteSpace(_latestUpdateInfo.DownloadUrl))
         {
@@ -1552,6 +1579,7 @@ public partial class MainWindow : Window
 
     private async Task RefreshFabricStatusUIAsync()
     {
+        string instance = _configService.MinecraftFolder;
         try
         {
             // Initial fast local check
@@ -1560,6 +1588,7 @@ public partial class MainWindow : Window
 
             // Asynchronous check (fetches fabric-version.txt from repository if remote/not yet cloned)
             var remoteStatus = await _fabricService.DetectFabricStatusAsync();
+            if (!instance.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase)) return;
             if (remoteStatus.IsConfigured || _currentFabricStatus?.IsConfigured == true)
             {
                 _currentFabricStatus = remoteStatus;
@@ -1636,7 +1665,9 @@ public partial class MainWindow : Window
 
     private void FabricUpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isBusy) return;
+        if (_isBusy || !EnsureInstanceSelected()) return;
+        _activeScope = null;
+        _retryOperation = () => { FabricUpdateButton_Click(this, new RoutedEventArgs()); return Task.CompletedTask; };
 
         if (_currentFabricStatus == null)
         {
@@ -1659,6 +1690,7 @@ public partial class MainWindow : Window
 
     private async void ConfirmFabricUpdate_Click(object sender, RoutedEventArgs e)
     {
+        if (!EnsureInstanceSelected()) return;
         CloseModal();
         if (_isBusy) return;
 

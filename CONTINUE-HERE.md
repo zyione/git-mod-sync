@@ -1,14 +1,15 @@
 # ModSync continuation record
 
-October 3, 2026: v1.4.0 was published successfully. The user's follow-up requires ordinary Resource Pack Push and Sync to include order automatically; v1.4.1 implements this and is ready for release verification.
+October 3, 2026: v1.4.1 was published successfully. The requested instance selection, front-screen update check, category verification statuses, and useful error recovery are implemented for v1.5.0.
 
-- Resource Pack Push uploads pack files plus their saved Minecraft order in the same commit, including newly uploaded selected packs. Missing saved selection preserves existing order; explicitly empty selection clears shared activation. Malformed selection aborts before writes.
-- Resource Pack Sync, Sync All, and Resource Pack Reinstall apply the shared declaration automatically, regardless of legacy order preferences. Personal selections remain and may override shared packs.
-- Push Order / Sync Order remain separate priority-only actions. Push Order excludes unshared personal packs.
-- Independent resource/shader reinstalls retain verified backups and category isolation; worlds remain untouched.
-- Obsolete order toggles removed from Settings; old config keys are accepted for compatibility but no longer gate order behavior.
-- 78 automated tests passed after Settings controls were removed. Final whitespace cleanup is complete; verify release workflow before reporting publication.
+- First run confirms a detected Minecraft instance; app directory is suggested if it contains game files. Bounded detection checks default/common launcher locations and official launcher custom gameDir profiles. Browse supports custom/portable locations; a new instance must have been launched once to create recognizable game files.
+- config.json stores instanceSelectionCompleted and the selected mods path. Existing completed-sync/custom-path configs migrate without repeating onboarding. Missing saved folders prompt for replacement. Choose Instance is on the main screen and Settings; relative pack paths, Fabric information, and backups follow the instance.
+- config saves use a temporary file replacement. Failed instance save restores the previous in-memory choice.
+- Main screen has Check for Updates. Counters are retained; equal counts do not prove synchronized contents. States include unchecked, checking, changes available, last verified, published, failed, and disabled. Order-only checks never claim pack contents were verified.
+- Recovery actions route to Retry, Sign In, Choose Instance, Sync Section, Open Backups, or View Logs. Retries reopen relevant preview/confirmation; no automatic clean reinstall or backup deletion.
+- Changing instances clears category verification/Fabric status/backup shortcut and ignores old asynchronous count/Fabric results.
+- 86 tests passed, no compiler warnings, git diff --check passed. Instance chooser/dashboard previews inspected in both themes. Release notes: docs/releases/v1.5.0.md. Remaining step is push/tag and verify the release workflow/assets.
 
-Default repositories remain zyione/4stoogies-mod-list, zyione/4stoogies-resourcepack-list, and zyione/4stoogies-shaderpack-list. The user will publish the desired pack order from Minecraft.
+Default repositories remain zyione/4stoogies-mod-list, zyione/4stoogies-resourcepack-list, and zyione/4stoogies-shaderpack-list. Resource Pack Push/Sync automatically include order; independent order-only actions remain.
 
-Use C:/Users/PC/.dotnet/dotnet.exe for tests. Repository refresh may download pack data even for priority-only operations. Reinstalls are not whole-category transactions; verified snapshots support recovery. Push and release once checks pass are authorized by the user.
+Use C:/Users/PC/.dotnet/dotnet.exe for tests. Whole syncs are not transactions; completed changes may remain after a later failure, with snapshots available for recovery. Discovery does not recursively search the user's entire disk. Push/release after passing checks is authorized by the user.

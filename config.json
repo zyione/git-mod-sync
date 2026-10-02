@@ -33,5 +33,6 @@
   "syncShaderPacks": true,
   "enforcePackOrder": true,
   "enforceActiveShader": true,
-  "publishResourcePackOrder": false
+  "publishResourcePackOrder": false,
+  "instanceSelectionCompleted": false
 }

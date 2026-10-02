@@ -35,6 +35,9 @@ public class AppConfig
     [JsonPropertyName("branch")]
     public string Branch { get; set; } = "main";
 
+    [JsonPropertyName("instanceSelectionCompleted")]
+    public bool InstanceSelectionCompleted { get; set; }
+
     [JsonPropertyName("modsFolder")]
     public string ModsFolder { get; set; } = "./mods";
 

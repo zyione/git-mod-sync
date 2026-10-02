@@ -45,10 +45,10 @@ public class ConfigService
     public string ResolvedShaderPacksFolder => ResolveAssetFolder(Config.ShaderPacksFolder);
     private string ResolveAssetFolder(string path) => Path.GetFullPath(Path.Combine(MinecraftFolder, path));
 
-    public ConfigService(LoggingService logger)
+    public ConfigService(LoggingService logger, string? configFilePath = null)
     {
         _logger = logger;
-        _configFilePath = Path.Combine(PathUtils.GetAppDirectory(), "config.json");
+        _configFilePath = configFilePath ?? Path.Combine(PathUtils.GetAppDirectory(), "config.json");
     }
 
     /// <summary>
@@ -83,6 +83,11 @@ public class ConfigService
             }
 
             Config = loaded;
+            // Existing installations keep their selected folder when upgrading from versions without onboarding.
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.EnumerateObject().Any(p => p.Name.Equals("instanceSelectionCompleted", StringComparison.OrdinalIgnoreCase)) &&
+                (Config.FirstSyncCompleted || Config.ModsFolder is not ("./mods" or "../mods" or "mods")))
+                Config.InstanceSelectionCompleted = true;
 
             // Auto-heal old "../mods" if running directly inside .minecraft
             string appDir = PathUtils.GetAppDirectory();
@@ -171,6 +176,18 @@ public class ConfigService
         return Save();
     }
 
+    public bool SelectInstance(string instanceFolder)
+    {
+        if (!InstanceDiscoveryService.IsInstance(instanceFolder)) return false;
+        string oldPath = Config.ModsFolder;
+        bool oldConfirmed = Config.InstanceSelectionCompleted;
+        Config.ModsFolder = Path.Combine(Path.GetFullPath(instanceFolder), "mods");
+        Config.InstanceSelectionCompleted = true;
+        if (Save()) return true;
+        Config.ModsFolder = oldPath; Config.InstanceSelectionCompleted = oldConfirmed;
+        return false;
+    }
+
     /// <summary>
     /// Saves the current configuration to config.json.
     /// </summary>
@@ -179,7 +196,9 @@ public class ConfigService
         try
         {
             string json = JsonSerializer.Serialize(Config, JsonOptions);
-            File.WriteAllText(_configFilePath, json);
+            string temporary = _configFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try { File.WriteAllText(temporary, json); File.Move(temporary, _configFilePath, overwrite: true); }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
             _logger.Info("Saved configuration updates to config.json");
             return true;
         }

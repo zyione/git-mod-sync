@@ -43,6 +43,11 @@ public class LayoutTests
                 app.InitializeComponent();
                 var window = new MainWindow();
                 var root = (FrameworkElement)window.Content;
+                var config = (ModSync.Services.ConfigService)typeof(MainWindow).GetField("_configService", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
+                config.Config.ModsFolder = Path.Combine(AppContext.BaseDirectory, "mods");
+                config.Config.InstanceSelectionCompleted = true;
+                config.Config.SyncResourcePacks = true; config.Config.SyncShaderPacks = true;
+                typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                 ((TextBlock)window.FindName("PackStatusText")).Text = "3 local / 3 repository";
                 ((TextBlock)window.FindName("ShaderStatusText")).Text = "1 local / 1 repository • Active: Complementary.zip";
                 foreach (bool dark in new[] { false, true })
@@ -53,7 +58,7 @@ public class LayoutTests
                         root.Measure(new Size(width, 760));
                         root.Arrange(new Rect(0, 0, width, 760));
                         root.UpdateLayout();
-                        foreach (var name in new[] { "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton", "SyncOrderButton", "PushOrderButton", "ReinstallResourcesButton", "ReinstallShadersButton" })
+                        foreach (var name in new[] { "ChooseInstanceButton", "FrontCheckUpdatesButton", "SyncModsButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton", "SyncOrderButton", "PushOrderButton", "ReinstallResourcesButton", "ReinstallShadersButton" })
                         {
                             var button = (Button)window.FindName(name);
                             var point = button.TranslatePoint(new Point(0, 0), root);
@@ -93,6 +98,32 @@ public class LayoutTests
                     SavePreview(root, dark ? "ui-repositories-dark.png" : "ui-repositories-light.png");
                     ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)window.FindName("SwitchRepoSheet")).Visibility = Visibility.Collapsed;
+                    typeof(MainWindow).GetMethod("ShowInstancePicker", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+                    ((ListBox)window.FindName("InstanceList")).ItemsSource = new[] { new ModSync.Services.MinecraftInstance("My Minecraft instance", "C:/Games/PrismLauncher/instances/My instance/.minecraft") };
+                    ((ListBox)window.FindName("InstanceList")).SelectedIndex = 0;
+                    root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-instance-dark.png" : "ui-instance-light.png");
+                    var instanceSheet = (FrameworkElement)window.FindName("InstanceSheet");
+                    Assert.IsTrue(instanceSheet.ActualHeight > 0 && instanceSheet.TranslatePoint(new Point(), root).Y >= 0);
+                    Assert.IsTrue(instanceSheet.TranslatePoint(new Point(), root).Y + instanceSheet.ActualHeight <= 760);
+                    var item = (ListBoxItem)((ListBox)window.FindName("InstanceList")).ItemContainerGenerator.ContainerFromIndex(0);
+                    var selectedText = Descendants(item).OfType<TextBlock>().First();
+                    Assert.AreEqual(Colors.White, ((SolidColorBrush)selectedText.Foreground).Color, "Selected instance must remain readable.");
+
+                    ((FrameworkElement)window.FindName("InstanceSheet")).Visibility = Visibility.Collapsed;
+                    typeof(MainWindow).GetMethod("UpdateModCountBadge", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { 10, 10 });
+                    typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+                    StringAssert.Contains(((TextBlock)window.FindName("StatusHeadingText")).Text, "Not checked");
+                    var changes = new ModSync.Models.SyncSummary();
+                    changes.Changes.Add(new ModSync.Models.ModChange { Type = ModSync.Models.ChangeType.Updated, RelativePath = "resourcepacks/SameName.zip" });
+                    typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.All, changes });
+                    Assert.AreEqual("Changes available", ((TextBlock)window.FindName("ResourceStateText")).Text);
+                    typeof(MainWindow).GetMethod("MarkSyncComplete", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.ResourcePackOrder });
+                    StringAssert.Contains(((TextBlock)window.FindName("ResourceStateText")).Text, "files not checked");
+                    ((Dictionary<ModSync.Models.SyncScope, string>)typeof(MainWindow).GetField("_categoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!).Clear();
+                    typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+
+
                     foreach (var scope in new[] { ModSync.Models.SyncScope.ResourcePacks, ModSync.Models.SyncScope.Shaders })
                     {
                         typeof(MainWindow).GetMethod("ShowReinstallConfirmation", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { scope, false });
