@@ -27,7 +27,7 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 - **Apple-Inspired Graphical Interface:** Soft, spacious, minimalist UI featuring clean typography, rounded cards, subtle hover states, and smooth sheet modals.
 - **Automatic Light/Dark Mode:** Adapts seamlessly to your Windows theme with custom Apple dark mode and light mode palettes.
-- **Zero-Terminal Experience:** Players simply click **Sync All**. No Git installation, command prompt, or complex setup required.
+- **Zero-Terminal Experience:** Players check their modpack and review changes. No Git installation, command prompt, or complex setup required.
 - **Self-Contained Single-File Executable:** Compiles to a single standalone `ModSync.exe` with bundled .NET runtime and automated portable Git provisioning (MinGit).
 - **Safe Bidirectional Synchronization:**
   - **Sync (Download):** GitHub Remote $\to$ Internal Repository $\to$ `../mods`
@@ -235,13 +235,13 @@ Normal players who only download/synchronize mods **do not need a GitHub account
        └── config.json
    ```
 3. Double-click `ModSync.exe`.
-4. Click **Sync All**:
+4. Click **Check Now**, then **Review all changes** when differences are found:
    - ModSync inspects your mods folder, compares cryptographic SHA-256 hashes against GitHub, and brings your folder in sync with the repository.
    - If confirmation is enabled, an Apple-inspired review sheet displays the exact added, updated, and removed files before applying.
 
 ### Fresh "Clean Reinstall" (For Messed-Up Folders)
 
-Use **Clean Reinstall...** on the dashboard, or **Reinstall...** in Settings, to rebuild repository mods. Review the confirmation and click **Reinstall & Backup**.
+Use **Settings → Maintenance & Tools → Reinstall...** to rebuild repository mods, or **Clean reinstall entire modpack…** in the same group for all enabled categories. Review the confirmation and click **Reinstall & Backup**.
 
 1. ModSync snapshots the complete enabled resource pack and shader folders, including personal files, and Minecraft pack selection settings.
 2. Existing non-excluded mods move into the backup's `mods/` folder. Excluded personal mods stay in place.
@@ -264,13 +264,13 @@ ModSync features complete **bidirectional ignore support**, allowing players and
 ### Use Cases:
 1. **Personal Client Mods You Want to Keep:**
    - Keep client-only mods (such as Mini-maps, ReplayMod, custom HUDs, or shaders) in your local `mods/` directory.
-   - When you click **Sync All**, ModSync will **never delete** these ignored mods.
-   - If an admin clicks **Push Modpack**, ModSync will **never upload** your ignored personal mods to GitHub.
+   - When you click **Review all changes**, ModSync will **never delete** these ignored mods.
+   - If an admin clicks **Modpack actions → Push modpack…**, ModSync will **never upload** your ignored personal mods to GitHub.
    - Even during a **Clean Reinstall**, personal ignored mods are safely preserved in place.
 
 2. **Unwanted Synced Mods:**
    - If the repository contains a mod you don't want or can't run on your hardware (e.g., a heavy shader mod or high-res texture pack jar), add it to your ignore list.
-   - When you click **Sync All**, ModSync will **skip downloading** it to your PC.
+   - When you click **Review all changes**, ModSync will **skip downloading** it to your PC.
    - When pushing changes, ModSync will **not delete** the mod from GitHub.
 
 ### Supported Pattern Syntax:
@@ -439,9 +439,9 @@ Dedicated pack repositories support packs at the root or in a `resourcepacks/` /
 
 **Sync** or **Push** beside Resource Packs contacts only its repository. Shaders work the same way. New mods do not block a pack upload; newer changes in the selected pack repository still require syncing that category first. The upload preview names the exact selected files. Resource pack push includes the saved order automatically; shader selection remains administrator-managed `active-shader.txt` metadata.
 
-**Sync All** downloads all enabled repositories concurrently using separate caches. Every download and declaration is validated before Minecraft file writes begin. Asset writes, settings, and the shared pack-ownership manifest are applied together in sequence to avoid concurrent settings/manifest writes. If any repository cannot refresh, Minecraft files remain untouched. Matching files remain unchanged.
+**Review all changes** downloads all enabled repositories concurrently using separate caches. Every download and declaration is validated before Minecraft file writes begin. Asset writes, settings, and the shared pack-ownership manifest are applied together in sequence to avoid concurrent settings/manifest writes. If any repository cannot refresh, Minecraft files remain untouched. Matching files remain unchanged.
 
-**Push Modpack** preflights all enabled repositories, then commits and uploads changed categories independently. Multiple repository uploads are not a transaction: if a later upload fails, the error names categories already uploaded. A failed dedicated-pack upload can be retried from that category's Push button without syncing mods, even if there are no new file differences.
+**Modpack actions → Push modpack…** preflights all enabled repositories, then commits and uploads changed categories independently. Multiple repository uploads are not a transaction: if a later upload fails, the error names categories already uploaded. A failed dedicated-pack upload can be retried from that category's Push button without syncing mods, even if there are no new file differences.
 
 The mods cache keeps the original `repositoryFolder` path. Separate pack caches are its sibling paths with `-resourcepacks` and `-shaderpacks` suffixes. Caches, local asset folders, and backups must remain separate; linked cache paths are rejected. Switching a repository preserves existing Minecraft assets until an explicit sync.
 
@@ -483,14 +483,14 @@ ModSync tracks downloaded pack files in `.modsync-managed-packs.json` in the Min
 
 ## Separate Sync Actions (v1.1.0)
 
-The dashboard keeps **Sync All** as its primary action, with Sync buttons beside each category:
+The dashboard shows **Check Now** and, when differences exist, **Review all changes**. Each category has a **Check** or **Review changes** action. Healthy categories keep only their **More actions** menu:
 
 | Action | What it updates |
 |---|---|
 | **Mods** | Managed JARs and Fabric Loader when enabled |
 | **Resource Packs** | Resource ZIPs/extracted packs and the optional shared pack order |
 | **Shaders** | Shader ZIPs and the optional selected shader |
-| **Sync All** | All enabled categories and Fabric Loader |
+| **Review all changes** | All enabled categories and Fabric Loader |
 
 Each action refreshes only its selected repositories, compares content only for those categories, and leaves matching files untouched. Unselected categories and their declarations are skipped, even if they need updates. The confirmation preview uses the refreshed clone. Changes are checked again before applying because files can change while the preview is open. Matching files and matching settings are not rewritten. Dashboard count refreshes inspect filenames/metadata without hashing large packs. Actual synchronization uses SHA-256 and checks copied data before replacement; unreadable files abort the operation instead of being treated as absent.
 
@@ -500,7 +500,7 @@ Settings changed while files are being synchronized are preserved: ModSync stops
 
 1. Enable and arrange the packs in Minecraft, with highest priority at the top, then close Minecraft to save the selection.
 2. Click **Push** beside Resource Packs to publish files and saved order in the same upload. New packs participate immediately. Review both files and `resourcepack-order.txt` before confirming.
-3. Other players click **Sync** beside Resource Packs or **Sync All** to download packs and apply their order together.
+3. Other players choose **Check / Review changes** beside Resource Packs or **Review all changes** to download packs and apply their order together.
 4. Use **Push Order** or **Sync Order** when only priority should change. Push Order includes only packs already shared and installed locally; it does not upload personal files.
 
 Combined Resource Pack Push makes every uploaded pack shared, so newly uploaded selected packs enter the order. Disabled packs are uploaded but omitted from the enabled selection. Built-ins are excluded. An explicitly empty selection publishes an empty shared order; missing saved selection preserves the existing declaration. Personal selections on downloading players remain enabled and can override the shared stack. The former publishing/order-enforcement toggles are no longer required or shown.
@@ -526,14 +526,14 @@ GitHub Actions caches dependency downloads, tests the app, publishes the EXE, ge
 
 ## Pack Reinstall and Order Sync (v1.4.0)
 
-Use **Reinstall…** beside Resource Packs or Shaders to refresh only that category's repository and replace every shared pack with a fresh, verified copy, including matching files. Before replacing anything, ModSync snapshots the selected pack folder (including personal files), its selection settings, and tracking metadata into `modsync_backups/`. Obsolete managed files are removed; local-only personal packs remain. Other categories and worlds stay untouched. Settings' Clean Reinstall action reinstalls only mods; the main Modpack reinstall retains its existing combined behavior.
+Use **More actions → Reinstall…** on Resource Packs or Shaders to refresh only that category's repository and replace every shared pack with a fresh, verified copy, including matching files. Before replacing anything, ModSync snapshots the selected pack folder (including personal files), its selection settings, and tracking metadata into `modsync_backups/`. Obsolete managed files are removed; local-only personal packs remain. Other categories and worlds stay untouched. Settings offers separate mods-only and entire-modpack reinstall actions.
 
 Use **Sync Order** beside Resource Packs to apply `resourcepack-order.txt` without replacing installed pack files. The declaration lists highest priority first; Minecraft's stored list is reversed, with built-in and personal selections preserved. Required shared packs must already be installed; otherwise ModSync asks you to Sync Resource Packs first and leaves options unchanged. A missing declaration is reported rather than clearing your selection. Unchanged order makes no file changes or new backup. Changed options are backed up before replacement.
 
 These actions refresh their repository cache normally; Sync Order avoids copying or hashing pack contents in the Minecraft instance, but its repository refresh may still download new pack data. Backups can be opened from Settings or the reinstall success message and include `restore-paths.json` for manual recovery. If a later file operation fails, earlier completed replacements may remain; the snapshot is retained for recovery.
 
 
-**Publish order separately:** Arrange and enable shared packs in Minecraft, with the highest priority at the top, then close Minecraft to save the selection. Click **Push Order** beside Resource Packs, review the change, and confirm. This action publishes only `resourcepack-order.txt`, it does not upload pack files. Upload new packs with the ordinary pack Push first. Built-in and local-only personal packs are excluded. Other players click **Sync Order** to apply the published selection independently of pack-file sync. Resource Packs sync, Sync All, and Resource Pack Reinstall automatically apply the order. Personal selections stay above shared packs, so personal packs may override them.
+**Publish order separately:** Arrange and enable shared packs in Minecraft, with the highest priority at the top, then close Minecraft to save the selection. Choose **More actions → Publish local order…** on Resource Packs, review the change, and confirm. This action publishes only `resourcepack-order.txt`, it does not upload pack files. Upload new packs with the ordinary pack Push first. Built-in and local-only personal packs are excluded. Other players choose **More actions → Apply repository order…** to apply the published selection independently of pack-file sync. Resource Packs sync, Sync All, and Resource Pack Reinstall automatically apply the order. Personal selections stay above shared packs, so personal packs may override them.
 
 Push Order can refresh an outdated repository cache without changing your installed packs or saved selection. It refuses to include unfinished uploads from earlier operations; finish those uploads first.
 
@@ -548,4 +548,16 @@ The confirmed folder is stored in config.json and survives executable updates. O
 
 Failures now offer an appropriate action: retry the relevant preview/confirmation, sign in again, choose an instance, sync the selected section before pushing, open backups, or view logs. Close Minecraft before retrying locked files. No recovery action silently performs a clean reinstall or deletes backups. A whole sync is still not a transaction; completed file changes may remain after a later failure, so retained backups and retries remain important.
 
-**Mods controls:** Sync, Push, and Reinstall… now sit beside Mods. Mods Push uploads only JAR changes in the mods repository. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. The main Push Modpack action still publishes all enabled categories.
+**Mods controls:** Check and Review changes sit beside Mods. Push and Reinstall are in its More actions menu. Mods Push uploads only JAR changes in the mods repository. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. Modpack actions → Push modpack publishes all enabled categories.
+
+## State-driven desktop dashboard (v1.6.0)
+
+The selected instance, Minecraft/Fabric versions, and overall status lead the dashboard. Mods, Resource Packs, and Shaders share card styling, explicitly labeled local/repository counts, and status-dependent actions. Equal counts never imply matching contents. Check Now refreshes status in place; Review changes opens the existing preview before a download can overwrite files. Desktop sync always previews changes before applying them.
+
+Push and scoped reinstalls are in each card's **More actions** menu. **Modpack actions** contains whole-modpack push and app update checks. **Instances**, **Repositories**, **Backups**, and **Settings** remain available below the scrolling dashboard. GitHub sign-in is in Settings; destructive reinstalls require their existing confirmation. Progress remains visible below navigation. Brief success feedback clears automatically; errors and backup links remain until dismissed.
+
+The interface uses neutral light/dark palettes, visible keyboard focus, Escape to close dialogs, and scrollable dialogs at smaller window heights. A healthy Fabric installation shows one version; installed versus required versions appear when attention is needed.
+
+The current comparison engine identifies differences, but does not establish a three-way local/remote/conflict history for every asset. The UI therefore reports **changes to review**, rather than guessing direction from counts. The upload preview retains its remote-change protections.
+
+All frontend changes must follow [ModSyncUI_UI_SKILL.md](ModSyncUI_UI_SKILL.md), the project's UI/UX source of truth.

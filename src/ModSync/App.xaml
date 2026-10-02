@@ -3,6 +3,48 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <Style x:Key="ContentCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style x:Key="MetadataTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+        </Style>
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="MenuSurface" Background="Transparent" CornerRadius="6" Padding="12,8">
+                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True">
+                            <ContentPresenter.Resources><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/></Style></ContentPresenter.Resources>
+                        </ContentPresenter>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="MenuSurface" Property="Background" Value="{DynamicResource SecondaryButtonBrush}"/></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+        </Style>
         <!-- Fallback Default Brushes (Overridden by ThemeManager on startup) -->
         <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F5F7" />
         <SolidColorBrush x:Key="WindowBorderBrush" Color="#E5E5EA" />
@@ -11,6 +53,8 @@
         <SolidColorBrush x:Key="PrimaryTextBrush" Color="#1D1D1F" />
         <SolidColorBrush x:Key="SecondaryTextBrush" Color="#86868B" />
         <SolidColorBrush x:Key="AccentBrush" Color="#007AFF" />
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#005CBF" />
+        <SolidColorBrush x:Key="DangerBackgroundBrush" Color="#B3261E" />
         <SolidColorBrush x:Key="AccentHoverBrush" Color="#0071E3" />
         <SolidColorBrush x:Key="AccentPressedBrush" Color="#0062C4" />
         <SolidColorBrush x:Key="SecondaryButtonBrush" Color="#E5E5EA" />
@@ -57,8 +101,9 @@
             </Setter>
         </Style>
 
-        <!-- Apple Primary Action Button Style -->
+        <!-- ModSync Primary Action Button Style -->
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -71,7 +116,7 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="13"
+                                CornerRadius="10"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
                             <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center"
@@ -85,6 +130,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource AccentHoverBrush}" />
                             </Trigger>
@@ -100,8 +149,9 @@
             </Setter>
         </Style>
 
-        <!-- Apple Secondary Action Button Style -->
+        <!-- ModSync Secondary Action Button Style -->
         <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="Medium" />
@@ -128,6 +178,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource SecondaryButtonHoverBrush}" />
                             </Trigger>
@@ -143,8 +197,9 @@
             </Setter>
         </Style>
 
-        <!-- Apple Tertiary Pill/Ghost Button Style -->
+        <!-- ModSync Tertiary Pill/Ghost Button Style -->
         <Style x:Key="GhostButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Medium" />
@@ -171,6 +226,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource SecondaryButtonBrush}" />
                                 <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
@@ -178,6 +237,7 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource SecondaryButtonHoverBrush}" />
                             </Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -244,7 +304,7 @@
             </Setter>
         </Style>
 
-        <!-- Apple Toggle Switch Style for CheckBox -->
+        <!-- ModSync Toggle Switch Style for CheckBox -->
         <Style x:Key="AppleToggleSwitchStyle" TargetType="CheckBox">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -276,13 +336,13 @@
             </Setter>
         </Style>
 
-        <!-- Apple Destructive / Danger Button Style -->
+        <!-- ModSync Destructive / Danger Button Style -->
         <Style x:Key="DangerButtonStyle" TargetType="Button">
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DangerBackgroundBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Height" Value="42" />
             <Setter Property="Padding" Value="18,0" />
@@ -305,6 +365,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Opacity" Value="0.88" />
                             </Trigger>
@@ -320,15 +384,15 @@
             </Setter>
         </Style>
 
-        <!-- Apple Compact Destructive Button for List Rows -->
+        <!-- ModSync Compact Destructive Button for List Rows -->
         <Style x:Key="CompactDangerButtonStyle" TargetType="Button">
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#FFFFFF" />
-            <Setter Property="Background" Value="{DynamicResource ErrorBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DangerBackgroundBrush}" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Height" Value="28" />
+            <Setter Property="Height" Value="36" />
             <Setter Property="MinWidth" Value="88" />
             <Setter Property="Padding" Value="14,4" />
             <Setter Property="Template">
@@ -350,6 +414,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Opacity" Value="0.88" />
                             </Trigger>
@@ -365,15 +433,16 @@
             </Setter>
         </Style>
 
-        <!-- Apple Compact Secondary Button for List Rows -->
+        <!-- ModSync Compact Secondary Button for List Rows -->
         <Style x:Key="CompactSecondaryButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Medium" />
             <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
             <Setter Property="Background" Value="{DynamicResource SecondaryButtonBrush}" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Height" Value="28" />
+            <Setter Property="Height" Value="36" />
             <Setter Property="MinWidth" Value="88" />
             <Setter Property="Padding" Value="14,4" />
             <Setter Property="Template">
@@ -395,6 +464,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource SecondaryButtonHoverBrush}" />
                             </Trigger>
@@ -409,15 +482,16 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <!-- Apple Compact Primary Button for List Rows / Badges -->
+        <!-- ModSync Compact Primary Button for List Rows / Badges -->
         <Style x:Key="CompactPrimaryButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="FontFamily" Value="{StaticResource SystemFont}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#FFFFFF" />
             <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
             <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Height" Value="28" />
+            <Setter Property="Height" Value="36" />
             <Setter Property="MinWidth" Value="72" />
             <Setter Property="Padding" Value="12,4" />
             <Setter Property="Template">
@@ -439,6 +513,10 @@
                             </ContentPresenter>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource PrimaryTextBrush}"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{DynamicResource AccentHoverBrush}" />
                             </Trigger>
@@ -560,7 +638,7 @@
             </ControlTemplate.Triggers>
         </ControlTemplate>
 
-        <!-- Apple ComboBoxItem Style -->
+        <!-- ModSync ComboBoxItem Style -->
         <Style TargetType="{x:Type ComboBoxItem}">
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="OverridesDefaultStyle" Value="True" />
@@ -611,7 +689,7 @@
             </Setter>
         </Style>
 
-        <!-- Apple ComboBox Style -->
+        <!-- ModSync ComboBox Style -->
         <Style TargetType="{x:Type ComboBox}">
             <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="OverridesDefaultStyle" Value="True" />

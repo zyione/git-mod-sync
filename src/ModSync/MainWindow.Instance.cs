@@ -68,7 +68,7 @@ public partial class MainWindow
     {
         if (InstanceList.SelectedItem is not MinecraftInstance selected) return;
         if (!_configService.SelectInstance(selected.Folder)) { InstanceErrorText.Text = "Could not save this instance. Check that the folder still exists and config.json is writable."; return; }
-        CloseModal(); _categoryStates.Clear(); _currentFabricStatus = null; _retryOperation = null; _activeScope = null;
+        CloseModal(); _lastChecked = null; _categoryStates.Clear(); _currentFabricStatus = null; _retryOperation = null; _activeScope = null;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         UpdateIgnoredModsUI();
         _lastBackupFolder = null; DismissFeedback(); UpdateStatusCard(); RefreshFabricStatusUI();
@@ -92,6 +92,7 @@ public partial class MainWindow
 
     private void SetCheckedStates(SyncScope scope, SyncSummary summary)
     {
+        _lastChecked = DateTime.Now;
         if (scope == SyncScope.ResourcePackOrder)
         {
             _categoryStates[SyncScope.ResourcePacks] = summary.HasChanges ? "Order changes available" : "Order current · files not checked";
@@ -100,11 +101,14 @@ public partial class MainWindow
         foreach (var category in new[] { SyncScope.Mods, SyncScope.ResourcePacks, SyncScope.Shaders })
         {
             if (!scope.HasFlag(category)) continue;
-            bool changed = summary.Changes.Any(c => !c.IsInternal && (c.Type is ChangeType.Added or ChangeType.Updated or ChangeType.Removed) &&
+            int changes = summary.Changes.Count(c => !c.IsInternal && (c.Type is ChangeType.Added or ChangeType.Updated or ChangeType.Removed) &&
                 (category == SyncScope.ResourcePacks ? c.RelativePath.StartsWith("resourcepacks/") || c.RelativePath.Contains("resource pack order") :
                  category == SyncScope.Shaders ? c.RelativePath.StartsWith("shaderpacks/") || c.RelativePath.Contains("active shader") :
                  !c.RelativePath.StartsWith("resourcepacks/") && !c.RelativePath.StartsWith("shaderpacks/") && c.NewContent == null));
-            _categoryStates[category] = changed ? "Changes available" : "Up to date · last check";
+            _categoryStates[category] = changes > 0 ? $"{changes} change{(changes == 1 ? "" : "s")} to review"
+                : summary.PendingRepositories.Count > 0 ? "Review repository updates"
+                : summary.Changes.Any(c => c.IsInternal && c.Type != ChangeType.Unchanged) ? "Review metadata updates"
+                : "Up to date · last check";
         }
         RenderCategoryStates();
     }
@@ -115,12 +119,12 @@ public partial class MainWindow
         {
             string state = enabled ? _categoryStates.GetValueOrDefault(scope, "Not checked") : "Disabled";
             text.Text = prefix + state;
-            text.Foreground = (Brush)FindResource(state == "Failed" ? "ErrorBrush" : state.StartsWith("Up to date") ? "SuccessBrush" : state == "Changes available" ? "AccentBrush" : "SecondaryTextBrush");
+            text.SetResourceReference(TextBlock.ForegroundProperty, state == "Failed" ? "ErrorBrush" : state.StartsWith("Up to date") ? "SuccessBrush" : state.Contains("review", StringComparison.OrdinalIgnoreCase) || state.Contains("changes", StringComparison.OrdinalIgnoreCase) ? "WarningBrush" : "SecondaryTextBrush");
         }
-        Apply(StatusHeadingText, SyncScope.Mods, true, "Mods · ");
+        Apply(StatusHeadingText, SyncScope.Mods, true);
         Apply(ResourceStateText, SyncScope.ResourcePacks, _configService.Config.SyncResourcePacks);
         Apply(ShaderStateText, SyncScope.Shaders, _configService.Config.SyncShaderPacks);
-        StatusDot.Fill = StatusHeadingText.Foreground;
+        RenderDashboardActions();
         ModCountStatusIcon.Visibility = Visibility.Collapsed; // File counts do not prove matching contents.
     }
 

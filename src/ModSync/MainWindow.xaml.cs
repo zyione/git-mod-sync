@@ -12,7 +12,7 @@ namespace ModSync;
 
 /// <summary>
 /// Interaction logic for MainWindow.xaml
-/// Provides an Apple-inspired minimalist interface while delegating all
+/// Provides a state-driven desktop interface while delegating all
 /// business logic directly to core Services.
 /// </summary>
 public partial class MainWindow : Window
@@ -54,6 +54,8 @@ public partial class MainWindow : Window
         _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _ignoreService, _logger);
         _fabricService = new FabricService(_configService, _logger, _authService);
 
+        _feedbackTimer.Tick += (_, _) => { _feedbackTimer.Stop(); DismissFeedback(); };
+        Closed += (_, _) => _feedbackTimer.Stop();
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
         {
@@ -99,7 +101,14 @@ public partial class MainWindow : Window
         ShaderRepoText.ToolTip = cfg.ShaderPackRepository;
         string repoName = GetShortRepoName(cfg.Repository);
         StatusSubText.Text = $"{repoName} • {cfg.Branch}";
-        ModsFolderPathText.Text = _configService.ResolvedModsFolder;
+        ModsFolderPathText.Text = _configService.MinecraftFolder;
+        ModsFolderPathText.ToolTip = _configService.MinecraftFolder;
+        string folder = _configService.MinecraftFolder.TrimEnd(Path.DirectorySeparatorChar);
+        string name = Path.GetFileName(folder);
+        if (name is ".minecraft" or "minecraft") name = Path.GetFileName(Path.GetDirectoryName(folder)) ?? name;
+        InstanceNameText.Text = cfg.InstanceSelectionCompleted ? name : "Choose an instance";
+        InstanceNameText.ToolTip = folder;
+        StatusSubText.ToolTip = cfg.Repository;
     }
 
     private void OpenModsFolder_Click(object sender, RoutedEventArgs e)
@@ -150,49 +159,13 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            var cfg = _configService.Config;
-            string repoName = GetShortRepoName(cfg.Repository);
-
-            if (expectedCount.HasValue)
-            {
-                int expected = expectedCount.Value;
-                ModCountBadgeText.Text = $"{localCount} / {expected} mods";
-
-                if (localCount == expected)
-                {
-                    ModCountStatusIcon.Visibility = Visibility.Visible;
-                    ModCountBadgeBorder.ToolTip = $"{localCount} installed / {expected} repository files. Use Check Status to verify contents.";
-                    StatusHeadingText.Text = "Mods · Not checked";
-                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
-                }
-                else if (localCount < expected)
-                {
-                    ModCountStatusIcon.Visibility = Visibility.Collapsed;
-                    int missing = expected - localCount;
-                    ModCountBadgeBorder.ToolTip = $"{localCount} installed, {expected} expected in repository ({missing} missing - click Sync Mods)";
-                    StatusHeadingText.Text = $"{missing} Mod Update{(missing == 1 ? "" : "s")} Available";
-                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("AccentBrush");
-                }
-                else
-                {
-                    ModCountStatusIcon.Visibility = Visibility.Collapsed;
-                    int extra = localCount - expected;
-                    ModCountBadgeBorder.ToolTip = $"{localCount} installed, {expected} expected in repository ({extra} extra local mod{(extra == 1 ? "" : "s")})";
-                    StatusHeadingText.Text = $"{extra} Custom Mod{(extra == 1 ? "" : "s")} Present";
-                    StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
-                }
-            }
-            else
-            {
-                ModCountStatusIcon.Visibility = Visibility.Collapsed;
-                ModCountBadgeText.Text = $"{localCount} mod{(localCount == 1 ? "" : "s")}";
-                ModCountBadgeBorder.ToolTip = $"{localCount} local mods installed";
-                StatusHeadingText.Text = "Mods • Connected to GitHub";
-                StatusDot.Fill = (System.Windows.Media.Brush)FindResource("SuccessBrush");
-            }
-
-            StatusSubText.Text = $"{repoName} • {cfg.Branch}";
-            ModsFolderPathText.Text = _configService.ResolvedModsFolder;
+            ModCountBadgeText.Text = expectedCount.HasValue
+                ? $"{localCount} local · {expectedCount.Value} repository"
+                : $"{localCount} local · repository not checked";
+            ModCountBadgeText.ToolTip = "File counts are inventory only. Check to compare file contents.";
+            ModCountStatusIcon.Visibility = Visibility.Collapsed;
+            UpdateStatusCard();
+            RenderCategoryStates();
         });
     }
 
@@ -251,7 +224,7 @@ public partial class MainWindow : Window
     private async void SyncOrder_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.ResourcePackOrder);
     private async void SyncShaders_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Shaders);
 
-    private async Task BeginSyncAsync(SyncScope scope)
+    private async Task BeginSyncAsync(SyncScope scope, bool reviewChanges = true)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
         _activeScope = scope;
@@ -273,7 +246,7 @@ public partial class MainWindow : Window
             _ => "Sync All from GitHub?"
         };
 
-        if (_configService.Config.RequireConfirmationBeforeSync)
+        if (reviewChanges || _configService.Config.RequireConfirmationBeforeSync)
         {
             SetBusy(true, "Checking updates from GitHub...");
             DismissFeedback();
@@ -306,10 +279,10 @@ public partial class MainWindow : Window
                 if (modChanges.AddedCount > 0) parts.Add($"+{modChanges.AddedCount} added");
                 if (modChanges.UpdatedCount > 0) parts.Add($"~{modChanges.UpdatedCount} updated");
                 if (modChanges.RemovedCount > 0) parts.Add($"-{modChanges.RemovedCount} removed");
-                if (modChanges.IgnoredCount > 0) parts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+                if (modChanges.IgnoredCount > 0) parts.Add($"{modChanges.IgnoredCount} excluded");
                 if (fabricNeedsUpdate && _currentFabricStatus != null)
                 {
-                    parts.Add($"⚙️ Fabric Loader {_currentFabricStatus.TargetLoaderVersion}");
+                    parts.Add($"Fabric Loader {_currentFabricStatus.TargetLoaderVersion}");
                 }
 
                 if (parts.Count > 0)
@@ -325,12 +298,12 @@ public partial class MainWindow : Window
                 foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
                 foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
                 foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
-                foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept)");
+                foreach (var item in modChanges.Ignored) sb.AppendLine($"{item.RelativePath} (excluded / kept)");
 
                 if (fabricNeedsUpdate && _currentFabricStatus != null)
                 {
                     string fromVer = _currentFabricStatus.InstalledLoaderVersion ?? "Not Installed";
-                    sb.AppendLine($"⚙️ Fabric Loader: {fromVer} → {_currentFabricStatus.TargetLoaderVersion} (will update)");
+                    sb.AppendLine($"Fabric Loader: {fromVer} → {_currentFabricStatus.TargetLoaderVersion} (will update)");
                 }
 
                 if (sb.Length == 0)
@@ -548,7 +521,7 @@ public partial class MainWindow : Window
             if (modChanges.AddedCount > 0) pushParts.Add($"+{modChanges.AddedCount} added");
             if (modChanges.UpdatedCount > 0) pushParts.Add($"~{modChanges.UpdatedCount} updated");
             if (modChanges.RemovedCount > 0) pushParts.Add($"-{modChanges.RemovedCount} removed");
-            if (modChanges.IgnoredCount > 0) pushParts.Add($"🛡️ {modChanges.IgnoredCount} excluded");
+            if (modChanges.IgnoredCount > 0) pushParts.Add($"{modChanges.IgnoredCount} excluded");
             if (modChanges.PendingRepositories.Count > 0) pushParts.Add("pending upload to retry");
             PushConfirmSummaryText.Text = $"Changes to upload: {string.Join(", ", pushParts)}";
 
@@ -556,7 +529,7 @@ public partial class MainWindow : Window
             foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
             foreach (var item in modChanges.Updated) sb.AppendLine($"~ {item.RelativePath}");
             foreach (var item in modChanges.Removed) sb.AppendLine($"- {item.RelativePath}");
-            foreach (var item in modChanges.Ignored) sb.AppendLine($"🛡️ {item.RelativePath} (excluded / kept local)");
+            foreach (var item in modChanges.Ignored) sb.AppendLine($"{item.RelativePath} (excluded / kept local)");
             foreach (var repo in modChanges.PendingRepositories) sb.AppendLine($"Retry pending upload: {repo}");
             PushDetailsText.Text = sb.ToString().TrimEnd();
 
@@ -644,13 +617,11 @@ public partial class MainWindow : Window
                 StatusDialogCommitText.Text = "Commit:      (not cloned yet)";
             }
 
-            string syncComp = localCount == repoCount
-                ? "Synchronized"
-                : localCount < repoCount ? $"{repoCount - localCount} missing" : $"{localCount - repoCount} extra";
+            string syncComp = modChanges.HasChanges ? "Changes need review" : "Contents checked";
             StatusDialogPathText.Text = $"Mods Folder: {_configService.ResolvedModsFolder}\nInstalled:   {localCount} of {repoCount} mods ({syncComp})";
 
             SetBusy(false);
-            ShowModal(StatusSheet);
+            LastCheckedText.ToolTip = $"{StatusDialogRepoText.Text}\n{StatusDialogBranchText.Text}\n{StatusDialogPathText.Text}";
         }
         catch (Exception ex)
         {
@@ -666,6 +637,7 @@ public partial class MainWindow : Window
 
     private void Auth_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         ShowLoginModal();
     }
 
@@ -720,6 +692,7 @@ public partial class MainWindow : Window
 
     private void SwitchRepo_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         RepoUrlInputBox.Text = _configService.Config.Repository;
         ModsBranchInput.Text = _configService.Config.Branch;
         ResourceRepoUrlInput.Text = _configService.Config.ResourcePackRepository;
@@ -759,8 +732,11 @@ public partial class MainWindow : Window
         }
         CloseModal();
         UpdateStatusCard();
+        _lastChecked = null;
+        _currentFabricStatus = null;
         _categoryStates.Clear(); RenderCategoryStates();
-        ShowFeedback("Repositories saved. Sync a section or use Sync All to download updates.", false);
+        RefreshFabricStatusUI();
+        ShowFeedback("Repositories saved. Check your modpack to review changes.", false);
     }
 
     #endregion
@@ -769,8 +745,8 @@ public partial class MainWindow : Window
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         var cfg = _configService.Config;
-        ConfirmSyncToggle.IsChecked = cfg.RequireConfirmationBeforeSync;
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
         AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
         SyncFabricLoaderToggle.IsChecked = cfg.SyncFabricLoader;
@@ -801,8 +777,8 @@ public partial class MainWindow : Window
 
     private void SettingToggle_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         var cfg = _configService.Config;
-        cfg.RequireConfirmationBeforeSync = ConfirmSyncToggle.IsChecked == true;
         cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
         cfg.AutoCheckUpdates = AutoCheckUpdatesToggle.IsChecked == true;
         cfg.SyncFabricLoader = SyncFabricLoaderToggle.IsChecked == true;
@@ -1082,6 +1058,7 @@ public partial class MainWindow : Window
         ChooseInstanceButton.IsEnabled = !busy;
         FrontCheckUpdatesButton.IsEnabled = !busy && !_checkingUpdates;
         RecoveryButton.IsEnabled = !busy;
+        RenderDashboardActions();
 
         if (busy)
         {
@@ -1102,6 +1079,8 @@ public partial class MainWindow : Window
 
     private void ShowFeedback(string message, bool isError, bool showBackupAction = false)
     {
+        _feedbackTimer.Stop();
+        if (!isError && !showBackupAction) _feedbackTimer.Start();
         if (isError && _isBusy && _activeScope.HasValue) SetCategoryState(_activeScope.Value, "Failed");
         _recovery = isError ? ErrorRecoveryService.Suggest(message, _retryOperation != null) : null;
         RecoveryButton.Visibility = isError && !showBackupAction ? Visibility.Visible : Visibility.Collapsed;
@@ -1117,6 +1096,7 @@ public partial class MainWindow : Window
 
     private void DismissFeedback()
     {
+        _feedbackTimer.Stop();
         FeedbackCard.Visibility = Visibility.Collapsed;
         RecoveryButton.Visibility = Visibility.Collapsed;
         FeedbackActionButton.Visibility = Visibility.Collapsed;
@@ -1129,6 +1109,8 @@ public partial class MainWindow : Window
 
     private void ShowModal(FrameworkElement sheet)
     {
+        if (ModalBackdrop.Visibility != Visibility.Visible) _focusBeforeModal = Keyboard.FocusedElement;
+        MainDashboard.IsEnabled = false;
         InstanceSheet.Visibility = Visibility.Collapsed;
         PushConfirmSheet.Visibility = Visibility.Collapsed;
         LoginSheet.Visibility = Visibility.Collapsed;
@@ -1143,6 +1125,7 @@ public partial class MainWindow : Window
 
         sheet.Visibility = Visibility.Visible;
         ModalBackdrop.Visibility = Visibility.Visible;
+        Dispatcher.BeginInvoke(new Action(() => sheet.MoveFocus(new TraversalRequest(FocusNavigationDirection.First))));
     }
 
     private void CloseModal()
@@ -1160,6 +1143,8 @@ public partial class MainWindow : Window
         IgnoredModsSheet.Visibility = Visibility.Collapsed;
         FabricUpdateConfirmSheet.Visibility = Visibility.Collapsed;
         ModalBackdrop.Visibility = Visibility.Collapsed;
+        MainDashboard.IsEnabled = true;
+        if (_focusBeforeModal != null) Keyboard.Focus(_focusBeforeModal);
     }
 
     private void CloseModal_Click(object sender, RoutedEventArgs e)
@@ -1188,6 +1173,8 @@ public partial class MainWindow : Window
     private void ThemeToggle_Click(object sender, RoutedEventArgs e)
     {
         ThemeManager.ToggleTheme();
+        RenderCategoryStates();
+        ApplyFabricStatusToUI(_currentFabricStatus);
     }
 
     #endregion
@@ -1407,7 +1394,7 @@ public partial class MainWindow : Window
 
             var iconText = new TextBlock
             {
-                Text = "🛡️",
+                Text = "—",
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0)
@@ -1607,6 +1594,11 @@ public partial class MainWindow : Window
 
     private void ApplyFabricStatusToUI(FabricStatusInfo? status)
     {
+        RenderDashboardActions();
+        InstanceVersionText.Text = !string.IsNullOrWhiteSpace(status?.MinecraftVersion)
+            ? $"Minecraft {status.MinecraftVersion}" + (status.InstalledLoaderVersion != null ? $" · Fabric {status.InstalledLoaderVersion}" : "")
+            : "Minecraft instance";
+        FabricVersionComparison.Visibility = status is { IsUpToDate: true, IsConfigured: true } ? Visibility.Collapsed : Visibility.Visible;
         if (!_configService.Config.SyncFabricLoader)
         {
             FabricCard.Visibility = Visibility.Collapsed;
@@ -1633,7 +1625,7 @@ public partial class MainWindow : Window
             ? $" • Minecraft {status.MinecraftVersion}"
             : " • Minecraft";
 
-        FabricGameVersionText.Text = mcVer;
+        FabricGameVersionText.Text = status.IsUpToDate ? $" · Fabric {installed}" : mcVer;
         FabricInstalledVersionText.Text = installed;
         FabricTargetVersionText.Text = target;
 

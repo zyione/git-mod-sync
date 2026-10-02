@@ -285,7 +285,7 @@ public class PackSyncService
         var legacy = Path.Combine(_config.MinecraftFolder, "optionsshaders.txt");
         var text = File.Exists(iris) ? File.ReadAllText(iris) : File.Exists(legacy) ? File.ReadAllText(legacy) : "";
         var active = Regex.Match(text, @"(?m)^shaderPack=([^\r\n]*)");
-        return ($"{Count(_config.ResolvedResourcePacksFolder, true)} local / {Count(AssetSourceFolder(true), true)} repository",
-            $"{Count(_config.ResolvedShaderPacksFolder, false)} local / {Count(AssetSourceFolder(false), false)} repository • Active: {(active.Success ? active.Groups[1].Value : "None")}");
+        return ($"{Count(_config.ResolvedResourcePacksFolder, true)} local · {Count(AssetSourceFolder(true), true)} repository",
+            $"{Count(_config.ResolvedShaderPacksFolder, false)} local · {Count(AssetSourceFolder(false), false)} repository\nActive: {(active.Success ? active.Groups[1].Value : "None")}");
     }
 }

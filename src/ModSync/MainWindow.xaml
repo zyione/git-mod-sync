@@ -1,265 +1,90 @@
 <Window x:Class="ModSync.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ModSync"
-        Width="620"
-        Height="800"
-        MinWidth="580"
-        MinHeight="760"
-        WindowStartupLocation="CenterScreen"
-        WindowStyle="None"
-        AllowsTransparency="True"
-        Background="Transparent"
-        FontFamily="{StaticResource SystemFont}">
-
-    <!-- Outer Window Border with Rounded Corners & Soft Border -->
-    <Border Background="{DynamicResource AppBackgroundBrush}"
-            BorderBrush="{DynamicResource WindowBorderBrush}"
-            BorderThickness="1"
-            CornerRadius="16"
-            SnapsToDevicePixels="True">
-
+        Title="ModSync" Width="620" Height="860" MinWidth="580" MinHeight="640"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" FontFamily="{StaticResource SystemFont}" PreviewKeyDown="Window_KeyDown">
+    <Border Background="{DynamicResource AppBackgroundBrush}" BorderBrush="{DynamicResource WindowBorderBrush}" BorderThickness="1" CornerRadius="16" SnapsToDevicePixels="True">
         <Grid>
-            <!-- Main Content Layout -->
-            <Grid Margin="24,14,24,20">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />  <!-- Window Header / Drag Bar -->
-                    <RowDefinition Height="Auto" />  <!-- App Title & Subtitle -->
-                    <RowDefinition Height="Auto" />  <!-- Status Card -->
-                    <RowDefinition Height="*" />     <!-- Actions Area -->
-                    <RowDefinition Height="Auto" />  <!-- Feedback / Toast Card -->
-                </Grid.RowDefinitions>
+            <Grid x:Name="MainDashboard" Margin="24,12,24,20">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <DockPanel Grid.Row="0" Margin="0,0,0,12" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseDown">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Click="ThemeToggle_Click" Style="{StaticResource GhostButtonStyle}" ToolTip="Switch light or dark theme" AutomationProperties.Name="Switch theme"><TextBlock x:Name="ThemeIconText" Text="Theme"/></Button>
+                    <Button Content="—" Click="Minimize_Click" Style="{StaticResource GhostButtonStyle}" ToolTip="Minimize" AutomationProperties.Name="Minimize"/>
+                    <Button Content="×" Click="Close_Click" Style="{StaticResource GhostButtonStyle}" ToolTip="Close" AutomationProperties.Name="Close"/>
+                  </StackPanel>
+                  <TextBlock Text="ModSync" FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <ScrollViewer x:Name="ActionsScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+                 <StackPanel>
+                  <Border x:Name="UpdateBanner" Visibility="Collapsed" Style="{StaticResource ContentCardStyle}">
+                    <DockPanel><Button DockPanel.Dock="Right" Content="Update" Style="{StaticResource CompactPrimaryButtonStyle}" Click="OpenUpdateModal_Click"/>
+                    <Button DockPanel.Dock="Right" Content="×" Style="{StaticResource GhostButtonStyle}" Click="DismissUpdateBanner_Click" ToolTip="Dismiss update banner" AutomationProperties.Name="Dismiss update banner"/>
+                    <TextBlock x:Name="UpdateBannerText" Text="ModSync update available" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
+                  </Border>
+                  <TextBlock x:Name="InstanceNameText" Text="Choose an instance" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock x:Name="InstanceVersionText" Text="Your Minecraft modpack" Style="{StaticResource MetadataTextStyle}" Margin="0,4,0,0"/>
+                  <TextBlock x:Name="ModsFolderPathText" Style="{StaticResource MetadataTextStyle}" TextTrimming="CharacterEllipsis" Margin="0,4,0,16"/>
+                  <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{DynamicResource SecondaryTextBrush}" Margin="0,0,8,0"/>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock x:Name="OverallStatusText" Text="Ready to check" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="LastCheckedText" Text="Check for differences with your repositories" Style="{StaticResource MetadataTextStyle}" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
+                    <Button x:Name="DashboardCheckButton" Grid.Column="2" Content="Check Now" Style="{StaticResource CompactSecondaryButtonStyle}" Click="CheckStatus_Click"/>
+                  </Grid>
+                  <TextBlock Text="MODPACK CONTENT" Style="{StaticResource MetadataTextStyle}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+<Border Style="{StaticResource ContentCardStyle}"><Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,16,0">
+        <TextBlock Text="Mods" FontSize="15" FontWeight="SemiBold"/>
+        <TextBlock x:Name="StatusHeadingText" Text="Not checked" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ModCountBadgeText" Text="Counts available after checking" Style="{StaticResource MetadataTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="StatusSubText" Style="{StaticResource MetadataTextStyle}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+        <Border x:Name="ModCountBadgeBorder"><TextBlock x:Name="ModCountStatusIcon" Visibility="Collapsed"/></Border>
+      </StackPanel>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <Button x:Name="SyncOnlyModsButton" Content="Check" MinWidth="120" Height="36" Style="{StaticResource CompactSecondaryButtonStyle}" Click="ReviewMods_Click"/>
+        <Button Content="More actions" Style="{StaticResource GhostButtonStyle}" Margin="0,4,0,0" Click="OpenActions_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}" AutomationProperties.Name="More mods actions">
+          <Button.ContextMenu><ContextMenu Style="{StaticResource {x:Type ContextMenu}}"><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushOnlyModsButton" Header="Push mods…" Click="PushOnlyMods_Click" /><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="OpenModsMenuItem" Header="Open folder" Click="OpenModsFolder_Click" /><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="ViewModsMenuItem" Header="View repository" Click="OpenWebRepo_Click" /><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="ReinstallModsButton" Header="Reinstall mods…" Click="ReinstallMods_Click" /></ContextMenu></Button.ContextMenu>
+        </Button>
+      </StackPanel>
+    </Grid></Border><Border Style="{StaticResource ContentCardStyle}"><Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,16,0">
+        <TextBlock Text="Resource Packs" FontSize="15" FontWeight="SemiBold"/>
+        <TextBlock x:Name="ResourceStateText" Text="Not checked" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="PackStatusText" Text="Counts available after checking" Style="{StaticResource MetadataTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ResourceRepoText" Style="{StaticResource MetadataTextStyle}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
 
-                <!-- Window Header / Drag Area -->
-                <Grid Grid.Row="0" Margin="0,0,0,10" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseDown">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+      </StackPanel>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <Button x:Name="SyncResourcesButton" Content="Check" MinWidth="120" Height="36" Style="{StaticResource CompactSecondaryButtonStyle}" Click="ReviewResources_Click"/>
+        <Button Content="More actions" Style="{StaticResource GhostButtonStyle}" Margin="0,4,0,0" Click="OpenActions_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}" AutomationProperties.Name="More resource packs actions">
+          <Button.ContextMenu><ContextMenu Style="{StaticResource {x:Type ContextMenu}}"><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushResourcesButton" Header="Push resource packs…" Click="PushResources_Click" /><Separator/><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="SyncOrderButton" Header="Apply repository order…" Click="SyncOrder_Click" /><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushOrderButton" Header="Publish local order…" Click="PushOrder_Click" /><Separator/><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="ReinstallResourcesButton" Header="Reinstall resource packs…" Click="ReinstallResources_Click" /></ContextMenu></Button.ContextMenu>
+        </Button>
+      </StackPanel>
+    </Grid></Border><Border Style="{StaticResource ContentCardStyle}"><Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel Margin="0,0,16,0">
+        <TextBlock Text="Shaders" FontSize="15" FontWeight="SemiBold"/>
+        <TextBlock x:Name="ShaderStateText" Text="Not checked" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" Style="{StaticResource MetadataTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ShaderRepoText" Style="{StaticResource MetadataTextStyle}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
 
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="●" FontSize="11" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <TextBlock Text="ModSync" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" />
-                    </StackPanel>
-
-                    <!-- Window Control Buttons (Theme Toggle, Settings, Minimize, Close) -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Theme Toggle Button -->
-                        <Button Click="ThemeToggle_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Padding="8,4"
-                                Margin="0,0,4,0"
-                                ToolTip="Toggle Light / Dark Mode">
-                            <TextBlock x:Name="ThemeIconText" Text="◐" FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}" />
-                        </Button>
-
-                        <!-- Settings Button -->
-                        <Button Click="Settings_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Padding="8,4"
-                                Margin="0,0,4,0"
-                                ToolTip="Settings &amp; Troubleshooting">
-                            <TextBlock Text="⚙" FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}" />
-                        </Button>
-
-                        <!-- Minimize Button -->
-                        <Button Click="Minimize_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Padding="8,4"
-                                Margin="0,0,4,0">
-                            <TextBlock Text="─" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource SecondaryTextBrush}" />
-                        </Button>
-
-                        <!-- Close Button -->
-                        <Button Click="Close_Click"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Padding="8,4">
-                            <TextBlock Text="✕" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
-                        </Button>
-                    </StackPanel>
-                </Grid>
-
-                <!-- App Branding & Optional Update Banner -->
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Margin="0,4,0,16">
-                    <!-- Update Notification Banner (Visible when a new version is detected) -->
-                    <Border x:Name="UpdateBanner"
-                            Visibility="Collapsed"
-                            Background="{DynamicResource CardBackgroundBrush}"
-                            BorderBrush="{DynamicResource AccentBrush}"
-                            BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="12,5"
-                            Margin="0,0,0,10"
-                            HorizontalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🚀" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock x:Name="UpdateBannerText" Text="ModSync update available!" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
-                            <Button Content="Update"
-                                    Style="{StaticResource CompactPrimaryButtonStyle}"
-                                    Click="OpenUpdateModal_Click"
-                                    Margin="0,0,6,0" />
-                            <Button Content="✕"
-                                    Style="{StaticResource GhostButtonStyle}"
-                                    Padding="4,2"
-                                    FontSize="10"
-                                    Click="DismissUpdateBanner_Click"
-                                    ToolTip="Dismiss" />
-                        </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="ModSync"
-                               FontSize="30"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               Foreground="{DynamicResource PrimaryTextBrush}" />
-                    <TextBlock Text="Your Minecraft modpack, in sync"
-                               FontSize="13"
-                               Foreground="{DynamicResource SecondaryTextBrush}"
-                               HorizontalAlignment="Center"
-                               Margin="0,3,0,0" />
-                </StackPanel>
-
-                <!-- Information & Status Cards -->
-                <StackPanel Grid.Row="2" Margin="0,0,0,18">
-                    <!-- Status Card (Compact Pill/Card) -->
-                    <Border Background="{DynamicResource CardBackgroundBrush}"
-                            BorderBrush="{DynamicResource CardBorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="14"
-                            Padding="18,12"
-                            Margin="0,0,0,8">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Status Indicator Dot -->
-                            <Ellipse x:Name="StatusDot"
-                                     Grid.Column="0"
-                                     Width="9"
-                                     Height="9"
-                                     Fill="{DynamicResource SuccessBrush}"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,12,0" />
-
-                            <!-- Status Details -->
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
-                                <TextBlock x:Name="StatusHeadingText"
-                                           Text="Mods · Not checked"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource PrimaryTextBrush}" />
-                                <TextBlock x:Name="StatusSubText"
-                                           Text="zyione/4stoogies-mod-list • main"
-                                           FontSize="12"
-                                           Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Margin="0,1,0,4" />
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="Folder: "
-                                               FontSize="11"
-                                               FontWeight="Medium"
-                                               Foreground="{DynamicResource SecondaryTextBrush}" />
-                                    <TextBlock x:Name="ModsFolderPathText"
-                                               Text="C:\...\mods"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource PrimaryTextBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxWidth="260"
-                                               Cursor="Hand"
-                                               MouseDown="OpenModsFolder_Click"
-                                               ToolTip="Click to open folder in File Explorer" />
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- Mod Count Badge & Open Action -->
-                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                <Border x:Name="ModCountBadgeBorder"
-                                        Background="{DynamicResource SecondaryButtonBrush}"
-                                        CornerRadius="8"
-                                        Padding="10,4"
-                                        HorizontalAlignment="Right"
-                                        Margin="0,0,0,4">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock x:Name="ModCountStatusIcon"
-                                                   Text="✓"
-                                                   FontSize="11"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource SuccessBrush}"
-                                                   Margin="0,0,5,0"
-                                                   Visibility="Collapsed" />
-                                        <TextBlock x:Name="ModCountBadgeText"
-                                                   Text="-- mods"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource PrimaryTextBrush}" />
-                                    </StackPanel>
-                                </Border>
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
-                                    <Button x:Name="SyncOnlyModsButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncOnlyMods_Click" ToolTip="Sync mods and Fabric Loader" AutomationProperties.Name="Sync mods" />
-                                    <Button x:Name="PushOnlyModsButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushOnlyMods_Click" ToolTip="Upload only mods to GitHub" AutomationProperties.Name="Push mods" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="Open Folder" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="OpenModsFolder_Click" ToolTip="Open mods folder in Windows File Explorer" />
-                                    <Button x:Name="ReinstallModsButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallMods_Click" ToolTip="Back up and reinstall mods; excluded mods and other categories stay" AutomationProperties.Name="Clean reinstall mods" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-
-                    <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18,12" Margin="0,0,0,8">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Resource Packs" FontSize="13" FontWeight="SemiBold" />
-                                    <TextBlock x:Name="ResourceRepoText" Text="4stoogies-resourcepack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                                    <TextBlock x:Name="ResourceStateText" Text="Not checked" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
-                                    <TextBlock x:Name="PackStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal">
-                                <Button x:Name="SyncResourcesButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncResources_Click" ToolTip="Sync resource packs and their order" AutomationProperties.Name="Sync resource packs" />
-                                    <Button x:Name="PushResourcesButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushResources_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push resource packs" />
-                                </StackPanel>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,3,0,0">
-                                        <Button x:Name="SyncOrderButton" Content="Sync Order" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="SyncOrder_Click" ToolTip="Apply the repository order to installed packs without replacing pack files" AutomationProperties.Name="Sync resource pack order" />
-                                        <Button x:Name="PushOrderButton" Content="Push Order" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="PushOrder_Click" ToolTip="Publish your saved Minecraft order for already shared packs; pack files are not uploaded" AutomationProperties.Name="Push resource pack order" />
-                                        <Button x:Name="ReinstallResourcesButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallResources_Click" ToolTip="Back up and reinstall shared resource packs; personal packs stay" AutomationProperties.Name="Clean reinstall resource packs" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Grid>
-                            <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,12" />
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Shaders" FontSize="13" FontWeight="SemiBold" />
-                                    <TextBlock x:Name="ShaderRepoText" Text="4stoogies-shaderpack-list" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                                    <TextBlock x:Name="ShaderStateText" Text="Not checked" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
-                                    <TextBlock x:Name="ShaderStatusText" Text="Counts available after checking" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,3,0,0" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal">
-                                <Button x:Name="SyncShadersButton" Content="Sync" Style="{StaticResource CompactSecondaryButtonStyle}" Width="76" Height="32" Click="SyncShaders_Click" ToolTip="Sync shaderpacks and the active shader" AutomationProperties.Name="Sync shaders" />
-                                    <Button x:Name="PushShadersButton" Content="Push" Style="{StaticResource CompactSecondaryButtonStyle}" Width="68" Height="32" Margin="8,0,0,0" Click="PushShaders_Click" ToolTip="Upload only this section to GitHub" AutomationProperties.Name="Push shaders" />
-                                </StackPanel>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,3,0,0">
-                                        <Button x:Name="ReinstallShadersButton" Content="Reinstall…" Style="{StaticResource GhostButtonStyle}" FontSize="11" Padding="6,4" Click="ReinstallShaders_Click" ToolTip="Back up and reinstall shared shaders; personal packs stay" AutomationProperties.Name="Clean reinstall shaders" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-                    <!-- Fabric Loader Version Card (Apple Design) -->
-                    <Border x:Name="FabricCard"
+      </StackPanel>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <Button x:Name="SyncShadersButton" Content="Check" MinWidth="120" Height="36" Style="{StaticResource CompactSecondaryButtonStyle}" Click="ReviewShaders_Click"/>
+        <Button Content="More actions" Style="{StaticResource GhostButtonStyle}" Margin="0,4,0,0" Click="OpenActions_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}" AutomationProperties.Name="More shaders actions">
+          <Button.ContextMenu><ContextMenu Style="{StaticResource {x:Type ContextMenu}}"><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushShadersButton" Header="Push shaders…" Click="PushShaders_Click" /><MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="ReinstallShadersButton" Header="Reinstall shaders…" Click="ReinstallShaders_Click" /></ContextMenu></Button.ContextMenu>
+        </Button>
+      </StackPanel>
+    </Grid></Border>                    <Border x:Name="FabricCard"
                             Visibility="Visible"
                             Background="{DynamicResource CardBackgroundBrush}"
                             BorderBrush="{DynamicResource CardBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="14"
                             Padding="18,12"
-                            Margin="0,0,0,16">
+                            Margin="0,0,0,12">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -291,7 +116,7 @@
                                 </StackPanel>
 
                                 <!-- Version Comparison: Installed vs Required -->
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,0">
+                                <StackPanel x:Name="FabricVersionComparison" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,0">
                                     <TextBlock Text="Installed: "
                                                FontSize="11.5"
                                                FontWeight="Medium"
@@ -309,7 +134,7 @@
                                                Text="0.16.9"
                                                FontSize="11.5"
                                                FontWeight="SemiBold"
-                                               Foreground="{DynamicResource AccentBrush}" />
+                                               Foreground="{DynamicResource AccentTextBrush}" />
                                 </StackPanel>
                             </StackPanel>
 
@@ -345,13 +170,23 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                </StackPanel>
-
-                <!-- Main Actions Area -->
-                <ScrollViewer x:Name="ActionsScrollViewer" Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalContentAlignment="Center">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="420">
-
-                    <!-- Progress Card (Visible during active tasks) -->
+<WrapPanel Margin="0,0,0,12">
+  <Button x:Name="SyncModsButton" Content="Review all changes" Style="{StaticResource CompactPrimaryButtonStyle}" Click="SyncMods_Click" Padding="16,8" Margin="0,0,8,0"/>
+  <Button Content="Modpack actions" Style="{StaticResource GhostButtonStyle}" Click="OpenActions_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}"><Button.ContextMenu><ContextMenu Style="{StaticResource {x:Type ContextMenu}}">
+    <MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushModsButton" Header="Push modpack…" Click="PushMods_Click"/>
+    <MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="FrontCheckUpdatesButton" Header="Check for app updates" Click="CheckForUpdates_Click"/>
+  </ContextMenu></Button.ContextMenu></Button>
+</WrapPanel>
+</StackPanel></ScrollViewer>
+<Border Grid.Row="2" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="4" Margin="0,12,0,0">
+ <UniformGrid Columns="4" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}">
+ <Button x:Name="ChooseInstanceButton" Content="Instances" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click"/>
+ <Button Content="Repositories" Style="{StaticResource GhostButtonStyle}" Click="SwitchRepo_Click"/>
+ <Button Content="Backups" Style="{StaticResource GhostButtonStyle}" Click="OpenBackups_Click"/>
+ <Button Content="Settings" Style="{StaticResource GhostButtonStyle}" Click="Settings_Click"/>
+ </UniformGrid>
+</Border>
+<StackPanel Grid.Row="3" Margin="0,8,0,0">
                     <Border x:Name="ProgressArea"
                             Visibility="Collapsed"
                             Background="{DynamicResource CardBackgroundBrush}"
@@ -381,7 +216,7 @@
                                            Text="100%"
                                            FontSize="12"
                                            FontWeight="Bold"
-                                           Foreground="{DynamicResource AccentBrush}"
+                                           Foreground="{DynamicResource AccentTextBrush}"
                                            VerticalAlignment="Center"
                                            Margin="8,0,0,0"
                                            Visibility="Collapsed" />
@@ -396,7 +231,7 @@
                                 <ProgressBar x:Name="TaskProgressBar"
                                              IsIndeterminate="True"
                                              Height="6"
-                                             Foreground="{DynamicResource AccentBrush}"
+                                             Foreground="{DynamicResource AccentTextBrush}"
                                              Background="Transparent"
                                              BorderThickness="0" />
                             </Border>
@@ -430,66 +265,7 @@
                     </Border>
 
                     <Button x:Name="PauseUpdateButton" Content="Pause Download" Visibility="Collapsed" Style="{StaticResource GhostButtonStyle}" Click="PauseUpdate_Click" Margin="0,0,0,8" />
-                    <!-- Primary Action: Sync Mods -->
-                    <Button x:Name="SyncModsButton"
-                            Content="Sync All"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            Height="48"
-                            Margin="0,0,0,10"
-                            Click="SyncMods_Click" />
-
-                    <!-- Secondary Action: Push Mods -->
-                    <Button x:Name="PushModsButton"
-                            Content="Push Modpack"
-                            Style="{StaticResource SecondaryButtonStyle}"
-                            Height="42"
-                            Margin="0,0,0,16"
-                            Click="PushMods_Click" />
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
-                        <Button x:Name="ChooseInstanceButton" Content="Choose Instance" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click" />
-                        <Button x:Name="FrontCheckUpdatesButton" Content="Check for Updates" Style="{StaticResource GhostButtonStyle}" Click="CheckForUpdates_Click" />
-                    </StackPanel>
-                    <!-- Tertiary Actions Row -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Content="Check Status"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Click="CheckStatus_Click" />
-
-                        <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
-
-                        <Button x:Name="AuthButton"
-                                Content="GitHub Login"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Click="Auth_Click" />
-
-                        <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
-
-                        <Button Content="Repositories"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Click="SwitchRepo_Click" />
-
-                        <TextBlock Text="•" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="4,0" />
-
-                        <Button Content="Settings"
-                                Style="{StaticResource GhostButtonStyle}"
-                                Click="Settings_Click" />
-                    </StackPanel>
-
-                    <!-- Destructive Tertiary Action: Clean Reinstall (surfaced in main UI, Apple-style subtle danger) -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
-                        <Button Content="Backups" Style="{StaticResource GhostButtonStyle}" FontSize="11" Click="OpenBackups_Click" ToolTip="Open pack and reinstall backups" />
-                        <Button Content="Clean Reinstall..."
-                                Style="{StaticResource GhostButtonStyle}"
-                                Foreground="{DynamicResource ErrorBrush}"
-                                FontSize="11"
-                                Opacity="0.75"
-                                Click="OpenCleanReinstallFromMain_Click"
-                                ToolTip="Backup existing mods and restore a fresh copy from the repository" />
-                    </StackPanel>
-                </StackPanel>
-                </ScrollViewer>
-
+</StackPanel>
                 <!-- Feedback / Toast Card (Bottom notification area) -->
                 <Border x:Name="FeedbackCard"
                         Grid.Row="4"
@@ -534,10 +310,11 @@
             <!-- ======================================================== -->
             <!-- MODAL OVERLAYS (Apple Sheet Style)                       -->
             <!-- ======================================================== -->
-            <Grid x:Name="ModalBackdrop"
+            <Grid x:Name="ModalBackdrop" KeyboardNavigation.TabNavigation="Cycle"
                   Background="{DynamicResource ModalBackdropBrush}"
                   Visibility="Collapsed">
 
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" VerticalAlignment="Center" MaxHeight="{Binding ActualHeight, ElementName=ModalBackdrop}">
                 <!-- Centered Sheet Card -->
                 <Border Background="{DynamicResource CardBackgroundBrush}"
                         BorderBrush="{DynamicResource CardBorderBrush}"
@@ -759,6 +536,7 @@
 
                         <!-- ================= 5. SETTINGS / CONFIG MODAL ================= -->
                         <StackPanel x:Name="SettingsSheet" Visibility="Collapsed">
+<Button x:Name="AuthButton" Content="GitHub Login" Style="{StaticResource GhostButtonStyle}" HorizontalAlignment="Right" Click="Auth_Click"/>
                             <TextBlock Text="Settings &amp; Maintenance"
                                        FontSize="18"
                                        FontWeight="SemiBold"
@@ -782,30 +560,10 @@
                                             Padding="16,10"
                                             Margin="0,0,0,14">
                                         <StackPanel>
-                                            <!-- Confirm Before Sync -->
-                                            <Grid Margin="0,5">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                                    <TextBlock Text="Confirm Before Sync"
-                                                               FontSize="13"
-                                                               FontWeight="Medium"
-                                                               Foreground="{DynamicResource PrimaryTextBrush}" />
-                                                    <TextBlock Text="Prompt with summary before applying changes to mods folder"
-                                                               FontSize="11"
-                                                               Foreground="{DynamicResource SecondaryTextBrush}"
-                                                               Margin="0,2,0,0" />
-                                                </StackPanel>
-                                                <CheckBox x:Name="ConfirmSyncToggle"
-                                                          Grid.Column="1"
-                                                          Style="{StaticResource AppleToggleSwitchStyle}"
-                                                          VerticalAlignment="Center"
-                                                          HorizontalAlignment="Right"
-                                                          Margin="0,0,2,0"
-                                                          Click="SettingToggle_Click" />
-                                            </Grid>
+                                            <StackPanel Margin="0,5">
+                                                <TextBlock Text="Review before sync" FontSize="13" FontWeight="Medium"/>
+                                                <TextBlock Text="Review file changes before they are applied." FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,0"/>
+                                            </StackPanel>
 
                                             <!-- Divider -->
                                             <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
@@ -933,7 +691,7 @@
                                                            Text="v0.16.9"
                                                            FontSize="12"
                                                            FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           Foreground="{DynamicResource AccentTextBrush}"
                                                            VerticalAlignment="Center" />
                                             </Grid>
                                         </StackPanel>
@@ -1083,6 +841,7 @@
                                             <!-- Divider -->
                                             <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,8" />
 
+                                            <Button Content="Clean reinstall entire modpack…" Style="{StaticResource CompactSecondaryButtonStyle}" Click="OpenCleanReinstallFromMain_Click" Margin="0,4,0,12"/>
                                             <!-- Application Logs Row -->
                                             <Grid Margin="0,5">
                                                 <Grid.ColumnDefinitions>
@@ -1178,7 +937,7 @@
                                                    Text="modsync_backups/reinstall_.../"
                                                    FontFamily="Consolas, monospace"
                                                    FontSize="11"
-                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   Foreground="{DynamicResource AccentTextBrush}"
                                                    Margin="14,2,0,0" />
                                     </StackPanel>
 
@@ -1456,7 +1215,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Text="💡 Tip: Wildcards like *zoom* or replaymod*.jar are supported."
+                                <TextBlock Text="Tip: Wildcards like *zoom* or replaymod*.jar are supported."
                                            FontSize="11"
                                            TextWrapping="Wrap"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
@@ -1508,7 +1267,7 @@
                                     <TextBlock x:Name="FabricModalCurrentVerText" Grid.Row="0" Grid.Column="1" Text="0.15.11" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
 
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Required Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
-                                    <TextBlock x:Name="FabricModalTargetVerText" Grid.Row="1" Grid.Column="1" Text="0.16.9" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,8" />
+                                    <TextBlock x:Name="FabricModalTargetVerText" Grid.Row="1" Grid.Column="1" Text="0.16.9" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextBrush}" Margin="0,0,0,8" />
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Minecraft Version:" FontSize="12" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8" />
                                     <TextBlock x:Name="FabricModalMcVerText" Grid.Row="2" Grid.Column="1" Text="1.20.1" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,8" />
@@ -1550,7 +1309,9 @@
                         </StackPanel>
                     </Grid>
                 </Border>
+                </ScrollViewer>
             </Grid>
+        <ResizeGrip HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="16" Height="16" Margin="0,0,4,4" Foreground="{DynamicResource SecondaryTextBrush}"/>
         </Grid>
     </Border>
 </Window>

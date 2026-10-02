@@ -44,12 +44,15 @@ public class LayoutTests
                 var window = new MainWindow();
                 var root = (FrameworkElement)window.Content;
                 var config = (ModSync.Services.ConfigService)typeof(MainWindow).GetField("_configService", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!;
-                config.Config.ModsFolder = Path.Combine(AppContext.BaseDirectory, "mods");
+                config.Config.ModsFolder = Path.Combine(AppContext.BaseDirectory, "4Stoogies", ".minecraft", "mods");
                 config.Config.InstanceSelectionCompleted = true;
+                Directory.CreateDirectory(config.MinecraftFolder);
                 config.Config.SyncResourcePacks = true; config.Config.SyncShaderPacks = true;
                 typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
-                ((TextBlock)window.FindName("PackStatusText")).Text = "3 local / 3 repository";
-                ((TextBlock)window.FindName("ShaderStatusText")).Text = "1 local / 1 repository • Active: Complementary.zip";
+                ((TextBlock)window.FindName("PackStatusText")).Text = "3 local · 3 repository";
+                ((TextBlock)window.FindName("ShaderStatusText")).Text = "1 local · 1 repository\nActive: Complementary.zip";
+                typeof(MainWindow).GetMethod("UpdateStatusCard", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+                typeof(MainWindow).GetMethod("ApplyFabricStatusToUI", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { null });
                 foreach (bool dark in new[] { false, true })
                 {
                     ThemeManager.ApplyTheme(dark);
@@ -58,13 +61,20 @@ public class LayoutTests
                         root.Measure(new Size(width, 760));
                         root.Arrange(new Rect(0, 0, width, 760));
                         root.UpdateLayout();
-                        foreach (var name in new[] { "ChooseInstanceButton", "FrontCheckUpdatesButton", "SyncModsButton", "SyncOnlyModsButton", "PushOnlyModsButton", "ReinstallModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton", "PushModsButton", "PushResourcesButton", "PushShadersButton", "SyncOrderButton", "PushOrderButton", "ReinstallResourcesButton", "ReinstallShadersButton" })
+                        foreach (var name in new[] { "ChooseInstanceButton", "DashboardCheckButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton" })
                         {
                             var button = (Button)window.FindName(name);
+                            if (button.Visibility == Visibility.Collapsed) continue;
                             var point = button.TranslatePoint(new Point(0, 0), root);
-                            Assert.IsTrue(button.ActualWidth > 0 && point.X >= 0 && point.X + button.ActualWidth <= width && point.Y >= 0 && point.Y + button.ActualHeight <= 760, name + " must fit the window.");
+                            Assert.IsTrue(button.ActualWidth > 0 && point.X >= 0 && point.X + button.ActualWidth <= width, name + " must fit the window.");
                         }
                     }
+                    var menu = (ContextMenu)((MenuItem)window.FindName("PushOnlyModsButton")).Parent;
+                    typeof(MainWindow).GetMethod("PrepareActionsMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { menu });
+                    menu.Measure(new Size(300, 400)); menu.Arrange(new Rect(menu.DesiredSize)); menu.UpdateLayout();
+                    SavePreview(menu, dark ? "ui-menu-dark.png" : "ui-menu-light.png");
+                    foreach (var name in new[] { "PushOnlyModsButton", "ReinstallModsButton", "PushResourcesButton", "PushShadersButton", "SyncOrderButton", "PushOrderButton" })
+                        Assert.IsInstanceOfType(window.FindName(name), typeof(MenuItem), "Advanced actions belong in menus.");
                     var tooltip = new ToolTip { Content = "Sync shaderpacks and the active shader" };
                     tooltip.Measure(new Size(320, 100));
                     tooltip.Arrange(new Rect(tooltip.DesiredSize));
@@ -83,9 +93,23 @@ public class LayoutTests
                     var actions = (ScrollViewer)window.FindName("ActionsScrollViewer");
                     var fabric = (FrameworkElement)window.FindName("FabricCard");
                     var feedback = (FrameworkElement)window.FindName("FeedbackCard");
-                    Assert.IsTrue(actions.TranslatePoint(new Point(), root).Y >= fabric.TranslatePoint(new Point(), root).Y + fabric.ActualHeight);
+                    Assert.IsTrue(actions.ScrollableHeight >= 0, "Content must scroll rather than overlap navigation.");
                     Assert.IsTrue(actions.TranslatePoint(new Point(), root).Y + actions.ActualHeight <= feedback.TranslatePoint(new Point(), root).Y);
+                    typeof(MainWindow).GetMethod("SetBusy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { true, "Checking repositories…" });
+                    Assert.IsFalse(((Button)window.FindName("DashboardCheckButton")).IsEnabled);
+                    Assert.IsFalse(((MenuItem)window.FindName("PushOnlyModsButton")).IsEnabled);
+                    root.UpdateLayout();
+                    var progress = (FrameworkElement)window.FindName("ProgressArea");
+                    Assert.IsTrue(progress.ActualHeight > 0 && progress.TranslatePoint(new Point(), root).Y + progress.ActualHeight <= 760, "Progress must remain visible without scrolling.");
+                    root.UpdateLayout();
                     SavePreview(root, dark ? "ui-busy-dark.png" : "ui-busy-light.png");
+                    typeof(MainWindow).GetMethod("SetBusy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { false, null });
+                    root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                    var navigation = (Button)window.FindName("ChooseInstanceButton");
+                    Assert.IsTrue(navigation.TranslatePoint(new Point(), root).Y + navigation.ActualHeight <= 640);
+                    actions.ScrollToEnd(); root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-small-dark.png" : "ui-small-light.png");
+                    actions.ScrollToTop();
                     ((FrameworkElement)window.FindName("ProgressArea")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)window.FindName("FeedbackCard")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Visible;
@@ -98,6 +122,10 @@ public class LayoutTests
                     SavePreview(root, dark ? "ui-repositories-dark.png" : "ui-repositories-light.png");
                     ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)window.FindName("SwitchRepoSheet")).Visibility = Visibility.Collapsed;
+                    typeof(MainWindow).GetMethod("Settings_Click", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { window, new RoutedEventArgs() });
+                    root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-settings-dark.png" : "ui-settings-light.png");
+                    ((FrameworkElement)window.FindName("SettingsSheet")).Visibility = Visibility.Collapsed;
                     typeof(MainWindow).GetMethod("ShowInstancePicker", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     ((ListBox)window.FindName("InstanceList")).ItemsSource = new[] { new ModSync.Services.MinecraftInstance("My Minecraft instance", "C:/Games/PrismLauncher/instances/My instance/.minecraft") };
                     ((ListBox)window.FindName("InstanceList")).SelectedIndex = 0;
@@ -111,13 +139,40 @@ public class LayoutTests
                     Assert.AreEqual(Colors.White, ((SolidColorBrush)selectedText.Foreground).Color, "Selected instance must remain readable.");
 
                     ((FrameworkElement)window.FindName("InstanceSheet")).Visibility = Visibility.Collapsed;
+                    ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
+                    ((FrameworkElement)window.FindName("MainDashboard")).IsEnabled = true;
                     typeof(MainWindow).GetMethod("UpdateModCountBadge", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { 10, 10 });
                     typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     StringAssert.Contains(((TextBlock)window.FindName("StatusHeadingText")).Text, "Not checked");
                     var changes = new ModSync.Models.SyncSummary();
                     changes.Changes.Add(new ModSync.Models.ModChange { Type = ModSync.Models.ChangeType.Updated, RelativePath = "resourcepacks/SameName.zip" });
                     typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.All, changes });
-                    Assert.AreEqual("Changes available", ((TextBlock)window.FindName("ResourceStateText")).Text);
+                    Assert.AreEqual("1 change to review", ((TextBlock)window.FindName("ResourceStateText")).Text);
+                    Assert.AreEqual("Review changes", ((Button)window.FindName("SyncResourcesButton")).Content);
+                    Assert.AreEqual(Visibility.Visible, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-changes-dark.png" : "ui-changes-light.png");
+                    typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.All, new ModSync.Models.SyncSummary() });
+                    Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("SyncOnlyModsButton")).Visibility);
+                    Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("SyncResourcesButton")).Visibility);
+                    Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    var fabricCurrent = new ModSync.Models.FabricStatusInfo { IsConfigured = true, IsMinecraftFound = true, IsUpToDate = true, MinecraftVersion = "1.20.1", InstalledLoaderVersion = "0.19.5", TargetLoaderVersion = "0.19.5" };
+                    typeof(MainWindow).GetField("_currentFabricStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(window, fabricCurrent);
+                    typeof(MainWindow).GetMethod("ApplyFabricStatusToUI", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { fabricCurrent });
+                    Assert.AreEqual("Everything is up to date", ((TextBlock)window.FindName("OverallStatusText")).Text);
+                    Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)window.FindName("FabricVersionComparison")).Visibility);
+                    root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-synced-dark.png" : "ui-synced-light.png");
+                    var metadata = new ModSync.Models.SyncSummary();
+                    metadata.Changes.Add(new ModSync.Models.ModChange { Type = ModSync.Models.ChangeType.Updated, IsInternal = true, RelativePath = ".modsync-managed-packs.json" });
+                    typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.ResourcePacks, metadata });
+                    Assert.AreEqual("Review metadata updates", ((TextBlock)window.FindName("ResourceStateText")).Text);
+                    Assert.AreEqual(Visibility.Visible, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    config.Config.SyncResourcePacks = false;
+                    typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
+                    Assert.IsFalse(((MenuItem)window.FindName("PushResourcesButton")).IsEnabled);
+                    Assert.AreEqual("Enable in Settings", ((Button)window.FindName("SyncResourcesButton")).Content);
+                    config.Config.SyncResourcePacks = true;
                     typeof(MainWindow).GetMethod("MarkSyncComplete", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.ResourcePackOrder });
                     StringAssert.Contains(((TextBlock)window.FindName("ResourceStateText")).Text, "files not checked");
                     ((Dictionary<ModSync.Models.SyncScope, string>)typeof(MainWindow).GetField("_categoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(window)!).Clear();
@@ -136,6 +191,7 @@ public class LayoutTests
                         SavePreview(root, $"ui-reinstall-{scope}-{(dark ? "dark" : "light")}.png");
                         ((FrameworkElement)window.FindName("CleanReinstallConfirmSheet")).Visibility = Visibility.Collapsed;
                         ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
+                        ((FrameworkElement)window.FindName("MainDashboard")).IsEnabled = true;
                     }
 
                 }
