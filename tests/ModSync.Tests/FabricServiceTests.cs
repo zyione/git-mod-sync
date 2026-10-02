@@ -237,13 +237,153 @@ public class FabricServiceTests
         Assert.AreEqual("1.20.1", status.MinecraftVersion);
     }
 
+    [TestMethod]
+    public void TestUltiMcFabricDetectionFromMmcPackJson()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = "0.19.5";
+
+        string instanceDir = Path.Combine(_tempDir, "UltiMcInstance");
+        Directory.CreateDirectory(instanceDir);
+        string mcDir = Path.Combine(instanceDir, ".minecraft");
+        Directory.CreateDirectory(mcDir);
+
+        string mmcPackJson = @"{
+            ""components"": [
+                {
+                    ""cachedName"": ""Minecraft"",
+                    ""cachedVersion"": ""1.20.1"",
+                    ""uid"": ""net.minecraft"",
+                    ""version"": ""1.20.1""
+                },
+                {
+                    ""cachedName"": ""Fabric Loader"",
+                    ""cachedVersion"": ""0.14.21"",
+                    ""uid"": ""net.fabricmc.fabric-loader"",
+                    ""version"": ""0.14.21""
+                }
+            ],
+            ""formatVersion"": 1
+        }";
+        string mmcPackPath = Path.Combine(instanceDir, "mmc-pack.json");
+        File.WriteAllText(mmcPackPath, mmcPackJson);
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir, null, mmcPackPath);
+        var status = fabricService.DetectFabricStatus();
+
+        Assert.IsTrue(status.IsConfigured);
+        Assert.AreEqual("0.14.21", status.InstalledLoaderVersion);
+        Assert.AreEqual("1.20.1", status.MinecraftVersion);
+        Assert.AreEqual("0.19.5", status.TargetLoaderVersion);
+        Assert.IsFalse(status.IsUpToDate);
+    }
+
+    [TestMethod]
+    public void TestUltiMcFabricDetectionUpToDate()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = "0.19.5";
+
+        string instanceDir = Path.Combine(_tempDir, "UltiMcInstance");
+        Directory.CreateDirectory(instanceDir);
+        string mcDir = Path.Combine(instanceDir, ".minecraft");
+        Directory.CreateDirectory(mcDir);
+
+        string mmcPackJson = @"{
+            ""components"": [
+                {
+                    ""cachedName"": ""Minecraft"",
+                    ""cachedVersion"": ""1.20.1"",
+                    ""uid"": ""net.minecraft"",
+                    ""version"": ""1.20.1""
+                },
+                {
+                    ""cachedName"": ""Fabric Loader"",
+                    ""cachedVersion"": ""0.19.5"",
+                    ""uid"": ""net.fabricmc.fabric-loader"",
+                    ""version"": ""0.19.5""
+                }
+            ],
+            ""formatVersion"": 1
+        }";
+        string mmcPackPath = Path.Combine(instanceDir, "mmc-pack.json");
+        File.WriteAllText(mmcPackPath, mmcPackJson);
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir, null, mmcPackPath);
+        var status = fabricService.DetectFabricStatus();
+
+        Assert.IsTrue(status.IsConfigured);
+        Assert.AreEqual("0.19.5", status.InstalledLoaderVersion);
+        Assert.AreEqual("1.20.1", status.MinecraftVersion);
+        Assert.IsTrue(status.IsUpToDate);
+    }
+
+    [TestMethod]
+    public async Task TestUltiMcFabricInstallUpdatesMmcPackJson()
+    {
+        var logger = new LoggingService();
+        var configService = new ConfigService(logger);
+        configService.Config.FabricLoaderVersion = "0.19.5";
+
+        string instanceDir = Path.Combine(_tempDir, "UltiMcInstance");
+        Directory.CreateDirectory(instanceDir);
+        string mcDir = Path.Combine(instanceDir, ".minecraft");
+        Directory.CreateDirectory(mcDir);
+
+        string mmcPackJson = @"{
+            ""components"": [
+                {
+                    ""cachedName"": ""Minecraft"",
+                    ""cachedVersion"": ""1.20.1"",
+                    ""uid"": ""net.minecraft"",
+                    ""version"": ""1.20.1""
+                },
+                {
+                    ""cachedName"": ""Fabric Loader"",
+                    ""cachedVersion"": ""0.14.21"",
+                    ""uid"": ""net.fabricmc.fabric-loader"",
+                    ""version"": ""0.14.21""
+                }
+            ],
+            ""formatVersion"": 1
+        }";
+        string mmcPackPath = Path.Combine(instanceDir, "mmc-pack.json");
+        File.WriteAllText(mmcPackPath, mmcPackJson);
+
+        var fabricService = new TestableFabricService(configService, logger, mcDir, null, mmcPackPath);
+        var (success, error) = await fabricService.InstallFabricLoaderAsync("1.20.1", "0.19.5");
+
+        Assert.IsTrue(success, $"Install failed: {error}");
+
+        // Verify updated mmc-pack.json content
+        string updatedJson = File.ReadAllText(mmcPackPath);
+        using var doc = JsonDocument.Parse(updatedJson);
+        string? loaderVer = null;
+        foreach (var comp in doc.RootElement.GetProperty("components").EnumerateArray())
+        {
+            if (comp.GetProperty("uid").GetString() == "net.fabricmc.fabric-loader")
+            {
+                loaderVer = comp.GetProperty("version").GetString();
+            }
+        }
+        Assert.AreEqual("0.19.5", loaderVer);
+
+        // Verify status now reports up-to-date
+        var status = fabricService.DetectFabricStatus();
+        Assert.AreEqual("0.19.5", status.InstalledLoaderVersion);
+        Assert.IsTrue(status.IsUpToDate);
+    }
+
     private class TestableFabricService : FabricService
     {
-        public TestableFabricService(ConfigService cfg, LoggingService log, string customMcDir, string? customRepoDir = null)
+        public TestableFabricService(ConfigService cfg, LoggingService log, string customMcDir, string? customRepoDir = null, string? customMmcPackPath = null)
             : base(cfg, log)
         {
             CustomMinecraftDirectory = customMcDir;
             CustomRepositoryDirectory = customRepoDir;
+            CustomMmcPackPath = customMmcPackPath;
         }
     }
 }
