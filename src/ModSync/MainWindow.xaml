@@ -1184,6 +1184,30 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border x:Name="ExclusionDropZone" AllowDrop="True"
+                                    PreviewDragOver="ExclusionDropZone_DragOver"
+                                    PreviewDragLeave="ExclusionDropZone_DragLeave"
+                                    PreviewDrop="ExclusionDropZone_Drop"
+                                    Background="{DynamicResource InputBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock x:Name="ExclusionDropHint" Text="Drop .jar files here to exclude them"
+                                               Foreground="{DynamicResource PrimaryTextBrush}" FontSize="12"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="Select several files in File Explorer. Files stay where they are."
+                                               Foreground="{DynamicResource SecondaryTextBrush}" FontSize="11"
+                                               TextWrapping="Wrap" Margin="0,4,0,8" />
+                                    <Button Content="Choose Files…" HorizontalAlignment="Left" Height="32"
+                                            Style="{StaticResource CompactSecondaryButtonStyle}"
+                                            Click="ChooseExcludedFiles_Click" />
+                                    <TextBlock x:Name="ExclusionDropFeedback" Visibility="Collapsed"
+                                               AutomationProperties.LiveSetting="Polite"
+                                               Foreground="{DynamicResource PrimaryTextBrush}" FontSize="12"
+                                               TextWrapping="Wrap" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
                             <!-- Active Ignored Rules List -->
                             <TextBlock Text="ACTIVE EXCLUSION RULES"
                                        FontSize="10.5"

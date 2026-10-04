@@ -186,6 +186,36 @@ public class ModIgnoreService
         return false;
     }
 
+    /// <summary>Adds exact filename exclusions in one save, without changing the source files.</summary>
+    public (bool Success, int Added, int Skipped) ExcludeFiles(IEnumerable<string> paths)
+    {
+        var patterns = GetEffectivePatterns();
+        var additions = new List<string>();
+        int skipped = 0;
+        foreach (string path in paths)
+        {
+            string name = Path.GetFileName(path);
+            if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".jar", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith('#') || IsIgnored(name, patterns))
+            {
+                skipped++;
+                continue;
+            }
+            additions.Add(name);
+            patterns.Add(name);
+        }
+
+        if (additions.Count == 0) return (true, 0, skipped);
+        var previous = _configService.Config.IgnoredMods ?? new List<string>();
+        _configService.Config.IgnoredMods = previous.Concat(additions).ToList();
+        if (!_configService.Save())
+        {
+            _configService.Config.IgnoredMods = previous;
+            return (false, 0, skipped);
+        }
+        return (true, additions.Count, skipped);
+    }
+
     private static Regex WildcardToRegex(string pattern)
     {
         // Replace * with .* and ? with .

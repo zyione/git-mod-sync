@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Security.Principal;
 using System.Windows;
 using ModSync.Themes;
@@ -6,7 +5,7 @@ using ModSync.Themes;
 namespace ModSync;
 
 /// <summary>
-/// Application entry, admin elevation safeguard, and theme setup.
+/// Application entry and theme setup.
 /// </summary>
 public partial class App : Application
 {
@@ -28,33 +27,6 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        if (!IsRunningAsAdministrator())
-        {
-            try
-            {
-                var processPath = Environment.ProcessPath;
-                if (!string.IsNullOrEmpty(processPath))
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = processPath,
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    };
-                    Process.Start(psi);
-                    Shutdown(0);
-                    return;
-                }
-            }
-            catch
-            {
-                // Elevation was cancelled by the user
-                Shutdown(1);
-                return;
-            }
-        }
-
         ThemeManager.InitializeTheme();
     }
 }
-

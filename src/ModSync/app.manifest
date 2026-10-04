@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- UAC Manifest Options: Request Administrator Privileges Natively -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Match File Explorer permissions so file drag-and-drop works. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

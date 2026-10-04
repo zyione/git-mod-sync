@@ -195,6 +195,18 @@ public class LayoutTests
                     }
 
                 }
+                foreach (bool dark in new[] { false, true })
+                {
+                    ThemeManager.ApplyTheme(dark);
+                    typeof(MainWindow).GetMethod("OpenIgnoredModsModal_Click", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                        .Invoke(window, new object[] { window, new RoutedEventArgs() });
+                    root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
+                    var zone = (Border)window.FindName("ExclusionDropZone");
+                    var point = zone.TranslatePoint(new Point(), root);
+                    Assert.IsTrue(zone.AllowDrop);
+                    Assert.IsTrue(zone.ActualWidth > 0 && point.X >= 0 && point.X + zone.ActualWidth <= 580);
+                    SavePreview(root, dark ? "ui-exclusions-dark.png" : "ui-exclusions-light.png");
+                }
                 window.Close();
                 app.Shutdown();
             }

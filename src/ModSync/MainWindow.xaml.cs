@@ -1351,6 +1351,13 @@ public partial class MainWindow : Window
 
     private void OpenIgnoredModsModal_Click(object sender, RoutedEventArgs e)
     {
+        ResetExclusionDropZone();
+        ExclusionDropFeedback.Visibility = Visibility.Collapsed;
+        if (App.IsRunningAsAdministrator())
+        {
+            ExclusionDropFeedback.Text = "Running as administrator: use Choose Files, or reopen ModSync normally to drag files from File Explorer.";
+            ExclusionDropFeedback.Visibility = Visibility.Visible;
+        }
         RefreshIgnoredModsList();
         PopulateDetectedMods();
         ShowModal(IgnoredModsSheet);
@@ -1386,11 +1393,13 @@ public partial class MainWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var leftStack = new StackPanel
+            var leftStack = new Grid
             {
-                Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            leftStack.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            leftStack.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            leftStack.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var iconText = new TextBlock
             {
@@ -1404,12 +1413,15 @@ public partial class MainWindow : Window
             var nameText = new TextBlock
             {
                 Text = pattern,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = pattern,
                 FontFamily = (FontFamily)FindResource("SystemFont"),
                 FontSize = 12,
                 FontWeight = FontWeights.Medium,
                 Foreground = (Brush)FindResource("PrimaryTextBrush"),
                 VerticalAlignment = VerticalAlignment.Center
             };
+            Grid.SetColumn(nameText, 1);
             leftStack.Children.Add(nameText);
 
             if (pattern.Contains('*') || pattern.Contains('?'))
@@ -1429,6 +1441,7 @@ public partial class MainWindow : Window
                     FontWeight = FontWeights.Medium,
                     Foreground = (Brush)FindResource("SecondaryTextBrush")
                 };
+                Grid.SetColumn(badge, 2);
                 leftStack.Children.Add(badge);
             }
 
