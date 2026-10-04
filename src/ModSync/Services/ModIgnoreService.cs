@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.IO.Compression;
+using System.Text.Json;
 using ModSync.Utils;
 
 namespace ModSync.Services;
@@ -77,10 +79,35 @@ public class ModIgnoreService
     /// <summary>
     /// Checks whether a mod file path matches any active ignore rule.
     /// </summary>
-    public bool IsIgnored(string relativeOrFileName)
+    public bool IsIgnored(string relativeOrFileName, string? fullPath = null)
     {
         var patterns = GetEffectivePatterns();
-        return IsIgnored(relativeOrFileName, patterns);
+        if (IsIgnored(relativeOrFileName, patterns)) return true;
+        if (!patterns.Any(p => p.StartsWith("fabric-id:", StringComparison.Ordinal))) return false;
+        // Callers performing file operations pass the actual file, never a guessed filename.
+        string? id = ReadFabricId(fullPath ?? relativeOrFileName);
+        return id != null && patterns.Contains("fabric-id:" + id, StringComparer.Ordinal);
+    }
+
+    public static string? ReadFabricId(string path)
+    {
+        if (!Path.IsPathFullyQualified(path)) return null;
+        try
+        {
+            using var jar = ZipFile.OpenRead(path);
+            var entry = jar.GetEntry("fabric.mod.json");
+            if (entry == null || entry.Length > 256 * 1024) return null;
+            using var stream = entry.Open();
+            using var json = JsonDocument.Parse(stream);
+            if (json.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (!json.RootElement.TryGetProperty("id", out var value) || value.ValueKind != JsonValueKind.String) return null;
+            string? id = value.GetString();
+            return id != null && Regex.IsMatch(id, "^[a-z][a-z0-9_-]{1,63}$") ? id : null;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -100,6 +127,7 @@ public class ModIgnoreService
                 continue;
 
             string p = pattern.Trim().Replace('\\', '/');
+            if (p.StartsWith("fabric-id:", StringComparison.Ordinal)) continue;
             if (p.StartsWith("#") || p.StartsWith("//"))
                 continue;
 
@@ -176,44 +204,54 @@ public class ModIgnoreService
             return false;
 
         string clean = pattern.Trim();
+        var previous = _configService.Config.IgnoredMods.ToList();
         int removed = _configService.Config.IgnoredMods.RemoveAll(p => string.Equals(p.Trim(), clean, StringComparison.OrdinalIgnoreCase));
         if (removed > 0)
         {
             _logger.Info($"Removed mod ignore pattern: '{clean}'");
-            return _configService.Save();
+            if (_configService.Save()) return true;
+            _configService.Config.IgnoredMods = previous;
+            return false;
         }
 
         return false;
     }
 
-    /// <summary>Adds exact filename exclusions in one save, without changing the source files.</summary>
-    public (bool Success, int Added, int Skipped) ExcludeFiles(IEnumerable<string> paths)
+    /// <summary>Adds filename or Fabric identity exclusions in one save, without changing source files.</summary>
+    public (bool Success, int Added, int Skipped, int FilenameOnly) ExcludeFiles(IEnumerable<string> paths, bool rememberIdentity = false)
     {
         var patterns = GetEffectivePatterns();
         var additions = new List<string>();
         int skipped = 0;
+        int filenameOnly = 0;
         foreach (string path in paths)
         {
             string name = Path.GetFileName(path);
             if (!File.Exists(path) || !string.Equals(Path.GetExtension(path), ".jar", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith('#') || IsIgnored(name, patterns))
+                || name.StartsWith('#'))
             {
                 skipped++;
                 continue;
             }
-            additions.Add(name);
-            patterns.Add(name);
+            string? id = rememberIdentity || patterns.Any(p => p.StartsWith("fabric-id:", StringComparison.Ordinal)) ? ReadFabricId(path) : null;
+            string rule = !rememberIdentity || id == null ? name : "fabric-id:" + id;
+            if ((id != null && patterns.Contains("fabric-id:" + id, StringComparer.Ordinal))
+                || patterns.Contains(rule, StringComparer.OrdinalIgnoreCase)
+                || ((!rememberIdentity || id == null) && IsIgnored(name, patterns))) { skipped++; continue; }
+            if (rememberIdentity && id == null) filenameOnly++;
+            additions.Add(rule);
+            patterns.Add(rule);
         }
 
-        if (additions.Count == 0) return (true, 0, skipped);
+        if (additions.Count == 0) return (true, 0, skipped, 0);
         var previous = _configService.Config.IgnoredMods ?? new List<string>();
         _configService.Config.IgnoredMods = previous.Concat(additions).ToList();
         if (!_configService.Save())
         {
             _configService.Config.IgnoredMods = previous;
-            return (false, 0, skipped);
+            return (false, 0, skipped, 0);
         }
-        return (true, additions.Count, skipped);
+        return (true, additions.Count, skipped, filenameOnly);
     }
 
     private static Regex WildcardToRegex(string pattern)

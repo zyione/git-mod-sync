@@ -207,11 +207,26 @@ public class LayoutTests
                     }
 
                 }
+                Directory.CreateDirectory(config.ResolvedModsFolder);
+                var exampleMods = new[] { "zoom-personal-1.0.jar", "map-personal-2.0.jar", new string('a', 110) + ".jar" };
+                foreach (var name in exampleMods) File.WriteAllText(Path.Combine(config.ResolvedModsFolder, name), "UI fixture");
+                config.Config.IgnoredMods.Clear();
                 foreach (bool dark in new[] { false, true })
                 {
                     ThemeManager.ApplyTheme(dark);
                     typeof(MainWindow).GetMethod("OpenIgnoredModsModal_Click", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                         .Invoke(window, new object[] { window, new RoutedEventArgs() });
+                    var search = (TextBox)window.FindName("ExclusionSearchInput");
+                    search.Text = "zoom-personal";
+                    var list = (StackPanel)window.FindName("DetectedModsList");
+                    Assert.AreEqual(1, list.Children.Count);
+                    ((CheckBox)list.Children[0]).IsChecked = true;
+                    search.Text = "map-personal";
+                    ((CheckBox)list.Children[0]).IsChecked = true;
+                    search.Text = "";
+                    var selected = (Button)window.FindName("ExcludeSelectedModsButton");
+                    Assert.IsTrue(selected.IsEnabled);
+                    StringAssert.Contains(selected.Content.ToString()!, "(2)");
                     root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
                     var zone = (Border)window.FindName("ExclusionDropZone");
                     var point = zone.TranslatePoint(new Point(), root);
@@ -219,6 +234,17 @@ public class LayoutTests
                     Assert.IsTrue(zone.ActualWidth > 0 && point.X >= 0 && point.X + zone.ActualWidth <= 580);
                     SavePreview(root, dark ? "ui-exclusions-dark.png" : "ui-exclusions-light.png");
                 }
+                foreach (var name in exampleMods) File.Delete(Path.Combine(config.ResolvedModsFolder, name));
+                ((FrameworkElement)window.FindName("IgnoredModsSheet")).Visibility = Visibility.Collapsed;
+                ((FrameworkElement)window.FindName("ModalBackdrop")).Visibility = Visibility.Collapsed;
+                ((FrameworkElement)window.FindName("MainDashboard")).IsEnabled = true;
+                var completed = new ModSync.Models.SyncSummary();
+                completed.Changes.Add(new ModSync.Models.ModChange { RelativePath = "resourcepacks/A.zip", Type = ModSync.Models.ChangeType.Added });
+                completed.Changes.Add(new ModSync.Models.ModChange { RelativePath = "options.txt (resource pack order)", Type = ModSync.Models.ChangeType.Updated, NewContent = "order" });
+                typeof(MainWindow).GetField("_syncScope", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(window, ModSync.Models.SyncScope.ResourcePacks);
+                typeof(MainWindow).GetMethod("ShowSyncCompletion", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { completed, null, false });
+                root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
+                SavePreview(root, "ui-completion-dark.png");
                 window.Close();
                 app.Shutdown();
             }

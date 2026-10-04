@@ -1158,33 +1158,23 @@
 
                                     <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="0,0,0,10" />
 
-                                    <!-- Quick Add from Detected Mods -->
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="Quick Exclude:"
-                                                   FontSize="11.5"
-                                                   FontWeight="Medium"
-                                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="1,0,10,0" />
-                                        <ComboBox x:Name="DetectedModsComboBox"
-                                                  Grid.Column="1"
-                                                  Height="32"
-                                                  FontSize="11.5"
-                                                  Margin="0,0,8,0" />
-                                        <Button Content="Exclude"
-                                                Style="{StaticResource CompactSecondaryButtonStyle}"
-                                                Grid.Column="2"
-                                                Height="32"
-                                                MinWidth="76"
-                                                Padding="12,0"
-                                                Click="ExcludeSelectedDetectedMod_Click"
-                                                ToolTip="Exclude the selected detected mod from sync" />
-                                    </Grid>
+                                    <TextBlock Text="SEARCH DETECTED MODS" FontSize="11" Margin="0,0,0,8"/>
+                                    <TextBox x:Name="ExclusionSearchInput" Style="{StaticResource MinimalTextBoxStyle}"
+                                             Height="34" Margin="0,0,0,8" TextChanged="ExclusionSearch_Changed"
+                                             AutomationProperties.Name="Search detected mods" ToolTip="Search detected mod filenames"/>
+                                    <ScrollViewer MaxHeight="132" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel x:Name="DetectedModsList"/>
+                                    </ScrollViewer>
+                                    <CheckBox x:Name="RememberModIdentity" Content="Keep excluded across updates (Fabric mods)"
+                                              Margin="0,8,0,4" MinHeight="32"/>
+                                    <TextBlock Text="Uses the embedded mod ID. Other files use filename exclusions."
+                                               FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button Content="Select Shown" Click="SelectShownMods_Click" Style="{StaticResource CompactSecondaryButtonStyle}" Height="32" Margin="0,0,8,4"/>
+                                        <Button Content="Clear Selection" Click="ClearSelectedMods_Click" Style="{StaticResource CompactSecondaryButtonStyle}" Height="32" Margin="0,0,8,4"/>
+                                        <Button x:Name="ExcludeSelectedModsButton" Content="Exclude Selected" IsEnabled="False" Click="ExcludeSelectedMods_Click"
+                                                Style="{StaticResource CompactPrimaryButtonStyle}" Height="32" Margin="0,0,0,4"/>
+                                    </WrapPanel>
                                 </StackPanel>
                             </Border>
 

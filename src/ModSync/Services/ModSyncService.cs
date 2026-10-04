@@ -337,7 +337,7 @@ public class ModSyncService
                     int i = 0;
                     foreach (var mod in localMods.Values)
                     {
-                        if (_ignoreService.IsIgnored(mod.RelativePath))
+                        if (_ignoreService.IsIgnored(mod.RelativePath, mod.FullPath))
                         {
                             _logger.Info($"Preserving local personal mod during clean reinstall: {mod.RelativePath}");
                             continue;
@@ -376,7 +376,7 @@ public class ModSyncService
 
             foreach (var file in repoFiles.Values)
             {
-                if (_ignoreService.IsIgnored(file.RelativePath))
+                if (_ignoreService.IsIgnored(file.RelativePath, file.FullPath))
                 {
                     _logger.Info($"Skipping excluded repository mod during clean reinstall: {file.RelativePath}");
                     continue;
@@ -487,7 +487,7 @@ public class ModSyncService
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
         modChanges.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
-        int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
+        int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key, f.Value.FullPath));
 
         progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
         return (gitStatus, modChanges, localFiles.Count, repoCount);
@@ -529,7 +529,7 @@ public class ModSyncService
             try
             {
                 var repoFiles = ScanFolder(repoFolder, allowedExts, syncSubdirs, isRepoFolder: true, hashContents: false);
-                expectedCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key));
+                expectedCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key, f.Value.FullPath));
             }
             catch (Exception ex)
             {
@@ -706,7 +706,7 @@ public class ModSyncService
         // 1. Check all source files (either Added, Updated, Unchanged, or Ignored)
         foreach (var (relPath, sourceItem) in sourceFiles)
         {
-            bool isIgnored = _ignoreService.IsIgnored(relPath);
+            bool isIgnored = _ignoreService.IsIgnored(relPath, sourceItem.FullPath) || (targetFiles.TryGetValue(relPath, out var candidate) && _ignoreService.IsIgnored(relPath, candidate.FullPath));
 
             if (targetFiles.TryGetValue(relPath, out var targetItem))
             {
@@ -750,7 +750,7 @@ public class ModSyncService
         {
             if (!sourceFiles.ContainsKey(relPath))
             {
-                bool isIgnored = _ignoreService.IsIgnored(relPath);
+                bool isIgnored = _ignoreService.IsIgnored(relPath, targetItem.FullPath);
                 summary.Changes.Add(new ModChange
                 {
                     RelativePath = relPath,

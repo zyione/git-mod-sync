@@ -270,7 +270,7 @@ public partial class MainWindow : Window
 
                 if (!modChanges.HasChanges && !fabricNeedsUpdate)
                 {
-                    ShowFeedback("✓ Already up to date. No files were changed.", false);
+                    ShowSyncCompletion(modChanges);
                     SetBusy(false);
                     return;
                 }
@@ -381,6 +381,7 @@ public partial class MainWindow : Window
             if (success)
             {
                 bool fabricUpdated = false;
+                bool fabricFailed = false;
                 string? fabricTarget = null;
 
                 if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader)
@@ -410,29 +411,18 @@ public partial class MainWindow : Window
                             else
                             {
                                 _logger.Warning($"Fabric Loader update during sync failed: {fError}");
+                                fabricFailed = true;
                             }
                         }
                     }
                     catch (Exception ex)
                     {
                         _logger.Error("Error updating Fabric Loader during mod sync", ex);
+                        fabricFailed = true;
                     }
                 }
 
-                if (summary != null && summary.HasChanges)
-                {
-                    string fb = $"✓ Sync Complete: +{summary.AddedCount} added, ~{summary.UpdatedCount} updated, -{summary.RemovedCount} removed";
-                    if (fabricUpdated) fb += $" • Fabric Loader {fabricTarget} updated";
-                    ShowFeedback(fb, false);
-                }
-                else if (fabricUpdated)
-                {
-                    ShowFeedback($"✓ Sync Complete: Fabric Loader updated to {fabricTarget}.", false);
-                }
-                else
-                {
-                    ShowFeedback("✓ Already up to date. No files were changed.", false);
-                }
+                ShowSyncCompletion(summary ?? new SyncSummary(), fabricUpdated ? fabricTarget : null, fabricFailed);
                 MarkSyncComplete(_syncScope);
                 SetStatusDot(true);
             }
@@ -1094,6 +1084,14 @@ public partial class MainWindow : Window
         FeedbackCard.Visibility = Visibility.Visible;
     }
 
+    private void ShowSyncCompletion(SyncSummary summary, string? fabricVersion = null, bool fabricFailed = false)
+    {
+        ShowFeedback(SyncCompletionService.Describe(summary, _syncScope,
+            _configService.Config.SyncResourcePacks, _configService.Config.SyncShaderPacks,
+            File.Exists(Path.Combine(_configService.ResolvedResourcePackRepositoryFolder, "resourcepack-order.txt")), fabricVersion, fabricFailed), false);
+        // Keep the result and restart guidance visible until dismissed or another action starts.
+        _feedbackTimer.Stop();
+    }
     private void DismissFeedback()
     {
         _feedbackTimer.Stop();
@@ -1351,6 +1349,8 @@ public partial class MainWindow : Window
 
     private void OpenIgnoredModsModal_Click(object sender, RoutedEventArgs e)
     {
+        _selectedExclusionMods.Clear();
+        ExclusionSearchInput.Text = string.Empty;
         ResetExclusionDropZone();
         ExclusionDropFeedback.Visibility = Visibility.Collapsed;
         if (App.IsRunningAsAdministrator())
@@ -1412,7 +1412,7 @@ public partial class MainWindow : Window
 
             var nameText = new TextBlock
             {
-                Text = pattern,
+                Text = pattern.StartsWith("fabric-id:", StringComparison.Ordinal) ? pattern[10..] + " · All versions (Fabric)" : pattern,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 ToolTip = pattern,
                 FontFamily = (FontFamily)FindResource("SystemFont"),
@@ -1459,7 +1459,12 @@ public partial class MainWindow : Window
             {
                 if (s is Button btn && btn.Tag is string pat)
                 {
-                    _ignoreService.RemovePattern(pat);
+                    if (!_ignoreService.RemovePattern(pat))
+                    {
+                        ExclusionDropFeedback.Text = "Couldn't remove this rule. Check folder access; rules from .modignore must be removed in that file.";
+                        ExclusionDropFeedback.Visibility = Visibility.Visible;
+                        return;
+                    }
                     RefreshIgnoredModsList();
                     PopulateDetectedMods();
                     UpdateIgnoredModsUI();
@@ -1474,63 +1479,6 @@ public partial class MainWindow : Window
 
             cardBorder.Child = row;
             IgnoredRulesContainer.Children.Add(cardBorder);
-        }
-    }
-
-    private void PopulateDetectedMods()
-    {
-        DetectedModsComboBox.Items.Clear();
-        var detected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Scan local mods
-        try
-        {
-            string modsDir = _configService.ResolvedModsFolder;
-            if (Directory.Exists(modsDir))
-            {
-                foreach (var file in Directory.GetFiles(modsDir, "*.jar", SearchOption.TopDirectoryOnly))
-                {
-                    detected.Add(Path.GetFileName(file));
-                }
-            }
-        }
-        catch { }
-
-        // Scan repo mods
-        try
-        {
-            string repoDir = _configService.ResolvedRepositoryFolder;
-            if (Directory.Exists(repoDir))
-            {
-                foreach (var file in Directory.GetFiles(repoDir, "*.jar", SearchOption.TopDirectoryOnly))
-                {
-                    detected.Add(Path.GetFileName(file));
-                }
-            }
-        }
-        catch { }
-
-        var sorted = detected.OrderBy(d => d).ToList();
-        int addedCount = 0;
-        foreach (var mod in sorted)
-        {
-            if (!_ignoreService.IsIgnored(mod))
-            {
-                DetectedModsComboBox.Items.Add(mod);
-                addedCount++;
-            }
-        }
-
-        if (addedCount > 0)
-        {
-            DetectedModsComboBox.SelectedIndex = 0;
-            DetectedModsComboBox.IsEnabled = true;
-        }
-        else
-        {
-            DetectedModsComboBox.Items.Add(detected.Count > 0 ? "All detected mods excluded" : "No .jar mods found");
-            DetectedModsComboBox.SelectedIndex = 0;
-            DetectedModsComboBox.IsEnabled = false;
         }
     }
 
@@ -1551,19 +1499,6 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter)
         {
             AddIgnorePattern_Click(sender, e);
-        }
-    }
-
-    private void ExcludeSelectedDetectedMod_Click(object sender, RoutedEventArgs e)
-    {
-        if (DetectedModsComboBox.IsEnabled &&
-            DetectedModsComboBox.SelectedItem is string selectedMod &&
-            !string.IsNullOrWhiteSpace(selectedMod))
-        {
-            _ignoreService.AddPattern(selectedMod);
-            RefreshIgnoredModsList();
-            PopulateDetectedMods();
-            UpdateIgnoredModsUI();
         }
     }
 

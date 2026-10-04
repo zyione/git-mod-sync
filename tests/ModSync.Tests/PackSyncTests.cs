@@ -43,6 +43,30 @@ public class PackSyncTests
         new MinecraftCheckService(_logger), new ModIgnoreService(_config, _logger), _logger);
 
     [TestMethod]
+    public async Task IdentityExclusionsProtectOldLocalAndRenamedRepositoryVersions()
+    {
+        string local = Path.Combine(_config.ResolvedModsFolder, "personal-v1.jar");
+        string remote = Path.Combine(Repo, "personal-renamed-v2.jar");
+        BulkExclusionTests.WriteFabricMod(local, "personal");
+        BulkExclusionTests.WriteFabricMod(remote, "personal");
+        _config.Config.IgnoredMods = new() { "fabric-id:personal" };
+        var engine = Engine();
+        var result = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.Mods);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.AreEqual(2, result.Summary!.IgnoredCount);
+        Assert.IsTrue(File.Exists(local));
+        Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "personal-renamed-v2.jar")));
+        var push = await engine.GetPushChangesAsync(scope: SyncScope.Mods);
+        Assert.IsTrue(push.Success, push.Message);
+        Assert.IsFalse(push.Summary!.Added.Any());
+        Assert.IsFalse(push.Summary.Removed.Any());
+        var reinstall = await engine.CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.Mods);
+        Assert.IsTrue(reinstall.Success, reinstall.Error);
+        Assert.IsTrue(File.Exists(local));
+        Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "personal-renamed-v2.jar")));
+    }
+
+    [TestMethod]
     public void OrderReversesPriorityAndPreservesBuiltinsPersonalAndOtherSettings()
     {
         var options = "fov:90\r\nresourcePacks:[\"vanilla\",\"fabric\",\"file/Top.zip\",\"file/Personal.zip\"]\r\nmusic:0.4\r\n";
