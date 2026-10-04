@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace ModSync.Themes;
@@ -27,6 +28,9 @@ public static class ThemeManager
     {
         IsDarkTheme = dark;
         var res = Application.Current.Resources;
+        var icon = new BitmapImage(new Uri($"pack://application:,,,/ModSync;component/Assets/modsync-{(dark ? "dark" : "light")}.ico"));
+        icon.Freeze();
+        res["AppIcon"] = icon;
 
         if (dark)
         {

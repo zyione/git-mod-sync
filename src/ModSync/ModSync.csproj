@@ -9,6 +9,7 @@
     <RootNamespace>ModSync</RootNamespace>
     <AssemblyName>ModSync</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/modsync-dark.ico</ApplicationIcon>
     
     <!-- Application Metadata -->
     <Version>1.6.1</Version>
@@ -26,6 +27,11 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets/modsync-dark.ico" />
+    <Resource Include="Assets/modsync-light.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
