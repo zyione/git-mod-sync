@@ -28,9 +28,15 @@ public static class ThemeManager
     {
         IsDarkTheme = dark;
         var res = Application.Current.Resources;
-        var icon = new BitmapImage(new Uri($"pack://application:,,,/ModSync;component/Assets/modsync-{(dark ? "dark" : "light")}.ico"));
+        // Keep the ICO decoder attached: WPF needs all frames to select the
+        // appropriate native small/large taskbar icon instead of padding 16px.
+        var icon = BitmapFrame.Create(new Uri($"pack://application:,,,/ModSync;component/Assets/modsync-{(dark ? "dark" : "light")}.ico"),
+            BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
         icon.Freeze();
         res["AppIcon"] = icon;
+        var headerIcon = icon.Decoder!.Frames.OrderByDescending(frame => frame.PixelWidth).First();
+        headerIcon.Freeze();
+        res["HeaderIcon"] = headerIcon;
 
         if (dark)
         {

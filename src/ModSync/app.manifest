@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Match File Explorer permissions so file drag-and-drop works. -->
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- Always request administrator permissions when launching the executable. -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

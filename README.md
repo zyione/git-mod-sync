@@ -40,7 +40,7 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 - **Automatic Application Updates:** In-app updater checks for new releases on GitHub, previews release notes and file sizes, streams downloads with live progress, and cleanly restarts ModSync via an atomic self-deleting batch process.
 - **Personal Mod Exclusions & Ignore Rules:** Keep personal mods (e.g., mini-maps, shaders, client performance mods) without them being removed during Sync or uploaded during Push. Alternatively, ignore synced mods you don't want downloaded to your machine. Supports glob patterns (`*`, `?`), `.jar` name matching, and `.modignore` files.
 - **Enterprise-Grade Security:** Tokens are stored exclusively in **Windows Credential Manager** (or DPAPI). Plaintext passwords and tokens are never written to `config.json` or logs.
-- **Bulk mod exclusions:** Drop multiple `.jar` files into Settings → Excluded Mods, or use Choose Files. Exclusions use filenames and leave source files untouched. ModSync runs with normal permissions to support File Explorer drops; if launched as administrator, use Choose Files instead. Keep the app and instance in writable folders.
+- **Bulk mod exclusions:** Drop multiple `.jar` files into Settings → Excluded Mods, or use Choose Files. Exclusions use filenames and leave source files untouched. ModSync always requests administrator permissions at startup. Windows blocks drops from normal File Explorer windows into elevated apps; use Choose Files for bulk exclusions.
 
 ---
 

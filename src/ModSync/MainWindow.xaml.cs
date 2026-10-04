@@ -1355,7 +1355,7 @@ public partial class MainWindow : Window
         ExclusionDropFeedback.Visibility = Visibility.Collapsed;
         if (App.IsRunningAsAdministrator())
         {
-            ExclusionDropFeedback.Text = "Running as administrator: use Choose Files, or reopen ModSync normally to drag files from File Explorer.";
+            ExclusionDropFeedback.Text = "Running as administrator: Windows blocks drops from normal File Explorer windows. Use Choose Files to exclude several mods at once.";
             ExclusionDropFeedback.Visibility = Visibility.Visible;
         }
         RefreshIgnoredModsList();

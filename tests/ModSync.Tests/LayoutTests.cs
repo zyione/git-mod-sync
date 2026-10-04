@@ -12,6 +12,9 @@ namespace ModSync.Tests;
 [TestClass]
 public class LayoutTests
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
@@ -56,6 +59,15 @@ public class LayoutTests
                 foreach (bool dark in new[] { false, true })
                 {
                     ThemeManager.ApplyTheme(dark);
+                    var appIcon = (BitmapFrame)app.Resources["AppIcon"];
+                    Assert.AreEqual(9, appIcon.Decoder!.Frames.Count, "Keep all ICO resolutions available for native taskbar icon selection.");
+                    Assert.AreEqual(256, ((BitmapSource)app.Resources["HeaderIcon"]).PixelWidth, "Render the header from high-resolution artwork.");
+                    var handle = new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
+                    var nativeIcon = SendMessage(handle, 0x007F, new IntPtr(1), IntPtr.Zero); // WM_GETICON / ICON_BIG
+                    Assert.AreNotEqual(IntPtr.Zero, nativeIcon, "The running window must provide a taskbar icon.");
+                    var nativeBitmap = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(nativeIcon,
+                        Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                    Assert.IsTrue(nativeBitmap.PixelWidth >= 32, "The native taskbar icon must not use a padded 16px image.");
                     foreach (int width in new[] { 580, 620 })
                     {
                         root.Measure(new Size(width, 760));
