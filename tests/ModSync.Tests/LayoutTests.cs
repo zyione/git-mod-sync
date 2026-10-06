@@ -59,6 +59,17 @@ public class LayoutTests
                 foreach (bool dark in new[] { false, true })
                 {
                     ThemeManager.ApplyTheme(dark);
+                    var relocation = new RelocationWindow(new ModSync.Services.RelocationLocation(
+                        Path.Combine(AppContext.BaseDirectory, "fixture", "instances", "BigChadGuysPlus", ".minecraft", "ModSync.exe"),
+                        Path.Combine(AppContext.BaseDirectory, "fixture", "UltimMC"), "BigChadGuysPlus"));
+                    var relocationRoot = (FrameworkElement)relocation.Content;
+                    relocationRoot.Measure(new Size(432, 452)); relocationRoot.Arrange(new Rect(0, 0, 432, 452)); relocationRoot.UpdateLayout();
+                    var relocateButton = (Button)relocation.FindName("ConfirmButton");
+                    var relocatePoint = relocateButton.TranslatePoint(new Point(), relocationRoot);
+                    Assert.IsTrue(relocatePoint.X >= 0 && relocatePoint.X + relocateButton.ActualWidth <= 432);
+                    Assert.IsTrue(relocatePoint.Y + relocateButton.ActualHeight <= 452);
+                    SavePreview(relocationRoot, dark ? "ui-relocation-dark.png" : "ui-relocation-light.png");
+                    relocation.Close();
                     var appIcon = (BitmapFrame)app.Resources["AppIcon"];
                     Assert.AreEqual(9, appIcon.Decoder!.Frames.Count, "Keep all ICO resolutions available for native taskbar icon selection.");
                     Assert.AreEqual(256, ((BitmapSource)app.Resources["HeaderIcon"]).PixelWidth, "Render the header from high-resolution artwork.");

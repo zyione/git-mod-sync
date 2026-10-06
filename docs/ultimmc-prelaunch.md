@@ -16,6 +16,8 @@ Existing effective pre-launch commands run first with the launcher environment; 
 
 ## Portable storage and migration
 
+Opening this build from inside a BigChadGuys instance offers **Move ModSync** before normal startup. Confirm the detected UltimMC folder or choose another launcher folder. The app creates `ModSync` if missing, verifies a copy of its executable, reopens there, then removes only the old executable after startup. Cancel leaves everything in place. If `ModSync.exe` already exists at the destination, the prompt offers to open it without overwriting it or removing the old copy. Other old files are retained; matching legacy settings can be imported during instance selection. Review old shortcuts and Launch check setup after moving. A pre-launch invocation from the old location cancels Minecraft and asks you to open the app directly first.
+
 `UltimMC\ModSync` contains the executable, current configuration, saved instance profiles, repository caches, hash cache, launch scripts, logs, tools, update downloads, backups, and incomplete-update markers. Windows Credential Manager remains the primary credential store; the encrypted fallback can only be decrypted by the original Windows user.
 
 Moving the entire UltimMC folder preserves relative instance paths and generated hook paths. Moving only ModSync breaks the hook: restore its location before launching. Instances on another drive may require selecting their new location.

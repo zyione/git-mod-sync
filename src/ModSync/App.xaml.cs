@@ -32,7 +32,18 @@ public partial class App : Application
         base.OnStartup(e);
         try
         {
-            if (e.Args.Length > 0)
+            if (AppRelocation.Detect(Environment.ProcessPath!) is { } relocation)
+            {
+                if (e.Args.Length > 0)
+                    throw new IOException("Open ModSync directly to move it outside the instance, then review Launch check setup. This launch was cancelled.");
+                ThemeManager.InitializeTheme();
+                new RelocationWindow(relocation).ShowDialog();
+                Shutdown();
+                return;
+            }
+            bool relocated = e.Args.Length == 2 && e.Args[0] == "--relocated" &&
+                System.Text.RegularExpressions.Regex.IsMatch(e.Args[1], "^[a-f0-9]{32}$");
+            if (e.Args.Length > 0 && !relocated)
             {
                 if (e.Args.Length != 2 || e.Args[0] != "--pre-launch" || !Directory.Exists(e.Args[1]))
                     throw new IOException("Expected --pre-launch followed by the Minecraft game folder.");
@@ -47,6 +58,7 @@ public partial class App : Application
             MainWindow = window;
             window.Closed += (_, _) => { _bridgeCancellation.Cancel(); Shutdown(); };
             window.Show();
+            if (relocated) File.WriteAllText(Path.Combine(PathUtils.GetAppDirectory(), "relocation-ready-" + e.Args[1]), "Ready");
             await LaunchBridge.ListenAsync((instance, cancellation) => Dispatcher.InvokeAsync(() => window.RequestLaunchAsync(instance, cancellation)).Task.Unwrap(),
                 play => Dispatcher.InvokeAsync(() => window.LaunchReplySent(play)), _bridgeCancellation.Token);
         }
