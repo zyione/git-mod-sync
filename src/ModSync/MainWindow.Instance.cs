@@ -35,7 +35,8 @@ public partial class MainWindow
         if (_isBusy) return;
         var choices = InstanceDiscoveryService.Discover(PathUtils.GetAppDirectory(), _configService.MinecraftFolder).ToList();
         InstanceList.ItemsSource = choices;
-        InstanceList.SelectedItem = choices.FirstOrDefault(c => c.Folder.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase)) ?? choices.FirstOrDefault();
+        InstanceList.SelectedItem = choices.FirstOrDefault(c => c.Folder.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase))
+            ?? choices.FirstOrDefault(c => c.Name.Replace(" ", "").Contains("BigChadGuys", StringComparison.OrdinalIgnoreCase)) ?? choices.FirstOrDefault();
         InstanceSelectedPathText.Text = choices.Count == 0 ? $"Current folder: {PathUtils.GetAppDirectory()}" : (InstanceList.SelectedItem as MinecraftInstance)?.Folder ?? "Choose an instance";
         InstanceIntroText.Text = choices.Count == 0 ? "This folder does not look like a Minecraft instance. Browse to the game's folder containing options.txt or saves. Custom launcher locations can be selected manually." : "Confirm the suggested folder or choose another installed instance. This choice is saved across app updates.";
         InstanceErrorText.Text = "";
@@ -51,7 +52,7 @@ public partial class MainWindow
         if (InstanceList.SelectedItem is MinecraftInstance selected)
         {
             InstanceSelectedPathText.Text = selected.Folder;
-            InstanceIntroText.Text = "Use this game folder for mods, resource packs, shaders, and backups. Your choice is saved across app updates.";
+            InstanceIntroText.Text = "Use this instance for mods, resource packs, and shaders. Matching settings from an older installation are reused when found. Backups stay in ModSync; your choice is remembered.";
         }
     }
 
@@ -72,15 +73,21 @@ public partial class MainWindow
     {
         if (InstanceList.SelectedItem is not MinecraftInstance selected) return;
         if (!_configService.SelectInstance(selected.Folder)) { InstanceErrorText.Text = "Could not save this instance. Check that the folder still exists and config.json is writable."; return; }
-        CloseModal(); _lastChecked = null; _categoryStates.Clear(); _currentFabricStatus = null; _retryOperation = null; _activeScope = null;
-        SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
-        UpdateIgnoredModsUI();
-        _lastBackupFolder = null; DismissFeedback(); UpdateStatusCard(); RefreshFabricStatusUI();
+        CloseModal(); ResetInstanceView();
         bool alreadyStarted = _dashboardStarted;
         if (!alreadyStarted) await StartDashboardAsync();
         await RefreshLocalModCountAsync(fetchRemote: false);
         RenderCategoryStates();
         if (alreadyStarted) await ContinueStartupOrLaunchAsync();
+    }
+
+    private void ResetInstanceView()
+    {
+        _lastChecked = null; _categoryStates.Clear(); _currentFabricStatus = null; _retryOperation = null; _activeScope = null;
+        _reviewedSync = null; _reviewedFabric = null; _reviewedConfig = null;
+        SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
+        UpdateIgnoredModsUI();
+        _lastBackupFolder = null; DismissFeedback(); UpdateStatusCard(); RefreshFabricStatusUI();
     }
 
     private void SetCategoryState(SyncScope scope, string state)

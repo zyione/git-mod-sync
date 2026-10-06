@@ -35,12 +35,16 @@ public class ConfigService
     /// </summary>
     public string ResolvedRepositoryFolder => Path.GetFullPath(Path.Combine(PathUtils.GetDataDirectory(), Config.RepositoryFolder));
 
-    public string BackupFolder => Path.Combine(Path.GetDirectoryName(_configFilePath)!, "backups", PathUtils.InstanceKey(MinecraftFolder));
+    public string InstanceStorageKey => Config.InstanceStorageId ?? PathUtils.InstanceKey(MinecraftFolder);
+    public string BackupFolder => Path.Combine(Path.GetDirectoryName(_configFilePath)!, "backups", InstanceStorageKey);
 
-    public string ResolvedResourcePackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ResourcePackRepository)
+    public string ResolvedResourcePackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ResourcePackRepository) || SameRepository(Config.ResourcePackRepository, Config.ResourcePackBranch, Config.Repository, Config.Branch)
         ? ResolvedRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-resourcepacks";
-    public string ResolvedShaderPackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ShaderPackRepository)
-        ? ResolvedRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-shaderpacks";
+    public string ResolvedShaderPackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ShaderPackRepository) || SameRepository(Config.ShaderPackRepository, Config.ShaderPackBranch, Config.Repository, Config.Branch)
+        ? ResolvedRepositoryFolder : SameRepository(Config.ShaderPackRepository, Config.ShaderPackBranch, Config.ResourcePackRepository, Config.ResourcePackBranch)
+            ? ResolvedResourcePackRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-shaderpacks";
+    private static bool SameRepository(string a, string branchA, string b, string branchB) =>
+        a.Trim().TrimEnd('/').Equals(b.Trim().TrimEnd('/'), StringComparison.Ordinal) && branchA == branchB;
 
     public string MinecraftFolder => Path.GetDirectoryName(ResolvedModsFolder)!;
     public string ResolvedResourcePacksFolder => ResolveAssetFolder(Config.ResourcePacksFolder);
@@ -163,6 +167,8 @@ public class ConfigService
 
         string appDir = PathUtils.GetAppDirectory();
         string normalized = Path.GetFullPath(newPath.Trim());
+        if (Path.GetFileName(normalized).Equals("mods", StringComparison.OrdinalIgnoreCase) && InstanceDiscoveryService.IsInstance(Path.GetDirectoryName(normalized)!))
+            return SelectInstance(Path.GetDirectoryName(normalized)!);
 
         // Store relative path if inside or beside app directory for portability
         string relative = Path.GetRelativePath(appDir, normalized);
@@ -182,13 +188,41 @@ public class ConfigService
     public bool SelectInstance(string instanceFolder)
     {
         if (!InstanceDiscoveryService.IsInstance(instanceFolder)) return false;
-        string oldPath = Config.ModsFolder;
-        bool oldConfirmed = Config.InstanceSelectionCompleted;
-        Config.ModsFolder = Path.Combine(Path.GetFullPath(instanceFolder), "mods");
-        Config.InstanceSelectionCompleted = true;
-        if (Save()) return true;
-        Config.ModsFolder = oldPath; Config.InstanceSelectionCompleted = oldConfirmed;
+        var previous = Config;
+        try
+        {
+            bool same = PathUtils.InstanceKey(instanceFolder) == PathUtils.InstanceKey(MinecraftFolder);
+            if (Config.InstanceSelectionCompleted && !same)
+            {
+                Config.InstanceStorageId ??= PathUtils.InstanceKey(MinecraftFolder);
+                Directory.CreateDirectory(Path.GetDirectoryName(ProfilePath(MinecraftFolder))!);
+                WriteAtomic(ProfilePath(MinecraftFolder), JsonSerializer.Serialize(Config, JsonOptions));
+            }
+            string profile = ProfilePath(instanceFolder);
+            if (!same && File.Exists(profile))
+                Config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(profile), JsonOptions) ?? throw new IOException("Empty instance profile.");
+            else if (!same && previous.InstanceSelectionCompleted) Config = AppStorage.ImportMatchingInstance(instanceFolder, Path.GetDirectoryName(_configFilePath)!) ?? new AppConfig();
+            else Config = (!previous.InstanceSelectionCompleted ? AppStorage.ImportMatchingInstance(instanceFolder, Path.GetDirectoryName(_configFilePath)!) : null)
+                ?? JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(previous, JsonOptions), JsonOptions)!;
+            Config.InstanceStorageId ??= PathUtils.InstanceKey(instanceFolder);
+            Config.ModsFolder = Path.GetRelativePath(PathUtils.GetAppDirectory(), Path.Combine(Path.GetFullPath(instanceFolder), "mods"));
+            Config.InstanceSelectionCompleted = true;
+            if (Save()) return true;
+        }
+        catch (Exception ex) { _logger.Error("Could not select instance", ex); }
+        Config = previous;
         return false;
+    }
+
+    private string ProfilePath(string instance) => Path.Combine(Path.GetDirectoryName(_configFilePath)!, "instances", PathUtils.PortableInstanceKey(instance) + ".json");
+    public bool IsKnownInstance(string instance) => Config.InstanceSelectionCompleted &&
+        (PathUtils.InstanceKey(instance) == PathUtils.InstanceKey(MinecraftFolder) || File.Exists(ProfilePath(instance)));
+
+    private static void WriteAtomic(string path, string json)
+    {
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temporary, json); File.Move(temporary, path, overwrite: true); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
     /// <summary>

@@ -10,6 +10,10 @@ public static class PathUtils
     public static string? DataDirectory { get; set; }
     public static string GetDataDirectory() => DataDirectory ?? GetAppDirectory();
 
+    public static string PortableInstanceKey(string path, string? appDirectory = null) => Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            Path.GetRelativePath(appDirectory ?? GetAppDirectory(), Path.GetFullPath(path)).Replace('\\', '/').ToUpperInvariant())))[..24];
+
     public static string InstanceKey(string path) => Convert.ToHexString(
         System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
             Path.GetFullPath(path).TrimEnd('\\', '/').ToUpperInvariant())))[..24];

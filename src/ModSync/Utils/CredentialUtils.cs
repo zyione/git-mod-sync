@@ -151,8 +151,7 @@ public static class CredentialUtils
 
     private static string GetDpapiFilePath(string target)
     {
-        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string folder = Path.Combine(localAppData, "ModSync", "security");
+        string folder = Path.Combine(PathUtils.GetDataDirectory(), "security");
         PathUtils.EnsureDirectoryExists(folder);
         // Clean filename from target
         string safeFileName = string.Concat(target.Split(Path.GetInvalidFileNameChars())) + ".dat";
@@ -167,6 +166,7 @@ public static class CredentialUtils
             byte[] plainBytes = Encoding.UTF8.GetBytes(payload);
             byte[] encrypted = ProtectedData.Protect(plainBytes, null, DataProtectionScope.CurrentUser);
             File.WriteAllBytes(GetDpapiFilePath(target), encrypted);
+            File.Delete(GetDpapiFilePath(target) + ".signed-out");
             return true;
         }
         catch
@@ -180,7 +180,13 @@ public static class CredentialUtils
         try
         {
             string path = GetDpapiFilePath(target);
-            if (!File.Exists(path)) return (null, null);
+            if (!File.Exists(path))
+            {
+                if (File.Exists(path + ".signed-out")) return (null, null);
+                string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ModSync", "security", Path.GetFileName(path));
+                if (!File.Exists(legacy)) return (null, null);
+                path = legacy; // Read-only compatibility; future saves use portable storage.
+            }
 
             byte[] encrypted = File.ReadAllBytes(path);
             byte[] plainBytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
@@ -205,6 +211,7 @@ public static class CredentialUtils
         {
             string path = GetDpapiFilePath(target);
             if (File.Exists(path)) File.Delete(path);
+            File.WriteAllText(path + ".signed-out", "Do not reuse legacy credentials after sign-out.");
         }
         catch { }
     }

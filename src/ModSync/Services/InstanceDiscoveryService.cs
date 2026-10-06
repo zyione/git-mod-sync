@@ -29,7 +29,18 @@ public static class InstanceDiscoveryService
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         bool inspectProfiles = roots == null || launcherProfilesPath != null;
-        roots ??= new[] { Path.Combine(roaming, ".minecraft"), Path.Combine(roaming, "PrismLauncher", "instances"),
+        string? launcher = LaunchSetupService.FindLauncher(current);
+        string? ultimInstances = launcher == null ? null : Path.Combine(launcher, "instances");
+        try
+        {
+            if (launcher != null && File.Exists(LaunchSetupService.LauncherConfig(launcher)))
+            {
+                string? custom = new UltimMcSettings(File.ReadAllText(LaunchSetupService.LauncherConfig(launcher))).Get("InstanceDir");
+                if (!string.IsNullOrWhiteSpace(custom)) ultimInstances = Path.GetFullPath(Path.Combine(launcher, custom));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+        roots ??= new[] { ultimInstances ?? Path.Combine(current, "..", "instances"), Path.Combine(roaming, ".minecraft"), Path.Combine(roaming, "PrismLauncher", "instances"),
             Path.Combine(roaming, "MultiMC", "instances"), Path.Combine(roaming, "ModrinthApp", "profiles"),
             Path.Combine(user, "curseforge", "minecraft", "Instances"), Path.Combine(local, "curseforge", "minecraft", "Instances"),
             Path.Combine(current, "instances"), Path.Combine(current, "..", "instances") };
@@ -56,9 +67,11 @@ public static class InstanceDiscoveryService
                 foreach (var child in Directory.EnumerateDirectories(root).Take(100))
                 {
                     if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) != 0) continue;
-                    Add(child, Path.GetFileName(child));
-                    Add(Path.Combine(child, ".minecraft"), Path.GetFileName(child));
-                    Add(Path.Combine(child, "minecraft"), Path.GetFileName(child));
+                    string cfg = Path.Combine(child, "instance.cfg");
+                    string name = File.Exists(cfg) ? new UltimMcSettings(File.ReadAllText(cfg)).Get("name") ?? Path.GetFileName(child) : Path.GetFileName(child);
+                    Add(child, name);
+                    Add(Path.Combine(child, ".minecraft"), name);
+                    Add(Path.Combine(child, "minecraft"), name);
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }

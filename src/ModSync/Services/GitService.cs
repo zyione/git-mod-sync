@@ -378,6 +378,58 @@ public class GitService : IGitService
         return (true, null);
     }
 
+    public async Task<GitStatusInfo> CheckRepositoryAsync(string folder, string url, string branch, bool refresh,
+        string? token = null, Action<SyncProgressInfo>? progress = null)
+    {
+        if (!RepositorySyncService.ValidBranch(branch) || string.IsNullOrWhiteSpace(url) || url.StartsWith('-') || url.IndexOfAny(['"', '\r', '\n']) >= 0)
+            throw new IOException("Invalid repository or branch.");
+        if (!await EnsureGitAvailableAsync(progress)) throw new IOException("Git is unavailable.");
+        var status = new GitStatusInfo { RepositoryUrl = url, Branch = branch };
+        string working = Directory.Exists(folder) ? folder : Path.GetDirectoryName(folder)!;
+        Directory.CreateDirectory(working);
+        progress?.Invoke(SyncProgressInfo.Indeterminate("Checking repository version…", "Looking for changes without downloading files."));
+        var remote = await RunGitCommandWithTokenAsync(working, $"ls-remote --exit-code --heads \"{url}\" refs/heads/{branch}", token, timeout: TimeSpan.FromSeconds(20));
+        if (remote.ExitCode != 0) throw new IOException(FriendlyGitError(remote.StdErr, url));
+        string? hash = remote.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim().Split('\t')).Where(p => p.Length == 2 && p[1] == "refs/heads/" + branch).Select(p => p[0]).SingleOrDefault();
+        if (hash == null || !Regex.IsMatch(hash, "^[a-fA-F0-9]{40,64}$")) throw new IOException("The repository branch could not be verified.");
+        bool exists = Directory.Exists(Path.Combine(folder, ".git"));
+        if (!exists)
+        {
+            var clone = await CloneAsync(url, folder, branch, token, progress);
+            if (!clone.Success) throw new IOException(clone.Error);
+        }
+        var head = await RunGitCommandAsync(folder, "rev-parse HEAD");
+        if (head.ExitCode != 0) throw new IOException("The repository cache could not be read. Rebuild the cache and retry.");
+        var dirty = await RunGitCommandAsync(folder, "status --porcelain --untracked-files=all --ignored");
+        if (dirty.ExitCode != 0) throw new IOException("The repository cache could not be verified.");
+        bool changed = head.StdOut.Trim() != hash;
+        if (refresh && changed)
+        {
+            // Exactly one content transfer for an existing changed repository.
+            var fetched = await FetchAsync(folder, branch, token, progress);
+            if (!fetched.Success) throw new IOException(fetched.Error);
+            var tip = await RunGitCommandAsync(folder, $"rev-parse refs/remotes/origin/{branch}");
+            if (tip.ExitCode != 0 || tip.StdOut.Trim() != hash)
+                throw new IOException("The repository changed during checking. Check again to review its latest version.");
+        }
+        if (refresh && (changed || !string.IsNullOrWhiteSpace(dirty.StdOut)))
+        {
+            var checkout = await RunGitCommandAsync(folder, $"checkout -f -B {branch} {hash}");
+            if (checkout.ExitCode != 0) throw new IOException(FriendlyGitError(checkout.StdErr));
+            var clean = await RunGitCommandAsync(folder, "clean -fdx");
+            if (clean.ExitCode != 0) throw new IOException(FriendlyGitError(clean.StdErr));
+            head = await RunGitCommandAsync(folder, "rev-parse HEAD");
+        }
+        else if (!string.IsNullOrWhiteSpace(dirty.StdOut)) throw new IOException("Repository cache changed locally. Check again before applying updates.");
+        status.IsCloned = status.IsConnected = true;
+        status.LocalCommitHash = head.StdOut.Trim(); status.RemoteCommitHash = hash;
+        status.BehindCount = status.LocalCommitHash == hash ? 0 : 1;
+        status.StatusMessage = status.BehindCount == 0 ? "Up to date" : "Repository changes available";
+        progress?.Invoke(SyncProgressInfo.Indeterminate(status.StatusMessage, exists && !changed ? "No repository download needed." : "Repository version checked."));
+        return status;
+    }
+
     public async Task<GitStatusInfo> GetStatusAsync(
         string repoDir,
         string repositoryUrl,
@@ -668,24 +720,24 @@ public class GitService : IGitService
         string workingDir,
         string gitArgs,
         string? token,
-        Action<string>? onStderrLine = null)
+        Action<string>? onStderrLine = null, TimeSpan? timeout = null)
     {
         if (string.IsNullOrWhiteSpace(token))
         {
-            return await RunGitCommandAsync(workingDir, gitArgs, onStderrLine);
+            return await RunGitCommandAsync(workingDir, gitArgs, onStderrLine, timeout);
         }
 
         // Use git -c http.extraHeader to securely pass authorization header without modifying remote URL on disk
         string authHeader = Convert.ToBase64String(Encoding.UTF8.GetBytes($"x-access-token:{token}"));
         string fullArgs = $"-c http.extraHeader=\"Authorization: Basic {authHeader}\" {gitArgs}";
 
-        return await RunGitCommandAsync(workingDir, fullArgs, onStderrLine);
+        return await RunGitCommandAsync(workingDir, fullArgs, onStderrLine, timeout);
     }
 
     private async Task<(int ExitCode, string StdOut, string StdErr)> RunGitCommandAsync(
         string workingDir,
         string arguments,
-        Action<string>? onStderrLine = null)
+        Action<string>? onStderrLine = null, TimeSpan? timeout = null)
     {
         string gitExe = _cachedGitBinaryPath ?? "git.exe";
 
@@ -750,7 +802,7 @@ public class GitService : IGitService
             }
         });
 
-        try { await Task.WhenAll(proc.WaitForExitAsync(), errorTask).WaitAsync(TimeSpan.FromMinutes(5)); }
+        try { await Task.WhenAll(proc.WaitForExitAsync(), errorTask).WaitAsync(timeout ?? TimeSpan.FromMinutes(5)); }
         catch (TimeoutException)
         {
             try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }

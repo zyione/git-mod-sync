@@ -66,6 +66,29 @@ public sealed class RepositorySyncService(ConfigService config, IGitService git)
         return selected;
     }
 
+    public async Task<(SyncRepository Repo, GitStatusInfo Status)[]> CheckAsync(SyncScope scope, bool refresh, string? token, Action<SyncProgressInfo>? progress)
+    {
+        var selected = Selected(scope);
+        foreach (var repo in selected)
+        {
+            if (string.IsNullOrWhiteSpace(repo.Url) || !ValidBranch(repo.Branch)) throw new IOException($"{repo.Label}: invalid repository or branch configuration.");
+            ValidateCache(repo.Folder);
+        }
+        if (selected.Count > 0 && !await git.EnsureGitAvailableAsync(progress)) throw new IOException("Git is unavailable.");
+        return await Task.WhenAll(selected.Select(async repo =>
+        {
+            try
+            {
+                bool verified = await git.VerifyOrResetRemoteAsync(repo.Folder, repo.Url);
+                if (!verified && Directory.Exists(Path.Combine(repo.Folder, ".git"))) throw new IOException("Could not verify repository cache.");
+                var status = await git.CheckRepositoryAsync(repo.Folder, repo.Url, repo.Branch, refresh, token,
+                    info => progress?.Invoke(new SyncProgressInfo { Status = "Checking repositories…", Details = $"{repo.Label}: {info.Details ?? info.Status}", SpeedOrEta = info.SpeedOrEta }));
+                return (repo, status);
+            }
+            catch (Exception ex) { throw new IOException($"{repo.Label}: {ex.Message}", ex); }
+        }));
+    }
+
     private void ValidateCache(string folder)
     {
         string cache = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar);

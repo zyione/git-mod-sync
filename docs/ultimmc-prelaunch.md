@@ -1,89 +1,49 @@
-# Check the modpack before launching UltimMC
+# UltimMC launch checks and portable setup
 
-Keep ModSync.exe and `ultimmc-prelaunch.ps1` together in a permanent folder outside
-your Minecraft instance. The preview build is in `publish/prelaunch-preview`.
-No integration has been installed into BigChadGuysPlus during development.
+## Install and enable
 
-## One-time setup
+1. Put `ModSync.exe` in `UltimMC\ModSync`, alongside the launcher's `instances` folder. Keep all ModSync files out of the game instance.
+2. Open ModSync. Select an instance once; BigChadGuys is suggested when found. **Change instance** on the main screen switches between saved profiles. Repositories, exclusions, content folders, and recovery state follow the selected profile.
+3. Review repositories and personal-mod exclusions. If you have not added personal mods, choose **Skip — no personal mods**.
+4. Close UltimMC. Choose **Enable** beside **Launch check** and approve setup. ModSync creates its script and backup in its own folder and changes the selected instance's `instance.cfg`.
+5. Reopen UltimMC and launch that instance. ModSync checks the launched instance's saved profile and waits for your decision when attention is needed.
 
-1. Open ModSync and choose the exact game folder used by the UltimMC instance
-   (usually the instance's `.minecraft` folder). Review repositories and exclusions.
-2. In UltimMC, edit that instance, open Settings → Custom Commands, and enable the
-   instance's custom command override. Keep any existing commands; do not overwrite
-   unrelated pre-launch work without combining and testing it first.
-3. Set the pre-launch command to the following, replacing the script path:
+Setup is per instance and per player's computer. A healthy installation continues automatically. Updates are previewed before changing Minecraft files. The app still requests administrator access; rejecting Windows' UAC prompt cancels launch.
 
-   ```text
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Apps\ModSync\ultimmc-prelaunch.ps1"
-   ```
+**Manage** disables the check and restores previous command settings. **Repair** restores missing or outdated generated scripts. Close UltimMC before either action, because an open launcher can overwrite external configuration changes. If someone edited the command outside ModSync, the app refuses to discard that edit; review it in UltimMC or use the saved `instance.cfg.backup`.
 
-   Use a script path with no `$` characters: UltimMC substitutes variables in the
-   command before execution. The script reads the launcher's `INST_MC_DIR`
-   environment variable; it does not guess the instance from a working directory.
-4. Press Play. ModSync opens (or uses its existing dashboard) and checks all enabled
-   repositories. A ready installation continues automatically. Updates are reviewed
-   before they are applied, with an explicit Play anyway alternative.
+Existing effective pre-launch commands run first with the launcher environment; failure cancels launch. Existing wrapper and post-exit commands are preserved. Enabling instance command overrides copies inherited commands into the instance, so later global changes do not propagate until the check is disabled/re-enabled. Existing manual ModSync hooks must be removed before automatic setup to prevent recursion. Unknown settings are retained, including later edits.
 
-ModSync still requests administrator access, so Windows may show a UAC prompt for
-the launch bridge. Rejecting that prompt cancels the launch. This setup is local;
-each player's installation needs its own command and selected instance.
+## Portable storage and migration
 
-UltimMC's [pre-launch implementation](https://github.com/UltimMC/Launcher/blob/develop/launcher/launch/steps/PreLaunchCommand.cpp)
-waits for the command and treats exit code zero as permission to continue. Nonzero,
-crash, or failure to start cancels launch. The script waits only for the bridge
-process, so choosing to keep the dashboard open does not hold Minecraft open at
-the gate. No Minecraft process is started by ModSync itself.
+`UltimMC\ModSync` contains the executable, current configuration, saved instance profiles, repository caches, hash cache, launch scripts, logs, tools, update downloads, backups, and incomplete-update markers. Windows Credential Manager remains the primary credential store; the encrypted fallback can only be decrypted by the original Windows user.
 
-## What players see
+Moving the entire UltimMC folder preserves relative instance paths and generated hook paths. Moving only ModSync breaks the hook: restore its location before launching. Instances on another drive may require selecting their new location.
 
-- Personal mods: Review exclusions, Already excluded, or Skip—no personal mods.
-  The choice is saved per instance and the reminder returns for new unexcluded
-  local JAR filenames. Exclusions can still be edited in Settings.
-- Update available: review additions, replacements, removals, and exclusions.
-  Applying uses the reviewed files; changed files/settings require another review.
-- Check unavailable: Retry, Play anyway, or Cancel launch. Unknown status is never
-  called synchronized. A repository moving during a check requires another check.
-- Updated and verified: choose to close ModSync or keep it open. During pre-launch,
-  both choices release Minecraft after the response is sent to the launcher.
-- Interrupted update: a persisted marker prevents Play anyway until a complete
-  check verifies the installation. Backups include replaced/removed mods and packs.
-- Minecraft/Java running: updates are deferred. The check is deliberately
-  conservative about Java processes, including ones without a visible game window.
-- Fabric update needed during pre-launch: cancel the current launch, close
-  UltimMC, apply the update in ModSync, then reopen UltimMC. Loader metadata must
-  be reloaded by the launcher; ordinary content updates can continue in one flow.
-- Duplicate launch request or an update already running: the extra request is
-  cancelled; finish the first request, then retry in UltimMC.
-- Different instance selected: launch is cancelled with instructions to select
-  the matching game folder. A launch request never silently changes instances.
+Settings from the previous AppData location are imported when that location belongs to this installation. On first instance selection, a single matching legacy configuration can also be imported from another installation, with its backups and unfinished-update marker. Ambiguous matches are not chosen automatically. Original files are retained. Existing game-folder backups are never moved. Review repository choices after migration.
 
-## Storage and recovery
+## Faster checks
 
-Settings, logs, Git tools, update downloads, and repository caches live under
-`%LOCALAPPDATA%\ModSync\<installation-key>`. Settings beside an older executable
-are imported once, without deleting or editing the old file. Backups and incomplete
-update markers live there too and are keyed by instance. Each backup includes a
-`restore-paths.json` map to the original files. Use ModSync's Backups button.
-Older backups inside an instance remain untouched and can be opened manually.
+Checks query the exact remote branch with `git ls-remote` before transferring repository contents. A healthy cache at that commit needs no fetch, reset, or download. Changed caches fetch once; missing caches clone. Independent repositories are checked concurrently. Categories sharing the same repository URL and branch share a cache/check. Lightweight probes time out after 20 seconds; actual content transfers have a longer timeout.
 
-Game content, managed pack tracking, and approved game/loader settings are still
-written to the selected instance during normal approved synchronization. Checks
-only read the instance. A complete sync is not a single atomic transaction:
-completed changes can remain after a later failure. Keep Minecraft closed while
-repairing; restore from a backup or review and retry the update.
+Verified repository hashes are reused by commit and file metadata. Installed game files are still hashed; applying a preview rechecks full source and destination contents. Dirty caches are repaired before reviewing. A branch that changes during checking requires another check. Account validation and remote count/Fabric queries no longer hold up startup or window focus. App release checks run separately.
 
-The app verifies enabled categories and the configured loader; excluded files are
-preserved, not claimed to match the repository. This does not certify that a mod
-combination is compatible or that a server accepts personal mods.
+## Player experience and recovery
+
+- Personal mods: review exclusions, confirm they are excluded, or skip. New local JAR names trigger the reminder again.
+- Updates: review additions, replacements, removals, and exclusions before applying.
+- Offline or failed check: **Retry**, **Play anyway**, or **Cancel launch**. An unavailable check is never shown as synchronized.
+- Updated and verified: choose whether to close ModSync or keep it open while Minecraft continues.
+- Incomplete update: Play anyway is blocked until a full check verifies recovery. Completed changes can remain after a later failure; backups are retained.
+- Fabric update: cancel launch, close UltimMC, apply in ModSync, and reopen the launcher to reload its metadata.
+- Duplicate launch or update in progress: the extra request is cancelled. Retry once the current operation finishes.
+- Known different instance: ModSync loads that instance's saved settings. Unknown instances require one-time selection and review before retrying.
+- Missing app/script: UltimMC cancels launch. Restore ModSync or disable its command before deleting the portable folder.
+
+The launch bridge returns independently of the dashboard, so keeping ModSync open does not keep Minecraft waiting. ModSync does not start Minecraft itself. This follows UltimMC's [pre-launch contract](https://github.com/UltimMC/Launcher/blob/develop/launcher/launch/steps/PreLaunchCommand.cpp) and [flat settings format](https://github.com/UltimMC/Launcher/blob/develop/launcher/settings/INIFile.cpp).
 
 ## Development validation
 
-Unit/integration tests use disposable folders, including read-only check behavior,
-approved snapshot drift, backups, exclusion reminders, and named-pipe launch
-decisions. WPF render tests cover both themes and narrow windows. UltimMC's source
-contract was inspected; an actual launcher/game run against BigChadGuysPlus was
-not performed or configured.
+Tests use disposable instances and local Git repositories. They cover profile isolation, migration, command preservation and undo, script repair, moved launcher folders, quoted script arguments, failed original commands, unchanged repositories, changed/dirty caches, offline/missing branches, and hash invalidation. WPF renders cover both themes and small windows.
 
-To uninstall the integration, remove only this pre-launch command in UltimMC.
-Keep the ModSync folder in place until that command is removed. Renaming or deleting
-the executable/script while the hook is enabled intentionally cancels launch.
+BigChadGuysPlus remains read-only during development and testing. The real instance hook is not installed by development tests, and no real Minecraft launch is performed.

@@ -8,6 +8,14 @@ namespace ModSync.Services;
 /// </summary>
 public interface IGitService
 {
+    async Task<GitStatusInfo> CheckRepositoryAsync(string folder, string url, string branch, bool refresh, string? token = null, Action<SyncProgressInfo>? progress = null)
+    {
+        (bool Success, string? Error) result = (true, null);
+        if (!Directory.Exists(Path.Combine(folder, ".git"))) result = await CloneAsync(url, folder, branch, token, progress);
+        else if (refresh) result = await PullOrResetToRemoteAsync(folder, branch, token, progress);
+        if (!result.Success) throw new IOException(result.Error);
+        return await GetStatusAsync(folder, url, branch, token, progress);
+    }
     /// <summary>
     /// Checks if Git is ready to use (either system Git or provisioned portable Git).
     /// </summary>

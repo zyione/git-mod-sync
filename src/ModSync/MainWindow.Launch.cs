@@ -17,7 +17,7 @@ public partial class MainWindow
     private readonly TaskCompletionSource _dashboardReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _closeAfterLaunch;
     private string PendingUpdatePath => Path.Combine(Path.GetDirectoryName(_configService.ConfigFilePath)!,
-        "pending-updates", PathUtils.InstanceKey(_configService.MinecraftFolder) + ".txt");
+        "pending-updates", _configService.InstanceStorageKey + ".txt");
 
     public void LaunchReplySent(bool play) { if (play && _closeAfterLaunch) { _closeAfterLaunch = false; Close(); } }
 
@@ -47,10 +47,9 @@ public partial class MainWindow
 
     public async Task<bool> RequestLaunchAsync(string instance, CancellationToken cancellation = default)
     {
-        // Never silently switch an existing dashboard or apply one instance's settings to another.
+        // Only a previously configured instance can be activated by the launcher.
         if (_launchDecision != null || _isBusy) return false;
-        if (!_configService.Config.InstanceSelectionCompleted ||
-            PathUtils.InstanceKey(instance) != PathUtils.InstanceKey(_configService.MinecraftFolder))
+        if (!_configService.IsKnownInstance(instance))
         {
             ShowFeedback("Launch cancelled: choose this UltimMC game folder in ModSync, then press Play in UltimMC again.", true);
             Activate();
@@ -58,6 +57,11 @@ public partial class MainWindow
         }
         await _dashboardReady.Task.WaitAsync(cancellation);
         if (_launchDecision != null || _isBusy) return false;
+        if (PathUtils.InstanceKey(instance) != PathUtils.InstanceKey(_configService.MinecraftFolder))
+        {
+            if (!_configService.SelectInstance(instance)) { ShowFeedback("Could not load this instance’s saved settings. Launch cancelled.", true); return false; }
+            ResetInstanceView();
+        }
         var decision = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _launchDecision = decision;
         using var registration = cancellation.Register(() =>
@@ -86,7 +90,7 @@ public partial class MainWindow
 
     private async Task ContinueStartupOrLaunchAsync()
     {
-        string key = PathUtils.InstanceKey(_configService.MinecraftFolder);
+        string key = _configService.InstanceStorageKey;
         var mods = LocalModNames();
         if (LaunchReadiness.NeedsPersonalReminder(_configService.Config, key, mods))
         {
@@ -196,7 +200,7 @@ public partial class MainWindow
         _updateFailed = false;
         if (File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
         // Files just installed from the reviewed repository are not new personal additions.
-        _configService.Config.PersonalModsAcknowledged[PathUtils.InstanceKey(_configService.MinecraftFolder)] = LocalModNames();
+        _configService.Config.PersonalModsAcknowledged[_configService.InstanceStorageKey] = LocalModNames();
         _configService.Save();
         SetBusy(false);
         bool launching = _launchDecision != null;

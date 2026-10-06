@@ -38,9 +38,21 @@
                     <Button DockPanel.Dock="Right" Content="×" Style="{StaticResource GhostButtonStyle}" Click="DismissUpdateBanner_Click" ToolTip="Dismiss update banner" AutomationProperties.Name="Dismiss update banner"/>
                     <TextBlock x:Name="UpdateBannerText" Text="ModSync update available" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
                   </Border>
-                  <TextBlock x:Name="InstanceNameText" Text="Choose an instance" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <DockPanel>
+                    <Button x:Name="MainInstanceButton" DockPanel.Dock="Right" Content="Change instance" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click" IsEnabled="{Binding IsEnabled, ElementName=ChooseInstanceButton}" Margin="12,0,0,0"/>
+                    <TextBlock x:Name="InstanceNameText" Text="Choose an instance" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                  </DockPanel>
                   <TextBlock x:Name="InstanceVersionText" Text="Your Minecraft modpack" Style="{StaticResource MetadataTextStyle}" Margin="0,4,0,0"/>
                   <TextBlock x:Name="ModsFolderPathText" Style="{StaticResource MetadataTextStyle}" TextTrimming="CharacterEllipsis" Margin="0,4,0,16"/>
+                  <Border Style="{StaticResource ContentCardStyle}">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <StackPanel Margin="0,0,12,0">
+                        <TextBlock x:Name="LaunchSetupHeading" Text="Launch check · Off" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="LaunchSetupDescription" Text="Check before Minecraft starts." Style="{StaticResource MetadataTextStyle}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                      </StackPanel>
+                      <Button x:Name="LaunchSetupButton" Grid.Column="1" Content="Enable" Style="{StaticResource CompactSecondaryButtonStyle}" VerticalAlignment="Center" Click="LaunchSetup_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}"/>
+                    </Grid>
+                  </Border>
                   <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{DynamicResource SecondaryTextBrush}" Margin="0,0,8,0"/>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock x:Name="OverallStatusText" Text="Ready to check" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="LastCheckedText" Text="Check for differences with your repositories" Style="{StaticResource MetadataTextStyle}" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
@@ -194,8 +206,8 @@
 </WrapPanel>
 </StackPanel></ScrollViewer>
 <Border Grid.Row="2" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="4" Margin="0,12,0,0">
- <UniformGrid Columns="4" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}">
- <Button x:Name="ChooseInstanceButton" Content="Instances" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click"/>
+ <UniformGrid Columns="3" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}">
+ <Button x:Name="ChooseInstanceButton" Content="Instances" Visibility="Collapsed" Style="{StaticResource GhostButtonStyle}" Click="ChooseInstance_Click"/>
  <Button Content="Repositories" Style="{StaticResource GhostButtonStyle}" Click="SwitchRepo_Click"/>
  <Button Content="Backups" Style="{StaticResource GhostButtonStyle}" Click="OpenBackups_Click"/>
  <Button Content="Settings" Style="{StaticResource GhostButtonStyle}" Click="Settings_Click"/>

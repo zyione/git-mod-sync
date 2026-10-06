@@ -9,6 +9,7 @@ namespace ModSync.Models;
 /// </summary>
 public class AppConfig
 {
+    public string? InstanceStorageId { get; set; }
     public const string DefaultRepositoryUrl = "https://github.com/zyione/4stoogies-mod-list.git";
 
     [JsonPropertyName("repository")]

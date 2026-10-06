@@ -9,7 +9,8 @@ namespace ModSync.Services;
 public class PackSyncService
 {
     private readonly ConfigService _config;
-    public PackSyncService(ConfigService config) => _config = config;
+    private readonly Func<string, string>? _repositoryHash;
+    public PackSyncService(ConfigService config, Func<string, string>? repositoryHash = null) { _config = config; _repositoryHash = repositoryHash; }
 
     public static string RepositoryModsFolder(string repository)
     {
@@ -45,7 +46,7 @@ public class PackSyncService
                 foreach (var file in SafeFiles(child)) yield return file;
     }
 
-    public static Dictionary<string, ModFileItem> ScanPacks(string folder, bool resourcePacks, bool hashContents = true)
+    public static Dictionary<string, ModFileItem> ScanPacks(string folder, bool resourcePacks, bool hashContents = true, Func<string, string>? hash = null)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in SafeFiles(folder, resourcePacks))
@@ -57,7 +58,7 @@ public class PackSyncService
                 : resourcePacks && File.Exists(Path.Combine(folder, parts[0], "pack.mcmeta"));
             if (!included || file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
             result.Add(relative, new ModFileItem { RelativePath = relative, FullPath = file,
-                SizeBytes = new FileInfo(file).Length, Sha256Hash = hashContents ? HashUtils.ComputeSha256(file) : "" });
+                SizeBytes = new FileInfo(file).Length, Sha256Hash = hashContents ? (hash ?? HashUtils.ComputeSha256)(file) : "" });
         }
         return result;
     }
@@ -134,7 +135,7 @@ public class PackSyncService
             var remote = AssetSourceFolder(resource);
             if (!enabled || (!push && !Directory.Exists(remote))) continue;
             ValidateDestination(local, repository);
-            var repoFiles = ScanPacks(remote, resource);
+            var repoFiles = ScanPacks(remote, resource, hash: _repositoryHash);
             var localFiles = ScanPacks(local, resource);
             if (resource) resources = repoFiles; else shaders = repoFiles;
             var source = push ? localFiles : repoFiles;

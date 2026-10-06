@@ -64,8 +64,9 @@ public partial class MainWindow : Window
         {
             if (!_isBusy && _configService.Config.InstanceSelectionCompleted)
             {
-                await RefreshLocalModCountAsync();
+                await RefreshLocalModCountAsync(fetchRemote: false);
                 RefreshFabricStatusUI();
+                RefreshLaunchSetup();
             }
         };
     }
@@ -86,8 +87,8 @@ public partial class MainWindow : Window
         // Check for application updates when enabled
         if (_configService.Config.AutoCheckUpdates) _ = CheckForUpdatesOnStartupAsync();
 
-        await RefreshAuthStatusAsync();
-        await RefreshLocalModCountAsync();
+        // Authentication is checked when opening account/settings actions; it must not delay Play.
+        await RefreshLocalModCountAsync(fetchRemote: false);
         UpdateIgnoredModsUI();
         RefreshFabricStatusUI();
         ReadUpdateResult();
@@ -114,6 +115,7 @@ public partial class MainWindow : Window
         InstanceNameText.Text = cfg.InstanceSelectionCompleted ? name : "Choose an instance";
         InstanceNameText.ToolTip = folder;
         StatusSubText.ToolTip = cfg.Repository;
+        RefreshLaunchSetup();
     }
 
     private void OpenModsFolder_Click(object sender, RoutedEventArgs e)
@@ -718,6 +720,7 @@ public partial class MainWindow : Window
 
         UpdateIgnoredModsUI();
         ShowModal(SettingsSheet);
+        _ = RefreshAuthStatusAsync();
     }
 
     private void SettingToggle_Click(object sender, RoutedEventArgs e)
@@ -1485,7 +1488,7 @@ public partial class MainWindow : Window
         _ = RefreshFabricStatusUIAsync();
     }
 
-    private async Task RefreshFabricStatusUIAsync()
+    private Task RefreshFabricStatusUIAsync()
     {
         string instance = _configService.MinecraftFolder;
         try
@@ -1494,21 +1497,13 @@ public partial class MainWindow : Window
             _currentFabricStatus = _fabricService.DetectFabricStatus();
             ApplyFabricStatusToUI(_currentFabricStatus);
 
-            if (_launchDecision != null || Directory.Exists(Path.Combine(_configService.ResolvedRepositoryFolder, ".git"))) return;
-
-            // Asynchronous check (fetches fabric-version.txt from repository if remote/not yet cloned)
-            var remoteStatus = await _fabricService.DetectFabricStatusAsync();
-            if (!instance.Equals(_configService.MinecraftFolder, StringComparison.OrdinalIgnoreCase)) return;
-            if (remoteStatus.IsConfigured || _currentFabricStatus?.IsConfigured == true)
-            {
-                _currentFabricStatus = remoteStatus;
-                ApplyFabricStatusToUI(_currentFabricStatus);
-            }
+            // Repository checking supplies the required version; focus/startup stays local.
         }
         catch (Exception ex)
         {
             _logger.Error("Error refreshing Fabric status in UI", ex);
         }
+        return Task.CompletedTask;
     }
 
     private void ApplyFabricStatusToUI(FabricStatusInfo? status)
@@ -1532,7 +1527,7 @@ public partial class MainWindow : Window
                 ? $" • Minecraft {status.MinecraftVersion}"
                 : " • Minecraft";
             FabricInstalledVersionText.Text = status?.InstalledLoaderVersion ?? "Checking...";
-            FabricTargetVersionText.Text = "Checking repo...";
+            FabricTargetVersionText.Text = "Not checked";
             FabricStatusDot.Fill = (Brush)FindResource("SecondaryTextBrush");
             FabricUpToDateBadge.Visibility = Visibility.Collapsed;
             FabricUpdateButton.Visibility = Visibility.Collapsed;

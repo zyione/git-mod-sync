@@ -73,7 +73,7 @@ public class LayoutTests
                         root.Measure(new Size(width, 760));
                         root.Arrange(new Rect(0, 0, width, 760));
                         root.UpdateLayout();
-                        foreach (var name in new[] { "ChooseInstanceButton", "DashboardCheckButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton" })
+                        foreach (var name in new[] { "MainInstanceButton", "LaunchSetupButton", "ChooseInstanceButton", "DashboardCheckButton", "SyncOnlyModsButton", "SyncResourcesButton", "SyncShadersButton", "FabricUpdateButton" })
                         {
                             var button = (Button)window.FindName(name);
                             if (button.Visibility == Visibility.Collapsed) continue;
@@ -98,6 +98,18 @@ public class LayoutTests
                     Assert.IsTrue(Math.Abs(foreground.R - background.R) > 150, "Tooltip text must contrast with its background.");
                     SavePreview(tooltip, dark ? "tooltip-preview-dark.png" : "tooltip-preview-light.png");
                     SavePreview(root, dark ? "ui-preview-dark.png" : "ui-preview-light.png");
+                    foreach (bool healthy in new[] { true, false })
+                    {
+                        ((TextBlock)window.FindName("LaunchSetupHeading")).Text = healthy ? "Launch check · Enabled" : "Launch check · Needs repair";
+                        ((TextBlock)window.FindName("LaunchSetupDescription")).Text = healthy ? "Checks this instance whenever you press Launch." : "Launch check needs repair.";
+                        ((Button)window.FindName("LaunchSetupButton")).Content = healthy ? "Manage" : "Repair";
+                        root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                        var setupButton = (Button)window.FindName("LaunchSetupButton");
+                        var position = setupButton.TranslatePoint(new Point(0, 0), root);
+                        Assert.IsTrue(position.Y + setupButton.ActualHeight < 640 && position.X + setupButton.ActualWidth <= 580);
+                        SavePreview(root, $"ui-launch-setup-{(healthy ? "enabled" : "repair")}-{(dark ? "dark" : "light")}.png");
+                    }
+                    typeof(MainWindow).GetMethod("RefreshLaunchSetup", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     typeof(MainWindow).GetMethod("ChooseAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
                         .Invoke(window, new object?[] { "Have you excluded your personal mods?", "Excluded mods stay on your computer and won’t be uploaded. If you haven’t added personal mods, choose Skip. We’ll ask again when new local mods appear.", "Review exclusions", "Already excluded", "Skip — no personal mods" });
                     root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();

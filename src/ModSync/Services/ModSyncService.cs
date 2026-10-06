@@ -501,8 +501,7 @@ public class ModSyncService
         string? token = _getToken();
 
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Checking repository...", "Querying GitHub status..."));
-        var repositories = await new RepositorySyncService(_configService, _gitService).PrepareAsync(scope, refreshRepository, token, progressCallback, fetch: false);
-        var statuses = await Task.WhenAll(repositories.Select(async repo => (Repo: repo, Status: await _gitService.GetStatusAsync(repo.Folder, repo.Url, repo.Branch, token, progressCallback))));
+        var statuses = await new RepositorySyncService(_configService, _gitService).CheckAsync(scope, refreshRepository, token, progressCallback);
         var gitStatus = statuses.FirstOrDefault().Status ?? new GitStatusInfo();
         if (statuses.Length > 1)
         {
@@ -519,12 +518,16 @@ public class ModSyncService
             };
         }
 
+        var hashes = new RepositoryHashCache(Path.Combine(Path.GetDirectoryName(_configService.ConfigFilePath)!, "cache", "repository-hashes.json"),
+            statuses.Where(s => s.Status.IsConnected && s.Status.LocalCommitHash is { Length: >= 40 } && s.Status.LocalCommitHash == s.Status.RemoteCommitHash)
+                .Select(s => (s.Repo.Folder, s.Status.LocalCommitHash!)).ToArray());
         progressCallback?.Invoke(SyncProgressInfo.Indeterminate("Scanning mods folder...", "Verifying local mod files..."));
         var localFiles = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false, scope: scope);
-        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true, scope: scope);
+        var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true, scope: scope, hash: hashes.Get);
 
         var modChanges = CalculateDifferences(sourceFiles: repoFiles, targetFiles: localFiles);
-        modChanges.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
+        modChanges.Changes.AddRange(new PackSyncService(_configService, hashes.Get).Plan(scope: scope).Changes);
+        hashes.Save();
         int repoCount = repoFiles.Count(f => !_ignoreService.IsIgnored(f.Key, f.Value.FullPath));
 
         progressCallback?.Invoke(SyncProgressInfo.Determinate("Status ready", 100, $"{localFiles.Count} local mods inspected."));
@@ -660,7 +663,7 @@ public class ModSyncService
         bool isRepoFolder,
         Action<int, int, string>? onProgress = null,
         SyncScope scope = SyncScope.All,
-        bool hashContents = true)
+        bool hashContents = true, Func<string, string>? hash = null)
     {
         var result = new Dictionary<string, ModFileItem>(StringComparer.OrdinalIgnoreCase);
         if (!scope.HasFlag(SyncScope.Mods)) return result;
@@ -703,10 +706,10 @@ public class ModSyncService
                 onProgress?.Invoke(index, total, relative);
 
                 var fi = new FileInfo(file);
-                string hash = string.Empty;
+                string fingerprint = string.Empty;
                 try
                 {
-                    if (hashContents) hash = HashUtils.ComputeSha256(file);
+                    if (hashContents) fingerprint = (hash ?? HashUtils.ComputeSha256)(file);
                 }
                 catch (Exception ex)
                 {
@@ -718,7 +721,7 @@ public class ModSyncService
                     RelativePath = relative,
                     FullPath = file,
                     SizeBytes = fi.Length,
-                    Sha256Hash = hash
+                    Sha256Hash = fingerprint
                 };
             }
         }
