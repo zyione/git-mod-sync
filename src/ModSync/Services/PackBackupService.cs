@@ -39,6 +39,8 @@ public sealed class PackBackupService(ConfigService config)
                 files[change.DestinationPath] = change.RelativePath;
             else if (change.NewContent != null)
                 files[change.DestinationPath] = SettingsLabel(change.DestinationPath);
+            else if (change.TargetItem != null)
+                files[change.DestinationPath] = "mods/" + change.RelativePath;
         }
         // Detect edits since the preview before making a backup or writing any assets.
         foreach (var change in summary.Changes.Where(c => c.DestinationPath != null && files.ContainsKey(c.DestinationPath)))

@@ -240,7 +240,7 @@ public class PackSyncService
         PlanText(summary, Path.Combine(repository, "resourcepack-order.txt"), content, "resourcepack-order.txt (shared pack priority)");
     }
 
-    private static string EscapeProperty(string value) => string.Concat(value.Select(c =>
+    internal static string EscapeProperty(string value) => string.Concat(value.Select(c =>
         c > 127 ? "\\u" + ((int)c).ToString("x4") : c is '\\' or '=' or ':' or '#' or '!' or ' ' ? "\\" + c : c.ToString()));
 
     private void ValidateDestination(string path, string repository)

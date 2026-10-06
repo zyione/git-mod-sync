@@ -98,6 +98,10 @@ public class LayoutTests
                     Assert.IsTrue(Math.Abs(foreground.R - background.R) > 150, "Tooltip text must contrast with its background.");
                     SavePreview(tooltip, dark ? "tooltip-preview-dark.png" : "tooltip-preview-light.png");
                     SavePreview(root, dark ? "ui-preview-dark.png" : "ui-preview-light.png");
+                    ((TextBlock)window.FindName("PackVersionText")).Text = "Pack 1.11 · last verified → 1.12 available";
+                    root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-pack-version-dark.png" : "ui-pack-version-light.png");
+                    ((TextBlock)window.FindName("PackVersionText")).Text = "Pack version not verified";
                     foreach (bool healthy in new[] { true, false })
                     {
                         ((TextBlock)window.FindName("LaunchSetupHeading")).Text = healthy ? "Launch check · Enabled" : "Launch check · Needs repair";

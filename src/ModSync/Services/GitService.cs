@@ -16,6 +16,13 @@ namespace ModSync.Services;
 /// </summary>
 public class GitService : IGitService
 {
+    public async Task<(string Commit, bool Clean)> SnapshotAsync(string folder)
+    {
+        var head = await RunGitCommandAsync(folder, "rev-parse HEAD");
+        var state = await RunGitCommandAsync(folder, "status --porcelain --untracked-files=all");
+        if (head.ExitCode != 0 || state.ExitCode != 0) throw new IOException("Cannot verify repository snapshot.");
+        return (head.StdOut.Trim(), string.IsNullOrWhiteSpace(state.StdOut));
+    }
     private readonly LoggingService _logger;
     private string? _cachedGitBinaryPath;
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromMinutes(3) };

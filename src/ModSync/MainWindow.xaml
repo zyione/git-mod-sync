@@ -43,6 +43,7 @@
                     <TextBlock x:Name="InstanceNameText" Text="Choose an instance" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                   </DockPanel>
                   <TextBlock x:Name="InstanceVersionText" Text="Your Minecraft modpack" Style="{StaticResource MetadataTextStyle}" Margin="0,4,0,0"/>
+                  <TextBlock x:Name="PackVersionText" Text="Pack version not verified" Style="{StaticResource MetadataTextStyle}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                   <TextBlock x:Name="ModsFolderPathText" Style="{StaticResource MetadataTextStyle}" TextTrimming="CharacterEllipsis" Margin="0,4,0,16"/>
                   <Border Style="{StaticResource ContentCardStyle}">
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -201,6 +202,8 @@
   <Button x:Name="SyncModsButton" Content="Review all changes" Style="{StaticResource CompactPrimaryButtonStyle}" Click="SyncMods_Click" Padding="16,8" Margin="0,0,8,0"/>
   <Button Content="Modpack actions" Style="{StaticResource GhostButtonStyle}" Click="OpenActions_Click" IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}"><Button.ContextMenu><ContextMenu Style="{StaticResource {x:Type ContextMenu}}">
     <MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="PushModsButton" Header="Push modpack…" Click="PushMods_Click"/>
+    <MenuItem Style="{StaticResource {x:Type MenuItem}}" Header="Full verification / Repair…" Click="FullVerification_Click"/>
+    <MenuItem Style="{StaticResource {x:Type MenuItem}}" Header="Publish modpack version…" Click="PublishPack_Click"/>
     <MenuItem Style="{StaticResource {x:Type MenuItem}}" x:Name="FrontCheckUpdatesButton" Header="Check for app updates" Click="CheckForUpdates_Click"/>
   </ContextMenu></Button.ContextMenu></Button>
 </WrapPanel>
@@ -224,6 +227,7 @@
                             Margin="0,0,0,16">
                         <StackPanel>
                             <!-- Top Row: Status Title (Left) + Percentage Badge (Right) -->
+                            <Button x:Name="PackCancelButton" Content="Cancel check / download" Visibility="Collapsed" HorizontalAlignment="Right" Style="{StaticResource GhostButtonStyle}" Click="CancelPackOperation_Click" Margin="0,0,0,4"/>
                             <Grid Margin="0,0,0,7">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

@@ -26,6 +26,13 @@ public class ModSyncService
 
     public ModIgnoreService IgnoreService => _ignoreService;
 
+    public async Task<(bool Success, string? Error)> ApplyManifestFilesAsync(SyncSummary summary, Action<SyncProgressInfo>? progress = null)
+    {
+        var (running, details) = _minecraftStatus();
+        if (running) return (false, "Close Minecraft before updating. " + details);
+        return await ApplyChangesCoreAsync(summary, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress);
+    }
+
     public SyncSummary InspectCachedFiles(SyncScope scope = SyncScope.All)
     {
         var config = _configService.Config;

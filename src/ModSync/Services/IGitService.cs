@@ -8,6 +8,7 @@ namespace ModSync.Services;
 /// </summary>
 public interface IGitService
 {
+    Task<(string Commit, bool Clean)> SnapshotAsync(string folder) => throw new NotSupportedException("Snapshot publishing is unavailable.");
     async Task<GitStatusInfo> CheckRepositoryAsync(string folder, string url, string branch, bool refresh, string? token = null, Action<SyncProgressInfo>? progress = null)
     {
         (bool Success, string? Error) result = (true, null);

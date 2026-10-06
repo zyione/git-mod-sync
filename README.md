@@ -50,6 +50,8 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 ## Directory Layout
 
+The manifest preview separates **checking** from **downloading** and shows the shared pack version on the dashboard. The pack owner publishes the first version through **Modpack actions → Publish modpack version**. See [modpack versions, metadata checks, and recovery](docs/modpack-versions.md) before using this build with players.
+
 For UltimMC, keep the application and all of its data in **`UltimMC\ModSync`**, outside `instances`. The main-screen instance selector remembers each instance's settings, and **Launch check → Enable** configures its pre-launch hook after approval. Close UltimMC while changing hook setup. See the [portable setup and launch-check guide](docs/ultimmc-prelaunch.md).
 
 Normal checks probe remote branch versions first. Unchanged healthy repositories are not fetched or reset; independent repositories are checked together, and verified repository hashes are reused while installed files are still checked.

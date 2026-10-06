@@ -24,9 +24,9 @@ Settings from the previous AppData location are imported when that location belo
 
 ## Faster checks
 
-Checks query the exact remote branch with `git ls-remote` before transferring repository contents. A healthy cache at that commit needs no fetch, reset, or download. Changed caches fetch once; missing caches clone. Independent repositories are checked concurrently. Categories sharing the same repository URL and branch share a cache/check. Lightweight probes time out after 20 seconds; actual content transfers have a longer timeout.
+Normal checks download only the small published `modsync-manifest.json`, then compare installed files with that version. They do not clone repositories or download game files. The pack owner must publish the first version through **Modpack actions → Publish modpack version**; a missing manifest produces an actionable error instead of a repository-download fallback.
 
-Verified repository hashes are reused by commit and file metadata. Installed game files are still hashed; applying a preview rechecks full source and destination contents. Dirty caches are repaired before reviewing. A branch that changes during checking requires another check. Account validation and remote count/Fabric queries no longer hold up startup or window focus. App release checks run separately.
+After the first verification, local checksums are reused only when the file path, size, modification time, and expected checksum match. Full verification ignores that cache. Approved updates download only required files from the published commits, verify them, and recheck the installation before recording the pack version. Repository downloads remain part of explicit authoring and maintenance operations. See [published modpack versions](modpack-versions.md) for publication, limits, and recovery details. App release checks run separately.
 
 ## Player experience and recovery
 

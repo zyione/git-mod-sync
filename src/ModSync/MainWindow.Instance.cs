@@ -85,6 +85,7 @@ public partial class MainWindow
     {
         _lastChecked = null; _categoryStates.Clear(); _currentFabricStatus = null; _retryOperation = null; _activeScope = null;
         _reviewedSync = null; _reviewedFabric = null; _reviewedConfig = null;
+        _manifestReview = null;
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         UpdateIgnoredModsUI();
         _lastBackupFolder = null; DismissFeedback(); UpdateStatusCard(); RefreshFabricStatusUI();

@@ -70,11 +70,12 @@ public partial class MainWindow
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (!ReferenceEquals(_launchDecision, decision)) return;
+                if (!_packApplying) _packCancellation?.Cancel();
                 _choice?.TrySetResult(-1);
                 if (!_isBusy) CloseModal();
             }));
         });
-        _updateFailed = File.Exists(PendingUpdatePath);
+        _updateFailed = File.Exists(PendingUpdatePath) || ManifestService.HasPendingUpdate;
         LaunchBanner.Visibility = Visibility.Visible;
         WindowState = WindowState.Normal;
         Activate();
@@ -180,41 +181,5 @@ public partial class MainWindow
 
     private void CancelLaunch_Click(object sender, RoutedEventArgs e) { if (!_isBusy) { CloseModal(); CompleteLaunch(false); } }
 
-    private async Task VerifyAndOfferCloseAsync()
-    {
-        var (status, remaining, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress, SyncScope.All, refreshRepository: false));
-        if (!status.IsConnected || status.ErrorMessage != null)
-            throw new IOException("Updated files could not be fully verified. Check again when the repositories are reachable.");
-        if (status.BehindCount > 0 || status.AheadCount > 0)
-        {
-            ShowFeedback("The reviewed update finished, but repository versions have changed. Check again to review the remaining changes.", true);
-            return;
-        }
-        _currentFabricStatus = _fabricService.DetectFabricStatus();
-        SetCheckedStates(SyncScope.All, remaining);
-        if (!LaunchReadiness.IsReady(remaining, _configService.Config.SyncFabricLoader, _currentFabricStatus))
-        {
-            ShowFeedback("The selected update finished, but the full modpack is not verified as synchronized. Check the remaining categories and Fabric Loader.", true);
-            return;
-        }
-        _updateFailed = false;
-        if (File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
-        // Files just installed from the reviewed repository are not new personal additions.
-        _configService.Config.PersonalModsAcknowledged[_configService.InstanceStorageKey] = LocalModNames();
-        _configService.Save();
-        SetBusy(false);
-        bool launching = _launchDecision != null;
-        int choice = await ChooseAsync("Everything is synchronized",
-            "Enabled content matches the checked repository versions. Excluded mods were preserved. " +
-            (launching ? "Continue to Minecraft and close ModSync?" : "Would you like to close ModSync?"),
-            launching ? "Play & close ModSync" : "Close ModSync",
-            launching ? "Play & keep ModSync open" : "Keep ModSync open");
-        if (choice < 0) return;
-        if (launching)
-        {
-            _closeAfterLaunch = choice == 0;
-            CompleteLaunch(true);
-        }
-        else if (choice == 0) Close();
-    }
+    private async Task VerifyAndOfferCloseAsync() => await VerifyManifestAndOfferCloseAsync(await ManifestService.FetchAsync());
 }
