@@ -93,7 +93,7 @@ try {
     foreach ($itemPath in @($source, $target, $staged)) {
         $checkPath = $itemPath
         while ($checkPath) {
-            if ((Test-Path -LiteralPath $checkPath) -and ((Get-Item -LiteralPath $checkPath).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked relocation paths are not supported.' }
+            if ((Test-Path -LiteralPath $checkPath) -and ((Get-Item -LiteralPath $checkPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked relocation paths are not supported.' }
             $checkPath = [IO.Path]::GetDirectoryName($checkPath)
         }
     }

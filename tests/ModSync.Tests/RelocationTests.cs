@@ -50,6 +50,16 @@ public class RelocationTests
     }
 
     [TestMethod]
+    public async Task HiddenParentFoldersDoNotPreventRelocation()
+    {
+        File.SetAttributes(_root, File.GetAttributes(_root) | FileAttributes.Hidden);
+        await Run(AppRelocation.Prepare(_location, 0, restart: false));
+        Assert.IsTrue(Success());
+        Assert.IsTrue(File.Exists(_location.Destination));
+        Assert.IsFalse(File.Exists(_location.Source));
+    }
+
+    [TestMethod]
     public async Task DestinationCreatedAfterConfirmationIsNeverOverwritten()
     {
         var helper = AppRelocation.Prepare(_location, 0, restart: false);
