@@ -7,6 +7,13 @@ namespace ModSync.Utils;
 /// </summary>
 public static class PathUtils
 {
+    public static string? DataDirectory { get; set; }
+    public static string GetDataDirectory() => DataDirectory ?? GetAppDirectory();
+
+    public static string InstanceKey(string path) => Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            Path.GetFullPath(path).TrimEnd('\\', '/').ToUpperInvariant())))[..24];
+
     /// <summary>
     /// Gets the directory where the ModSync executable is located.
     /// </summary>

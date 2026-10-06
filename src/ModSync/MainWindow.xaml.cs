@@ -44,7 +44,9 @@ public partial class MainWindow : Window
         _logger.Info("ModSync GUI started.");
 
         _configService = new ConfigService(_logger);
-        _configService.Load();
+        var loadedConfig = _configService.Load();
+        if (!loadedConfig.Success && !loadedConfig.IsNewlyCreated)
+            throw new IOException(loadedConfig.ErrorMessage);
 
         _gitService = new GitService(_logger);
         _authService = new AuthenticationService(_logger);
@@ -55,7 +57,8 @@ public partial class MainWindow : Window
         _fabricService = new FabricService(_configService, _logger, _authService);
 
         _feedbackTimer.Tick += (_, _) => { _feedbackTimer.Stop(); DismissFeedback(); };
-        Closed += (_, _) => _feedbackTimer.Stop();
+        Closing += (_, e) => { if (_isBusy) { e.Cancel = true; ShowFeedback("Wait for the current operation to finish before closing.", false); } };
+        Closed += (_, _) => { _feedbackTimer.Stop(); _choice?.TrySetResult(-1); _launchDecision?.TrySetResult(false); };
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
         {
@@ -88,6 +91,8 @@ public partial class MainWindow : Window
         UpdateIgnoredModsUI();
         RefreshFabricStatusUI();
         ReadUpdateResult();
+        _dashboardReady.TrySetResult();
+        await ContinueStartupOrLaunchAsync();
     }
 
     #region Status & Information
@@ -255,23 +260,31 @@ public partial class MainWindow : Window
             {
                 var (gitStatus, modChanges, _, _) = await Task.Run(() => _syncService.CheckStatusAsync(UpdateProgress, _syncScope, refreshRepository: true));
 
+                if (_launchDecision?.Task.IsCompleted == true) { SetBusy(false); return; }
+
                 if (!gitStatus.IsConnected || gitStatus.ErrorMessage != null) throw new System.IO.IOException(gitStatus.ErrorMessage ?? "Could not connect to GitHub.");
+                if (gitStatus.BehindCount > 0 || gitStatus.AheadCount > 0)
+                    throw new IOException("Repository versions changed during the check. Check again to review the latest files.");
                 SetCheckedStates(_syncScope, modChanges);
+                _reviewedSync = modChanges;
+                _reviewedConfig = ConfigFingerprint();
 
                 // Check if Fabric Loader also needs update
                 bool fabricNeedsUpdate = false;
                 if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader)
                 {
-                    _currentFabricStatus = await _fabricService.DetectFabricStatusAsync();
+                    _currentFabricStatus = _fabricService.DetectFabricStatus();
                     fabricNeedsUpdate = _currentFabricStatus != null &&
                                         _currentFabricStatus.IsConfigured &&
                                         !_currentFabricStatus.IsUpToDate;
                 }
+                _reviewedFabric = _currentFabricStatus;
 
                 if (!modChanges.HasChanges && !fabricNeedsUpdate)
                 {
                     ShowSyncCompletion(modChanges);
                     SetBusy(false);
+                    if (_launchDecision != null) await HandleLaunchCheckAsync(modChanges);
                     return;
                 }
 
@@ -322,6 +335,7 @@ public partial class MainWindow : Window
                 _logger.Error("Error checking sync diffs", ex);
                 ShowFeedback($"Could not check changes: {ex.Message}", true);
                 SetBusy(false);
+                if (_launchDecision != null) await LaunchIssueAsync("Could not verify repository updates. " + ex.Message);
                 return;
             }
         }
@@ -331,121 +345,62 @@ public partial class MainWindow : Window
 
     private async void ConfirmSync_Click(object sender, RoutedEventArgs e)
     {
+        if (_isBusy) return;
         CloseModal();
         await PerformSyncAsync(skipConfirmation: true);
     }
 
     private async Task PerformSyncAsync(bool skipConfirmation = false)
     {
-        if (!EnsureInstanceSelected()) return;
+        if (_isBusy || !EnsureInstanceSelected()) return;
+        if (_reviewedSync == null || _reviewedConfig != ConfigFingerprint())
+        {
+            ShowFeedback("Settings changed. Review the updates again before applying them.", true);
+            return;
+        }
+        if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader &&
+            _reviewedFabric is { IsConfigured: true, IsUpToDate: false })
+        {
+            if (!EnsureLoaderCanUpdate()) return;
+        }
         SetCategoryState(_syncScope, "Syncing…");
-        SetBusy(true, "Syncing selected files...");
+        SetBusy(true, "Applying reviewed updates…");
         DismissFeedback();
-
         try
         {
-            var (success, summary, message) = await Task.Run(() =>
-                _syncService.SyncModsAsync(
-                    UpdateProgress,
-                    forceIfMinecraftRunning: false,
-                    skipConfirmation: skipConfirmation, scope: _syncScope
-                )
-            );
-
-            if (!success && message != null && message.Contains("Minecraft is currently running", StringComparison.OrdinalIgnoreCase))
+            var reviewed = _reviewedSync;
+            _reviewedSync = null;
+            Directory.CreateDirectory(Path.GetDirectoryName(PendingUpdatePath)!);
+            File.WriteAllText(PendingUpdatePath, "An update started. Verify the complete modpack before playing.");
+            _updateFailed = true;
+            var result = await Task.Run(() => _syncService.ApplyReviewedAsync(reviewed, _syncScope, UpdateProgress));
+            if (!result.Success) throw new IOException(result.Error);
+            if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader &&
+                _reviewedFabric is { IsConfigured: true, IsUpToDate: false } fabric)
             {
-                var result = MessageBox.Show(
-                    $"{message}\n\nModifying mods while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
-                    "Minecraft Running Warning",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    SetBusy(true, "Forcing mod sync...");
-                    (success, summary, message) = await Task.Run(() =>
-                        _syncService.SyncModsAsync(
-                            UpdateProgress,
-                            forceIfMinecraftRunning: true,
-                            skipConfirmation: true, scope: _syncScope
-                        )
-                    );
-                }
-                else
-                {
-                    ShowFeedback("Sync cancelled: Close Minecraft and try again.", true);
-                    return;
-                }
+                await Task.Run(() => new PackBackupService(_configService).SnapshotLoader(_fabricService.FindMmcPackPath()));
+                var installed = await Task.Run(() => _fabricService.InstallFabricLoaderAsync(
+                    fabric.MinecraftVersion ?? _configService.Config.MinecraftVersion,
+                    fabric.TargetLoaderVersion!, UpdateProgress));
+                if (!installed.Success) throw new IOException(installed.Error ?? "Fabric Loader could not be updated.");
             }
-
-            if (success)
-            {
-                bool fabricUpdated = false;
-                bool fabricFailed = false;
-                string? fabricTarget = null;
-
-                if (_syncScope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader)
-                {
-                    try
-                    {
-                        // Refresh status from freshly synced repo
-                        _currentFabricStatus = await _fabricService.DetectFabricStatusAsync();
-                        if (_currentFabricStatus != null && _currentFabricStatus.IsConfigured && !_currentFabricStatus.IsUpToDate)
-                        {
-                            fabricTarget = _currentFabricStatus.TargetLoaderVersion;
-                            string mcVer = !string.IsNullOrWhiteSpace(_currentFabricStatus.MinecraftVersion)
-                                ? _currentFabricStatus.MinecraftVersion
-                                : (!string.IsNullOrWhiteSpace(_configService.Config.MinecraftVersion) ? _configService.Config.MinecraftVersion : "1.20.1");
-
-                            UpdateProgress(SyncProgressInfo.Indeterminate("Syncing Fabric Loader...", $"Installing Fabric Loader {fabricTarget}..."));
-
-                            var (fSuccess, fError) = await Task.Run(async () =>
-                                await _fabricService.InstallFabricLoaderAsync(mcVer, fabricTarget!, progress => UpdateProgress(progress))
-                            );
-
-                            if (fSuccess)
-                            {
-                                fabricUpdated = true;
-                                _logger.Info($"Fabric Loader {fabricTarget} installed during mod sync.");
-                            }
-                            else
-                            {
-                                _logger.Warning($"Fabric Loader update during sync failed: {fError}");
-                                fabricFailed = true;
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Error("Error updating Fabric Loader during mod sync", ex);
-                        fabricFailed = true;
-                    }
-                }
-
-                ShowSyncCompletion(summary ?? new SyncSummary(), fabricUpdated ? fabricTarget : null, fabricFailed);
-                MarkSyncComplete(_syncScope);
-                SetStatusDot(true);
-            }
-            else
-            {
-                ShowFeedback(message ?? "Synchronization failed.", true);
-                SetStatusDot(false);
-            }
+            ShowSyncCompletion(reviewed);
+            await VerifyAndOfferCloseAsync();
         }
         catch (Exception ex)
         {
-            _logger.Error("GUI Sync exception", ex);
-            ShowFeedback($"Error: {ex.Message}", true);
-            SetStatusDot(false);
+            _updateFailed = true;
+            SetCategoryState(_syncScope, "Failed");
+            ShowFeedback("Update needs attention: " + ex.Message + "\nCheck again before playing. Backups are available in Backups.", true);
         }
         finally
         {
-            await RefreshLocalModCountAsync(fetchRemote: _syncScope.HasFlag(SyncScope.Mods));
-            RefreshFabricStatusUI();
+            await RefreshLocalModCountAsync(fetchRemote: false);
+            _currentFabricStatus = _fabricService.DetectFabricStatus();
+            ApplyFabricStatusToUI(_currentFabricStatus);
             SetBusy(false);
         }
     }
-
     #endregion
 
     #region Push Action
@@ -811,13 +766,13 @@ public partial class MainWindow : Window
         ReinstallStepTwoText.Text = packs ? "2. Replace all shared packs with fresh, verified copies." : "2. Install fresh repository mods; excluded mods stay.";
         ReinstallStepThreeText.Text = packs ? "3. Remove obsolete managed files; personal packs stay." : scope == SyncScope.Mods ? "3. Leave resource packs, shaders, and settings untouched." : "3. Sync shared packs; personal packs stay.";
         ReinstallPreservationText.Text = packs ? "Other categories and worlds stay untouched. Enabled selection rules are applied after the files succeed." : scope == SyncScope.Mods ? "Resource packs, shaders, and worlds stay untouched." : "Worlds stay untouched. Pack order and active shader follow enabled rules.";
-        CleanReinstallBackupPreviewText.Text = "modsync_backups/" + (scope == SyncScope.All ? "reinstall_" : "reinstall_" + scope.ToString().ToLowerInvariant() + "_") + DateTime.Now.ToString("yyyy-MM-dd_HHmmss") + "/";
+        CleanReinstallBackupPreviewText.Text = _configService.BackupFolder;
         ShowModal(CleanReinstallConfirmSheet);
     }
 
     private void OpenBackups_Click(object sender, RoutedEventArgs e)
     {
-        var folder = Path.Combine(_configService.MinecraftFolder, "modsync_backups");
+        var folder = _configService.BackupFolder;
         if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Backups are created before pack changes or a clean reinstall.", false); return; }
         try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); }
         catch (Exception ex) { ShowFeedback($"Could not open backups: {ex.Message}", true); }
@@ -938,7 +893,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            string logsDir = Path.Combine(PathUtils.GetAppDirectory(), "logs");
+            string logsDir = Path.Combine(PathUtils.GetDataDirectory(), "logs");
             PathUtils.EnsureDirectoryExists(logsDir);
             Process.Start(new ProcessStartInfo
             {
@@ -1109,6 +1064,7 @@ public partial class MainWindow : Window
     {
         if (ModalBackdrop.Visibility != Visibility.Visible) _focusBeforeModal = Keyboard.FocusedElement;
         MainDashboard.IsEnabled = false;
+        ChoiceSheet.Visibility = Visibility.Collapsed;
         InstanceSheet.Visibility = Visibility.Collapsed;
         PushConfirmSheet.Visibility = Visibility.Collapsed;
         LoginSheet.Visibility = Visibility.Collapsed;
@@ -1123,11 +1079,17 @@ public partial class MainWindow : Window
 
         sheet.Visibility = Visibility.Visible;
         ModalBackdrop.Visibility = Visibility.Visible;
+        // Reopening a sheet must remeasure its card and scroll presenter as well as its content.
+        for (DependencyObject? parent = sheet; parent is FrameworkElement element; parent = VisualTreeHelper.GetParent(parent))
+            element.InvalidateMeasure();
         Dispatcher.BeginInvoke(new Action(() => sheet.MoveFocus(new TraversalRequest(FocusNavigationDirection.First))));
     }
 
     private void CloseModal()
     {
+        _choice?.TrySetResult(-1);
+        _choice = null;
+        ChoiceSheet.Visibility = Visibility.Collapsed;
         if (InstanceSheet.Visibility == Visibility.Visible && (!_configService.Config.InstanceSelectionCompleted || !System.IO.Directory.Exists(_configService.MinecraftFolder))) return;
         InstanceSheet.Visibility = Visibility.Collapsed;
         PushConfirmSheet.Visibility = Visibility.Collapsed;
@@ -1502,8 +1464,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
+    private async void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
     {
+        if (_reviewingPersonalMods)
+        {
+            _reviewingPersonalMods = false;
+            CloseModal();
+            await ContinueStartupOrLaunchAsync();
+            return;
+        }
         ShowModal(SettingsSheet);
     }
 
@@ -1524,6 +1493,8 @@ public partial class MainWindow : Window
             // Initial fast local check
             _currentFabricStatus = _fabricService.DetectFabricStatus();
             ApplyFabricStatusToUI(_currentFabricStatus);
+
+            if (_launchDecision != null || Directory.Exists(Path.Combine(_configService.ResolvedRepositoryFolder, ".git"))) return;
 
             // Asynchronous check (fetches fabric-version.txt from repository if remote/not yet cloned)
             var remoteStatus = await _fabricService.DetectFabricStatusAsync();
@@ -1637,6 +1608,7 @@ public partial class MainWindow : Window
         if (!EnsureInstanceSelected()) return;
         CloseModal();
         if (_isBusy) return;
+        if (!EnsureLoaderCanUpdate()) return;
 
         if (_currentFabricStatus == null)
         {
@@ -1652,6 +1624,10 @@ public partial class MainWindow : Window
 
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(PendingUpdatePath)!);
+            File.WriteAllText(PendingUpdatePath, "Fabric update started. Verify before playing.");
+            _updateFailed = true;
+            await Task.Run(() => new PackBackupService(_configService).SnapshotLoader(_fabricService.FindMmcPackPath()));
             var (success, error) = await Task.Run(async () =>
             {
                 return await _fabricService.InstallFabricLoaderAsync(mcVer, target, progress =>
@@ -1663,7 +1639,7 @@ public partial class MainWindow : Window
             if (success)
             {
                 ShowFeedback($"Fabric Loader {target} installed successfully!", false);
-                RefreshFabricStatusUI();
+                await VerifyAndOfferCloseAsync();
             }
             else
             {

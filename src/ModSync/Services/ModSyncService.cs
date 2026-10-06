@@ -21,9 +21,43 @@ public class ModSyncService
     private readonly MinecraftCheckService _mcCheckService;
     private readonly ModIgnoreService _ignoreService;
     private readonly LoggingService _logger;
+    private readonly Func<(bool IsRunning, string? Details)> _minecraftStatus;
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     public ModIgnoreService IgnoreService => _ignoreService;
+
+    public SyncSummary InspectCachedFiles(SyncScope scope = SyncScope.All)
+    {
+        var config = _configService.Config;
+        var local = ScanFolder(_configService.ResolvedModsFolder, config.AllowedExtensions, config.SyncSubdirectories, false, scope: scope);
+        var repository = ScanFolder(_configService.ResolvedRepositoryFolder, config.AllowedExtensions, config.SyncSubdirectories, true, scope: scope);
+        var summary = CalculateDifferences(repository, local);
+        summary.Changes.AddRange(new PackSyncService(_configService).Plan(scope: scope).Changes);
+        return summary;
+    }
+
+    public static string PlanFingerprint(SyncSummary summary) => JsonSerializer.Serialize(summary.Changes
+        .OrderBy(c => c.RelativePath, StringComparer.Ordinal).ThenBy(c => c.DestinationPath, StringComparer.Ordinal)
+        .Select(c => new { c.RelativePath, c.Type, c.DestinationPath, c.NewContent, c.OriginalContent,
+            Source = c.SourceItem?.Sha256Hash, Target = c.TargetItem?.Sha256Hash, c.IsInternal }));
+
+    public async Task<(bool Success, string? Error)> ApplyReviewedAsync(SyncSummary reviewed, SyncScope scope,
+        Action<SyncProgressInfo>? progress = null)
+    {
+        // No repository refresh here: approval belongs to the exact preview, including removals.
+        var (running, details) = _minecraftStatus();
+        if (running) return (false, $"Close Minecraft before updating ({details}).");
+        if (PlanFingerprint(reviewed) != PlanFingerprint(InspectCachedFiles(scope)))
+            return (false, "Files or exclusions changed since review. Check again before applying updates.");
+        var result = await ApplyChangesCoreAsync(reviewed, _configService.ResolvedRepositoryFolder,
+            _configService.ResolvedModsFolder, progress);
+        if (result.Success && scope.HasFlag(SyncScope.Mods))
+        {
+            _configService.Config.FirstSyncCompleted = true;
+            if (!_configService.Save()) return (false, "Files updated, but settings could not be saved. Check again.");
+        }
+        return result;
+    }
 
     public ModSyncService(
         ConfigService configService,
@@ -31,7 +65,8 @@ public class ModSyncService
         AuthenticationService authService,
         MinecraftCheckService mcCheckService,
         ModIgnoreService ignoreService,
-        LoggingService logger, Func<string?>? tokenProvider = null)
+        LoggingService logger, Func<string?>? tokenProvider = null,
+        Func<(bool IsRunning, string? Details)>? minecraftStatus = null)
     {
         _configService = configService;
         _gitService = gitService;
@@ -40,6 +75,7 @@ public class ModSyncService
         _mcCheckService = mcCheckService;
         _ignoreService = ignoreService;
         _logger = logger;
+        _minecraftStatus = minecraftStatus ?? mcCheckService.CheckIfMinecraftRunning;
     }
 
     /// <summary>
@@ -475,6 +511,8 @@ public class ModSyncService
                 Branch = string.Join(", ", statuses.Select(s => $"{s.Repo.Label}: {s.Repo.Branch}")),
                 StatusMessage = string.Join(" • ", statuses.Select(s => $"{s.Repo.Label}: {s.Status.StatusMessage}")),
                 IsCloned = statuses.All(s => s.Status.IsCloned), IsConnected = statuses.All(s => s.Status.IsConnected),
+                ErrorMessage = statuses.Any(s => s.Status.ErrorMessage != null)
+                    ? string.Join("\n", statuses.Where(s => s.Status.ErrorMessage != null).Select(s => s.Repo.Label + ": " + s.Status.ErrorMessage)) : null,
                 AheadCount = statuses.Sum(s => s.Status.AheadCount), BehindCount = statuses.Sum(s => s.Status.BehindCount),
                 LocalCommitHash = gitStatus.LocalCommitHash, LocalCommitDate = gitStatus.LocalCommitDate,
                 RemoteCommitHash = gitStatus.RemoteCommitHash, RemoteCommitDate = gitStatus.RemoteCommitDate

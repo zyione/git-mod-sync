@@ -22,6 +22,17 @@
                 </DockPanel>
                 <ScrollViewer x:Name="ActionsScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
                  <StackPanel>
+                  <Border x:Name="LaunchBanner" Visibility="Collapsed" Style="{StaticResource ContentCardStyle}">
+                    <StackPanel>
+                      <TextBlock Text="Minecraft is waiting" FontSize="15" FontWeight="SemiBold"/>
+                      <TextBlock Text="Review updates, or choose to play with your current files." TextWrapping="Wrap" Style="{StaticResource MetadataTextStyle}" Margin="0,4,0,8"/>
+                      <WrapPanel IsEnabled="{Binding IsEnabled, ElementName=DashboardCheckButton}">
+                        <Button Content="Check again" Click="LaunchCheck_Click" Style="{StaticResource CompactPrimaryButtonStyle}" Margin="0,0,8,8"/>
+                        <Button Content="Play anyway" Click="PlayAnyway_Click" Style="{StaticResource CompactSecondaryButtonStyle}" Margin="0,0,8,8"/>
+                        <Button Content="Cancel launch" Click="CancelLaunch_Click" Style="{StaticResource CompactSecondaryButtonStyle}" Margin="0,0,0,8"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
                   <Border x:Name="UpdateBanner" Visibility="Collapsed" Style="{StaticResource ContentCardStyle}">
                     <DockPanel><Button DockPanel.Dock="Right" Content="Update" Style="{StaticResource CompactPrimaryButtonStyle}" Click="OpenUpdateModal_Click"/>
                     <Button DockPanel.Dock="Right" Content="×" Style="{StaticResource GhostButtonStyle}" Click="DismissUpdateBanner_Click" ToolTip="Dismiss update banner" AutomationProperties.Name="Dismiss update banner"/>
@@ -330,6 +341,14 @@
                         HorizontalAlignment="Center">
 
                     <Grid>
+                <StackPanel x:Name="ChoiceSheet" Visibility="Collapsed">
+                  <TextBlock Text="{Binding Text, ElementName=InstanceNameText}" TextTrimming="CharacterEllipsis" Style="{StaticResource MetadataTextStyle}" Margin="0,0,0,8"/>
+                  <TextBlock x:Name="ChoiceTitle" TextWrapping="Wrap" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                  <TextBlock x:Name="ChoiceBody" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,16"/>
+                  <Button x:Name="ChoiceFirst" Click="Choice_Click" Style="{StaticResource PrimaryButtonStyle}" MinHeight="40" Margin="0,0,0,8"/>
+                  <Button x:Name="ChoiceSecond" Click="Choice_Click" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40" Margin="0,0,0,8"/>
+                  <Button x:Name="ChoiceThird" Click="Choice_Click" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40"/>
+                </StackPanel>
                 <Border x:Name="InstanceSheet" Visibility="Collapsed">
                     <StackPanel>
                         <TextBlock Text="Choose your Minecraft instance" FontSize="20" FontWeight="SemiBold" />
@@ -1013,7 +1032,7 @@
                                 </ScrollViewer>
                             </Border>
 
-                            <TextBlock Text="These updates will be downloaded and applied to your mods folder."
+                            <TextBlock Text="Apply these reviewed changes to the selected categories. Replaced and removed files are backed up; excluded mods are kept."
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Margin="0,0,0,16" />
@@ -1024,6 +1043,8 @@
                                         Width="90"
                                         Margin="0,0,10,0"
                                         Click="CloseModal_Click" />
+                                <Button Content="Play anyway" Click="PlayAnyway_Click" Visibility="{Binding Visibility, ElementName=LaunchBanner}"
+                                        Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0" Height="42"/>
                                 <Button Content="Apply Updates"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         Height="42"

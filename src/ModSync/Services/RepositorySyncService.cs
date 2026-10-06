@@ -76,8 +76,9 @@ public sealed class RepositorySyncService(ConfigService config, IGitService git)
                 throw new IOException("Repository caches must be separate from Minecraft asset folders.");
         }
         var instance = Path.GetFullPath(config.MinecraftFolder).TrimEnd(Path.DirectorySeparatorChar);
-        if (cache.Equals(instance, StringComparison.OrdinalIgnoreCase) || instance.StartsWith(cache + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Repository caches cannot contain the Minecraft instance.");
+        if (cache.Equals(instance, StringComparison.OrdinalIgnoreCase) || instance.StartsWith(cache + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+            cache.StartsWith(instance + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Repository caches must be outside the Minecraft instance.");
         for (var parent = new DirectoryInfo(cache); parent != null; parent = parent.Parent)
             if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("Linked repository caches are not supported.");

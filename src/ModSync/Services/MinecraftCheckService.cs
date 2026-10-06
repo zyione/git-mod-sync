@@ -27,12 +27,7 @@ public class MinecraftCheckService
             {
                 "javaw",
                 "java",
-                "MinecraftLauncher",
                 "Minecraft",
-                "PrismLauncher",
-                "MultiMC",
-                "ModrinthApp",
-                "CurseForge"
             };
 
             var processes = Process.GetProcesses();
@@ -60,18 +55,9 @@ public class MinecraftCheckService
                             return (true, $"Process '{processName}' with window: \"{windowTitle}\"");
                         }
 
-                        // Direct Minecraft executables and launchers
-                        if (string.Equals(processName, "MinecraftLauncher", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "Minecraft", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "PrismLauncher", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "MultiMC", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "ModrinthApp", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(processName, "CurseForge", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.Warning($"Minecraft launcher process detected: {processName} (PID: {process.Id})");
-                            return (true, $"Minecraft launcher: {processName}");
-                        }
-
+                        // An open launcher is expected during a pre-launch check.
+                        if (string.Equals(processName, "Minecraft", StringComparison.OrdinalIgnoreCase))
+                            return (true, $"Minecraft (PID {process.Id})");
                         // For java / javaw, only flag if there is supporting evidence that it is Minecraft
                         if (string.Equals(processName, "javaw", StringComparison.OrdinalIgnoreCase) ||
                             string.Equals(processName, "java", StringComparison.OrdinalIgnoreCase))
@@ -104,8 +90,9 @@ public class MinecraftCheckService
                             }
                             catch
                             {
-                                // Access denied reading MainModule, safe to ignore
+                                // No positive identification is available; fail conservatively below.
                             }
+                            return (true, $"Java process '{processName}' (PID {process.Id}); close it before updating");
                         }
                     }
                 }

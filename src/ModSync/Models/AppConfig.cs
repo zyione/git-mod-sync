@@ -38,6 +38,9 @@ public class AppConfig
     [JsonPropertyName("instanceSelectionCompleted")]
     public bool InstanceSelectionCompleted { get; set; }
 
+    [JsonPropertyName("personalModsAcknowledged")]
+    public Dictionary<string, List<string>> PersonalModsAcknowledged { get; set; } = new();
+
     [JsonPropertyName("modsFolder")]
     public string ModsFolder { get; set; } = "./mods";
 

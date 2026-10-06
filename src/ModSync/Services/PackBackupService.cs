@@ -7,14 +7,33 @@ namespace ModSync.Services;
 /// <summary>Verified, copy-only safety snapshots made before visual assets are changed.</summary>
 public sealed class PackBackupService(ConfigService config)
 {
-    private string BackupRoot => Path.Combine(config.MinecraftFolder, "modsync_backups");
+    private string BackupRoot => config.BackupFolder;
+
+    public string? SnapshotLoader(string? mmcPack)
+    {
+        var files = new Dictionary<string, string>();
+        if (mmcPack != null && File.Exists(mmcPack))
+        {
+            files[mmcPack] = "loader/mmc-pack.json";
+            string patches = Path.Combine(Path.GetDirectoryName(mmcPack)!, "patches");
+            if (Directory.Exists(patches))
+                foreach (var file in Directory.GetFiles(patches, "*.json")) files[file] = "loader/patches/" + Path.GetFileName(file);
+        }
+        var profiles = Path.Combine(config.MinecraftFolder, "launcher_profiles.json");
+        if (File.Exists(profiles)) files[profiles] = "loader/launcher_profiles.json";
+        return Snapshot(files, "loader");
+    }
 
     public string? BackupChanges(SyncSummary summary)
     {
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var change in summary.Changes.Where(c => !c.IsInternal && c.Type is ChangeType.Updated or ChangeType.Removed))
         {
-            if (change.DestinationPath == null) continue;
+            if (change.DestinationPath == null)
+            {
+                if (change.TargetItem != null) files[change.TargetItem.FullPath] = "mods/" + change.RelativePath;
+                continue;
+            }
             if (change.RelativePath.StartsWith("resourcepacks/", StringComparison.Ordinal) ||
                 change.RelativePath.StartsWith("shaderpacks/", StringComparison.Ordinal))
                 files[change.DestinationPath] = change.RelativePath;
@@ -29,6 +48,9 @@ public sealed class PackBackupService(ConfigService config)
             if (change.NewContent != null && File.ReadAllText(change.DestinationPath!) != change.OriginalContent)
                 throw new IOException($"'{change.RelativePath}' changed while syncing. Your newer settings were preserved; retry the sync.");
         }
+        foreach (var change in summary.Changes.Where(c => c.DestinationPath == null && c.TargetItem != null && files.ContainsKey(c.TargetItem.FullPath)))
+            if (HashUtils.ComputeSha256(change.TargetItem!.FullPath) != change.TargetItem.Sha256Hash)
+                throw new IOException($"'{change.RelativePath}' changed while syncing. Check again.");
         var tracking = Path.Combine(config.MinecraftFolder, ".modsync-managed-packs.json");
         if (files.Count > 0 && File.Exists(tracking)) files[tracking] = "settings/.modsync-managed-packs.json";
         return Snapshot(files, "sync");

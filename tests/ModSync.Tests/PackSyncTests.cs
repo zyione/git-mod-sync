@@ -20,7 +20,7 @@ public class PackSyncTests
     {
         _root = Path.Combine(Path.GetTempPath(), "ModSync_PackTests_" + Guid.NewGuid().ToString("N"));
         _logger = new LoggingService();
-        _config = new ConfigService(_logger);
+        _config = new ConfigService(_logger, Path.Combine(_root, "config.json"));
         _config.Config.ResourcePackRepository = "";
         _config.Config.ShaderPackRepository = "";
         _config.Config.RepositoryFolder = Path.Combine(_root, "repository");
@@ -395,7 +395,7 @@ public class PackSyncTests
             Assert.IsTrue(result.Success, result.Error);
             Assert.AreEqual("old", File.ReadAllText(Path.Combine(Repo, "mods", "Mod.jar")));
         }
-        Assert.IsFalse(Directory.Exists(Path.Combine(Instance, "modsync_backups")), "Uploads must not make local pack backups.");
+        Assert.IsFalse(Directory.Exists(_config.BackupFolder), "Uploads must not make local pack backups.");
     }
 
     [TestMethod]
@@ -416,7 +416,7 @@ public class PackSyncTests
         var engine = Engine();
         var result = await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true);
         Assert.IsTrue(result.Success, result.Message);
-        var backup = Directory.GetDirectories(Path.Combine(Instance, "modsync_backups")).Single();
+        var backup = Directory.GetDirectories(_config.BackupFolder).Single();
         Assert.AreEqual("old pack", File.ReadAllText(Path.Combine(backup, "resourcepacks", "Shared.zip")));
         Assert.AreEqual("old shader", File.ReadAllText(Path.Combine(backup, "shaderpacks", "Shared.zip")));
         Assert.AreEqual("old texture", File.ReadAllText(Path.Combine(backup, "resourcepacks", "OldFolder", "assets", "image.png")));
@@ -424,7 +424,7 @@ public class PackSyncTests
         Assert.AreEqual("shaderPack=Old.zip\n", File.ReadAllText(Path.Combine(backup, "settings", "config", "iris.properties")));
         Assert.IsTrue(File.Exists(Path.Combine(backup, "restore-paths.json")));
         Assert.IsTrue((await engine.SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true)).Success);
-        Assert.AreEqual(1, Directory.GetDirectories(Path.Combine(Instance, "modsync_backups")).Length);
+        Assert.AreEqual(1, Directory.GetDirectories(_config.BackupFolder).Length);
     }
 
     [TestMethod]
@@ -466,7 +466,7 @@ public class PackSyncTests
     [TestMethod]
     public async Task UnavailableBackupDestinationAbortsSyncBeforeModOrPackWrites()
     {
-        Write(Path.Combine(Instance, "modsync_backups"), "blocked destination");
+        Write(_config.BackupFolder, "blocked destination");
         Write(Path.Combine(Repo, "mods", "New.jar"), "new");
         Write(Path.Combine(Repo, "resourcepacks", "Shared.zip"), "new");
         Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip"), "old");

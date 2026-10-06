@@ -27,7 +27,7 @@ public class UpdateService
         _authService = authService;
         _logger = logger;
         _http = http ?? SharedHttp;
-        _cacheDirectory = cacheDirectory ?? Path.Combine(PathUtils.GetAppDirectory(), ".updates");
+        _cacheDirectory = cacheDirectory ?? Path.Combine(PathUtils.GetDataDirectory(), ".updates");
     }
 
     public string CurrentVersion => Assembly.GetExecutingAssembly()

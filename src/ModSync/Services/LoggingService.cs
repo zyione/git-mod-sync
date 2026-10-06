@@ -21,7 +21,7 @@ public class LoggingService
 
     public LoggingService()
     {
-        _logsDirectory = Path.Combine(PathUtils.GetAppDirectory(), "logs");
+        _logsDirectory = Path.Combine(PathUtils.GetDataDirectory(), "logs");
         PathUtils.EnsureDirectoryExists(_logsDirectory);
     }
 

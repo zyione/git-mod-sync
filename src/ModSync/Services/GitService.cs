@@ -117,12 +117,12 @@ public class GitService : IGitService
 
     private string GetPortableGitPath()
     {
-        return Path.Combine(PathUtils.GetAppDirectory(), "tools", "git", "cmd", "git.exe");
+        return Path.Combine(PathUtils.GetDataDirectory(), "tools", "git", "cmd", "git.exe");
     }
 
     private async Task<bool> ProvisionPortableGitAsync(Action<SyncProgressInfo>? progressCallback)
     {
-        string toolsDir = Path.Combine(PathUtils.GetAppDirectory(), "tools");
+        string toolsDir = Path.Combine(PathUtils.GetDataDirectory(), "tools");
         string gitDir = Path.Combine(toolsDir, "git");
         string zipFile = Path.Combine(toolsDir, "mingit.zip");
 
@@ -692,7 +692,7 @@ public class GitService : IGitService
         var psi = new ProcessStartInfo
         {
             FileName = gitExe,
-            Arguments = arguments,
+            Arguments = "-c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 " + arguments,
             WorkingDirectory = workingDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -750,7 +750,14 @@ public class GitService : IGitService
             }
         });
 
-        await Task.WhenAll(proc.WaitForExitAsync(), errorTask);
+        try { await Task.WhenAll(proc.WaitForExitAsync(), errorTask).WaitAsync(TimeSpan.FromMinutes(5)); }
+        catch (TimeoutException)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            await proc.WaitForExitAsync();
+            await errorTask;
+            return (-1, "", "Repository operation timed out. Check your connection and try again.");
+        }
 
         return (proc.ExitCode, stdout.ToString(), stderr.ToString());
     }

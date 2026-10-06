@@ -33,7 +33,9 @@ public class ConfigService
     /// <summary>
     /// Absolute path to the internal Git repository folder.
     /// </summary>
-    public string ResolvedRepositoryFolder => PathUtils.ResolveAppPath(Config.RepositoryFolder);
+    public string ResolvedRepositoryFolder => Path.GetFullPath(Path.Combine(PathUtils.GetDataDirectory(), Config.RepositoryFolder));
+
+    public string BackupFolder => Path.Combine(Path.GetDirectoryName(_configFilePath)!, "backups", PathUtils.InstanceKey(MinecraftFolder));
 
     public string ResolvedResourcePackRepositoryFolder => string.IsNullOrWhiteSpace(Config.ResourcePackRepository)
         ? ResolvedRepositoryFolder : ResolvedRepositoryFolder.TrimEnd(Path.DirectorySeparatorChar) + "-resourcepacks";
@@ -48,7 +50,7 @@ public class ConfigService
     public ConfigService(LoggingService logger, string? configFilePath = null)
     {
         _logger = logger;
-        _configFilePath = configFilePath ?? Path.Combine(PathUtils.GetAppDirectory(), "config.json");
+        _configFilePath = configFilePath ?? Path.Combine(PathUtils.GetDataDirectory(), "config.json");
     }
 
     /// <summary>
@@ -83,6 +85,7 @@ public class ConfigService
             }
 
             Config = loaded;
+            Config.PersonalModsAcknowledged ??= new();
             // Existing installations keep their selected folder when upgrading from versions without onboarding.
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.EnumerateObject().Any(p => p.Name.Equals("instanceSelectionCompleted", StringComparison.OrdinalIgnoreCase)) &&

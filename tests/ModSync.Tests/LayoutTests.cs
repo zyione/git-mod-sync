@@ -98,6 +98,34 @@ public class LayoutTests
                     Assert.IsTrue(Math.Abs(foreground.R - background.R) > 150, "Tooltip text must contrast with its background.");
                     SavePreview(tooltip, dark ? "tooltip-preview-dark.png" : "tooltip-preview-light.png");
                     SavePreview(root, dark ? "ui-preview-dark.png" : "ui-preview-light.png");
+                    typeof(MainWindow).GetMethod("ChooseAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                        .Invoke(window, new object?[] { "Have you excluded your personal mods?", "Excluded mods stay on your computer and won’t be uploaded. If you haven’t added personal mods, choose Skip. We’ll ask again when new local mods appear.", "Review exclusions", "Already excluded", "Skip — no personal mods" });
+                    root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                    var choiceSheet = (FrameworkElement)window.FindName("ChoiceSheet");
+                    Assert.AreEqual(Visibility.Visible, choiceSheet.Visibility);
+                    Assert.IsTrue(((FrameworkElement)choiceSheet.Parent).ActualHeight >= choiceSheet.ActualHeight && choiceSheet.ActualHeight > 150,
+                        "The visible prompt must have space in its parent, not merely previously measured buttons.");
+                    foreach (var name in new[] { "ChoiceFirst", "ChoiceSecond", "ChoiceThird" })
+                    {
+                        var button = (Button)window.FindName(name);
+                        var location = button.TranslatePoint(new Point(), root);
+                        Assert.IsTrue(button.ActualHeight >= 36 && location.Y >= 0 && location.Y + button.ActualHeight <= 640);
+                        Assert.IsTrue(location.X >= 0 && location.X + button.ActualWidth <= 580);
+                    }
+                    SavePreview(root, dark ? "ui-personal-mods-dark.png" : "ui-personal-mods-light.png");
+                    var choiceCard = (FrameworkElement)VisualTreeHelper.GetParent(choiceSheet.Parent);
+                    Assert.IsTrue(choiceCard.ActualHeight >= choiceSheet.ActualHeight, "Reopened dialog content must not be clipped by a stale card height.");
+                    foreach (var (title, body, first, second, third, name) in new[] {
+                        ("Everything is synchronized", "Enabled content matches the checked repository versions. Excluded mods were preserved. Continue to Minecraft and close ModSync?", "Play & close ModSync", "Play & keep ModSync open", (string?)null, "ready"),
+                        ("Minecraft is waiting", "Could not verify repository updates. Check your connection and try again, or play with your current files.", "Check again", "Play anyway", (string?)"Cancel launch", "offline") })
+                    {
+                        typeof(MainWindow).GetMethod("ChooseAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                            .Invoke(window, new object?[] { title, body, first, second, third });
+                        root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                        Assert.IsTrue(choiceCard.ActualHeight >= choiceSheet.ActualHeight);
+                        SavePreview(root, $"ui-launch-{name}-{(dark ? "dark" : "light")}.png");
+                    }
+                    typeof(MainWindow).GetMethod("CloseModal", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     ((FrameworkElement)window.FindName("ProgressArea")).Visibility = Visibility.Visible;
                     ((FrameworkElement)window.FindName("FeedbackCard")).Visibility = Visibility.Visible;
                     ((TextBlock)window.FindName("FeedbackMessageText")).Text = "Downloading repository updates…";

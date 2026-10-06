@@ -54,6 +54,11 @@ public class FabricService
         }
 
         string mcDir = GetMinecraftDirectory();
+        if (_configService.Config.InstanceSelectionCompleted && CustomMinecraftDirectory == null)
+        {
+            var selected = new[] { Path.Combine(mcDir, "mmc-pack.json"), Path.Combine(Path.GetDirectoryName(mcDir)!, "mmc-pack.json") };
+            return selected.FirstOrDefault(File.Exists);
+        }
         string appDir = PathUtils.GetAppDirectory();
 
         var candidates = new List<string>
@@ -123,6 +128,9 @@ public class FabricService
         {
             return Path.GetFullPath(CustomMinecraftDirectory);
         }
+
+        if (_configService.Config.InstanceSelectionCompleted)
+            return _configService.MinecraftFolder;
 
         string appDir = PathUtils.GetAppDirectory();
 

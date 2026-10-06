@@ -22,7 +22,7 @@ public class MultiRepositoryTests
     public void Setup()
     {
         _root = Path.Combine(Path.GetTempPath(), "ModSync_MultiRepo_" + Guid.NewGuid().ToString("N"));
-        _logger = new LoggingService(); _config = new ConfigService(_logger); _git = new FakeGit();
+        _logger = new LoggingService(); _config = new ConfigService(_logger, Path.Combine(_root, "config.json")); _git = new FakeGit();
         _config.Config.RepositoryFolder = Path.Combine(_root, "cache", "mods");
         _config.Config.ModsFolder = Path.Combine(_root, "instance", "mods");
         _config.Config.RequireConfirmationBeforePush = false;
@@ -34,7 +34,59 @@ public class MultiRepositoryTests
     [TestCleanup]
     public void Cleanup() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
     private static void Write(string file, string value) { Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, value); }
-    private ModSyncService Engine() => new(_config, _git, new AuthenticationService(_logger), new MinecraftCheckService(_logger), new ModIgnoreService(_config, _logger), _logger, () => "test-token");
+    private ModSyncService Engine() => new(_config, _git, new AuthenticationService(_logger), new MinecraftCheckService(_logger), new ModIgnoreService(_config, _logger), _logger, () => "test-token", () => (false, null));
+
+    [TestMethod]
+    public async Task ReviewedUpdateUsesApprovedFilesAndBacksUpRemovedModsOutsideInstance()
+    {
+        Write(Path.Combine(ModsRepo, "mods", "Shared.jar"), "new");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Shared.jar"), "old");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Removed.jar"), "removed");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Personal.jar"), "personal");
+        _config.Config.IgnoredMods.Add("Personal.jar");
+        var engine = Engine();
+        var preview = engine.InspectCachedFiles(SyncScope.Mods);
+        Assert.IsFalse(Directory.Exists(_config.BackupFolder), "A preview must not make backups or game changes.");
+        var result = await engine.ApplyReviewedAsync(preview, SyncScope.Mods);
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(0, _git.Refreshes, "Applying must not fetch a different version after approval.");
+        Assert.AreEqual("new", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Shared.jar")));
+        Assert.AreEqual("personal", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Personal.jar")));
+        Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "Removed.jar")));
+        var backup = Directory.GetDirectories(_config.BackupFolder).Single();
+        Assert.AreEqual("removed", File.ReadAllText(Path.Combine(backup, "mods", "Removed.jar")));
+        Assert.IsFalse(backup.StartsWith(_config.MinecraftFolder + Path.DirectorySeparatorChar));
+        Assert.IsFalse(engine.InspectCachedFiles(SyncScope.Mods).HasChanges);
+    }
+
+    [TestMethod]
+    public async Task ReviewedUpdateRejectsNewLocalEditsAndChangedRepositoryContents()
+    {
+        Write(Path.Combine(ModsRepo, "mods", "Shared.jar"), "new");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Shared.jar"), "old");
+        var engine = Engine();
+        var preview = engine.InspectCachedFiles(SyncScope.Mods);
+        Write(Path.Combine(_config.ResolvedModsFolder, "Shared.jar"), "player edit");
+        Assert.IsFalse((await engine.ApplyReviewedAsync(preview, SyncScope.Mods)).Success);
+        Assert.AreEqual("player edit", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Shared.jar")));
+        preview = engine.InspectCachedFiles(SyncScope.Mods);
+        Write(Path.Combine(ModsRepo, "mods", "Shared.jar"), "unreviewed update");
+        Assert.IsFalse((await engine.ApplyReviewedAsync(preview, SyncScope.Mods)).Success);
+        Assert.IsFalse(Directory.Exists(_config.BackupFolder));
+    }
+
+    [TestMethod]
+    public async Task RepositoryCheckDoesNotWriteIntoTheInstance()
+    {
+        Write(Path.Combine(_config.ResolvedModsFolder, "Personal.jar"), "personal");
+        Write(Path.Combine(ModsRepo, "mods", "Shared.jar"), "shared");
+        var before = Directory.GetFiles(_config.MinecraftFolder, "*", SearchOption.AllDirectories)
+            .ToDictionary(p => p, File.ReadAllText);
+        var result = await Engine().CheckStatusAsync(scope: SyncScope.All, refreshRepository: true);
+        Assert.IsTrue(result.GitStatus.IsConnected);
+        CollectionAssert.AreEquivalent(before.Keys.ToArray(), Directory.GetFiles(_config.MinecraftFolder, "*", SearchOption.AllDirectories));
+        foreach (var file in before) Assert.AreEqual(file.Value, File.ReadAllText(file.Key));
+    }
 
     [TestMethod]
     public async Task SyncAllRefreshesThreeRepositoriesConcurrentlyThenAppliesOnePlan()
@@ -272,7 +324,7 @@ public class MultiRepositoryTests
         StringAssert.Contains(File.ReadAllText(options), "music:0.5");
         Assert.AreEqual("{}", File.ReadAllText(manifest));
         Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
-        var backups = Directory.GetDirectories(Path.Combine(_config.MinecraftFolder, "modsync_backups"));
+        var backups = Directory.GetDirectories(_config.BackupFolder);
         Assert.AreEqual(1, backups.Length);
         Assert.IsTrue(File.Exists(Path.Combine(backups[0], "settings", "options.txt")));
         Assert.IsFalse(Directory.Exists(Path.Combine(backups[0], "resourcepacks")));
@@ -280,7 +332,7 @@ public class MultiRepositoryTests
         var again = await Engine().SyncModsAsync(forceIfMinecraftRunning: true, skipConfirmation: true, scope: SyncScope.ResourcePackOrder);
         Assert.IsTrue(again.Success, again.Message);
         Assert.AreEqual(time, File.GetLastWriteTimeUtc(options));
-        Assert.AreEqual(1, Directory.GetDirectories(Path.Combine(_config.MinecraftFolder, "modsync_backups")).Length);
+        Assert.AreEqual(1, Directory.GetDirectories(_config.BackupFolder).Length);
     }
 
     [TestMethod]
@@ -296,7 +348,7 @@ public class MultiRepositoryTests
         Assert.IsFalse(missingPack.Success);
         StringAssert.Contains(missingPack.Message!, "Sync Resource Packs first");
         Assert.AreEqual("original", File.ReadAllText(options));
-        Assert.IsFalse(Directory.Exists(Path.Combine(_config.MinecraftFolder, "modsync_backups")));
+        Assert.IsFalse(Directory.Exists(_config.BackupFolder));
     }
 
     [TestMethod]
@@ -308,7 +360,7 @@ public class MultiRepositoryTests
         Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
         Assert.AreEqual("old", File.ReadAllText(local));
         _git.FailedRefresh = null;
-        Write(Path.Combine(_config.MinecraftFolder, "modsync_backups"), "blocked");
+        Write(_config.BackupFolder, "blocked");
         Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
         Assert.AreEqual("old", File.ReadAllText(local));
     }

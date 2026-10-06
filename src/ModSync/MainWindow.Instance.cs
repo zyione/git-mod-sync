@@ -24,7 +24,11 @@ public partial class MainWindow
         return false;
     }
 
-    private void ChooseInstance_Click(object sender, RoutedEventArgs e) { if (!_isBusy) ShowInstancePicker(); }
+    private void ChooseInstance_Click(object sender, RoutedEventArgs e)
+    {
+        if (_launchDecision != null) { ShowFeedback("Cancel the pending Minecraft launch before changing instances.", false); return; }
+        if (!_isBusy) ShowInstancePicker();
+    }
 
     private void ShowInstancePicker()
     {
@@ -72,9 +76,11 @@ public partial class MainWindow
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         UpdateIgnoredModsUI();
         _lastBackupFolder = null; DismissFeedback(); UpdateStatusCard(); RefreshFabricStatusUI();
-        if (!_dashboardStarted) await StartDashboardAsync();
+        bool alreadyStarted = _dashboardStarted;
+        if (!alreadyStarted) await StartDashboardAsync();
         await RefreshLocalModCountAsync(fetchRemote: false);
         RenderCategoryStates();
+        if (alreadyStarted) await ContinueStartupOrLaunchAsync();
     }
 
     private void SetCategoryState(SyncScope scope, string state)
