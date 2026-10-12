@@ -14,6 +14,7 @@ public sealed class InstalledPackState
     public string? Policy { get; set; }
     public string? Version { get; set; }
     public string? ManifestHash { get; set; }
+    public SyncScope VerifiedScope { get; set; } = SyncScope.All;
     public List<PackFile> Managed { get; set; } = new();
 }
 
@@ -35,11 +36,14 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
         {
             var state = File.Exists(StatePath) ? JsonSerializer.Deserialize<InstalledPackState>(File.ReadAllText(StatePath), Json)
                 ?? throw new IOException("Installed pack state is unreadable.") : new();
-            if (state.Policy != Policy) { state.Version = null; state.ManifestHash = null; }
+            if (state.Policy != Policy) { state.Version = null; state.ManifestHash = null; state.VerifiedScope = SyncScope.None; }
             return state;
         }
     }
     public bool HasPendingUpdate => File.Exists(Journal);
+    public SyncScope PendingScope => HasPendingUpdate
+        ? (JsonSerializer.Deserialize<ManifestReview>(File.ReadAllText(Journal), Json) ?? throw new IOException("Pending update is unreadable.")).Scope
+        : SyncScope.None;
     public static string Digest(PackManifest manifest) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, Json))));
 
     public static string RawUrl(string repository, string revision, string path, bool authenticated = false)
@@ -62,7 +66,7 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
         if (!string.IsNullOrWhiteSpace(credential) && request.RequestUri!.Host == "api.github.com") request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         return request;
     }
-    public async Task<PackManifest> FetchAsync(CancellationToken cancellation = default)
+    public async Task<PackManifest> FetchAsync(CancellationToken cancellation = default, SyncScope scope = SyncScope.All)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(20));
         using var request = Request(RawUrl(config.Config.Repository, config.Config.Branch, ManifestName, !string.IsNullOrWhiteSpace(token())));
@@ -76,27 +80,29 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
         while ((read = await input.ReadAsync(buffer, timeout.Token)) > 0)
         { if (data.Length + read > limit) throw new IOException("Pack manifest is too large."); data.Write(buffer, 0, read); }
         var manifest = JsonSerializer.Deserialize<PackManifest>(data.ToArray(), Json) ?? throw new IOException("Empty pack manifest.");
-        Validate(manifest); return manifest;
+        Validate(manifest, scope); return manifest;
     }
-    public void Validate(PackManifest manifest)
+    public void Validate(PackManifest manifest, SyncScope scope = SyncScope.All)
     {
         if (manifest.Schema != 1 || !PackVersion.Valid(manifest.Version) || manifest.Files == null || manifest.Repositories == null || manifest.Files.Count > 20000)
             throw new IOException("Unsupported or invalid pack manifest.");
         if (!Regex.IsMatch(manifest.Minecraft ?? "", @"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$") ||
             manifest.Fabric != null && !Regex.IsMatch(manifest.Fabric, @"^[0-9]+\.[0-9]+\.[0-9]+$")) throw new IOException("Invalid Minecraft or Fabric version.");
-        if (config.Config.SyncFabricLoader && manifest.Fabric == null) throw new IOException("The published pack must declare its Fabric version when loader checking is enabled.");
+        if (scope.HasFlag(SyncScope.Mods) && config.Config.SyncFabricLoader && manifest.Fabric == null) throw new IOException("The published pack must declare its Fabric version when loader checking is enabled.");
         var repositories = new HashSet<string>();
         foreach (var repository in manifest.Repositories)
         {
             if (!repositories.Add(repository.Category) || repository.Category is not ("mods" or "resourcepacks" or "shaderpacks") ||
                 !Regex.IsMatch(repository.Commit ?? "", "^[a-fA-F0-9]{40}$")) throw new IOException("Invalid repository snapshot.");
             var expected = RepositoryFor(repository.Category);
-            if (repository.Url.TrimEnd('/') != expected.Url.TrimEnd('/') || repository.Branch != expected.Branch)
+            if ((Enabled(repository.Category, scope) || scope == SyncScope.ResourcePackOrder && repository.Category == "resourcepacks") &&
+                (repository.Url.TrimEnd('/') != expected.Url.TrimEnd('/') || repository.Branch != expected.Branch))
                 throw new IOException("This published pack uses different repositories. Review repository settings before updating.");
             _ = RawUrl(repository.Url, repository.Commit!, "test");
         }
-        if (!repositories.Contains("mods") || config.Config.SyncResourcePacks && !repositories.Contains("resourcepacks") ||
-            config.Config.SyncShaderPacks && !repositories.Contains("shaderpacks")) throw new IOException("The manifest does not cover all enabled categories.");
+        if (scope.HasFlag(SyncScope.Mods) && !repositories.Contains("mods") || config.Config.SyncResourcePacks &&
+            (scope.HasFlag(SyncScope.ResourcePacks) || scope == SyncScope.ResourcePackOrder) && !repositories.Contains("resourcepacks") ||
+            scope.HasFlag(SyncScope.Shaders) && config.Config.SyncShaderPacks && !repositories.Contains("shaderpacks")) throw new IOException("The manifest does not cover all selected categories.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in manifest.Files)
         {
@@ -112,9 +118,9 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
             for (int slash = path.LastIndexOf('/'); slash > 0; slash = path.LastIndexOf('/', slash - 1))
                 if (names.Contains(path[..slash])) throw new IOException("Manifest contains conflicting file paths.");
         var packs = manifest.Files.Where(f => f.Category == "resourcepacks").Select(f => f.Path.Split('/')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (manifest.ResourcePackOrder != null && (manifest.ResourcePackOrder.Distinct(StringComparer.OrdinalIgnoreCase).Count() != manifest.ResourcePackOrder.Count ||
+        if ((Enabled("resourcepacks", scope) || scope == SyncScope.ResourcePackOrder) && manifest.ResourcePackOrder != null && (manifest.ResourcePackOrder.Distinct(StringComparer.OrdinalIgnoreCase).Count() != manifest.ResourcePackOrder.Count ||
             manifest.ResourcePackOrder.Any(p => !packs.Contains(PackSyncService.ValidatePackName(p))))) throw new IOException("Published resource pack order names missing or duplicate packs.");
-        if (manifest.ActiveShader != null && !manifest.Files.Any(f => f.Category == "shaderpacks" && f.Path == PackSyncService.ValidatePackName(manifest.ActiveShader))) throw new IOException("Published active shader is missing.");
+        if (Enabled("shaderpacks", scope) && manifest.ActiveShader != null && !manifest.Files.Any(f => f.Category == "shaderpacks" && f.Path == PackSyncService.ValidatePackName(manifest.ActiveShader))) throw new IOException("Published active shader is missing.");
         if (JsonSerializer.SerializeToUtf8Bytes(manifest, Json).Length > 4 * 1024 * 1024) throw new IOException("Pack manifest exceeds the size limit.");
     }
     public static void SafeRelative(string path)
@@ -150,7 +156,7 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
         file.FabricId != null && ignores.GetEffectivePatterns().Contains("fabric-id:" + file.FabricId, StringComparer.Ordinal));
     public ManifestReview Plan(PackManifest manifest, SyncScope scope = SyncScope.All, bool full = false, CancellationToken cancellation = default)
     {
-        Validate(manifest);
+        Validate(manifest, scope);
         var state = State; var summary = new SyncSummary();
         var cache = new LocalFingerprintCache(Path.Combine(Data, "fingerprints", config.InstanceStorageKey + ".json"));
         foreach (var file in manifest.Files.Where(f => Enabled(f.Category, scope)))
@@ -256,20 +262,30 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
         if (review.Configuration != JsonSerializer.Serialize(config.Config) || ModSyncService.PlanFingerprint(review.Summary) != ModSyncService.PlanFingerprint(Plan(review.Manifest, review.Scope, full: true).Summary))
             throw new IOException("Files or settings changed since review. Check again before applying.");
         Directory.CreateDirectory(Path.GetDirectoryName(Journal)!);
-        File.WriteAllText(Journal, JsonSerializer.Serialize(review, Json));
+        File.WriteAllText(Journal, JsonSerializer.Serialize(review with { Scope = review.Scope | PendingScope }, Json));
         // Retain ownership for newly added files even if a later operation fails.
-        var state = State; state.Version = null; state.ManifestHash = null;
+        var state = State; state.Version = null; state.ManifestHash = null; state.VerifiedScope = SyncScope.None;
         state.Managed = state.Managed.Concat(review.Manifest.Files.Where(f => Enabled(f.Category, review.Scope))).GroupBy(f => f.Category + "/" + f.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.Last()).ToList();
         SaveState(state);
     }
-    public void MarkVerified(PackManifest manifest)
+    public SyncSummary MarkVerified(PackManifest manifest, SyncScope scope = SyncScope.All)
     {
-        var review = Plan(manifest, SyncScope.All, full: true);
-        if (review.Summary.HasChanges) throw new IOException("The complete enabled modpack is not yet synchronized.");
+        var review = Plan(manifest, scope, full: true);
+        if (review.Summary.HasChanges) throw new IOException("The selected content is not yet synchronized.");
         var state = State;
+        state.VerifiedScope = (state.ManifestHash == Digest(manifest) ? state.VerifiedScope : SyncScope.None) | scope;
         state.Version = manifest.Version; state.ManifestHash = Digest(manifest); state.Policy = Policy;
-        state.Managed = state.Managed.Where(f => !Enabled(f.Category, SyncScope.All)).Concat(manifest.Files.Where(f => Enabled(f.Category, SyncScope.All))).ToList();
-        SaveState(state); if (File.Exists(Journal)) File.Delete(Journal);
+        state.Managed = state.Managed.Where(f => !Enabled(f.Category, scope)).Concat(manifest.Files.Where(f => Enabled(f.Category, scope))).ToList();
+        SaveState(state);
+        if (File.Exists(Journal))
+        {
+            var pending = JsonSerializer.Deserialize<ManifestReview>(File.ReadAllText(Journal), Json) ?? throw new IOException("Pending update is unreadable.");
+            var remaining = pending.Scope & ~scope;
+            if (scope.HasFlag(SyncScope.ResourcePacks)) remaining &= ~SyncScope.ResourcePackOrder;
+            if (remaining == SyncScope.None) File.Delete(Journal);
+            else File.WriteAllText(Journal, JsonSerializer.Serialize(pending with { Scope = remaining }, Json));
+        }
+        return review.Summary;
     }
     private void SaveState(InstalledPackState state)
     {

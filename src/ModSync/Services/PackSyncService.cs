@@ -99,7 +99,9 @@ public class PackSyncService
         builtins.Insert(0, "vanilla");
         var personal = current.Where(x => x.StartsWith("file/", StringComparison.Ordinal) &&
             !repo.Contains(x[5..]) && !previous.Contains(x[5..]));
-        var packs = builtins.Concat(highestFirst.Reverse().Select(x => "file/" + x)).Concat(personal).Distinct();
+        var packs = builtins.Concat(highestFirst.Reverse().Select(x => "file/" + x)).Concat(personal).Distinct().ToList();
+        // Minecraft uses different JSON escaping/spacing. Equal selections need no rewrite.
+        if (match.Success && current.SequenceEqual(packs, StringComparer.Ordinal)) return options;
         return ReplaceSetting(options, "resourcePacks", JsonSerializer.Serialize(packs), ':');
     }
 

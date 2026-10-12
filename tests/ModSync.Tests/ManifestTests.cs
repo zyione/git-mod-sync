@@ -170,6 +170,70 @@ public class ManifestTests
         manifest.ResourcePackOrder = ["missing.zip"]; Assert.ThrowsException<IOException>(() => service.Validate(manifest));
     }
 
+    [TestMethod] public void ModsCanBeVerifiedWithOptionalContentMissingOrDifferentRepositories()
+    {
+        config.Config.SyncResourcePacks = config.Config.SyncShaderPacks = true;
+        Local("shared.jar", "remote");
+        var service = Service(); var manifest = Manifest();
+        manifest.Repositories.Add(new("resourcepacks", "https://github.com/other/packs", "main", Commit));
+        manifest.Repositories.Add(new("shaderpacks", "https://github.com/other/shaders", "main", Commit));
+        manifest.Files.Add(new("resourcepacks", "pack.zip", "pack.zip", 3, Hash("zip")));
+        manifest.Files.Add(new("shaderpacks", "shader.zip", "shader.zip", 3, Hash("zip")));
+        manifest.ResourcePackOrder = ["pack.zip"]; manifest.ActiveShader = "shader.zip";
+        var review = service.Plan(manifest, SyncScope.Mods, full: true);
+        Assert.IsTrue(LaunchReadiness.IsReady(review.Summary, false, null));
+        service.MarkVerified(manifest, SyncScope.Mods);
+        Assert.AreEqual(SyncScope.Mods, service.State.VerifiedScope);
+        Assert.IsTrue(service.State.Managed.All(f => f.Category == "mods"));
+        Assert.IsFalse(File.Exists(Path.Combine(config.MinecraftFolder, "options.txt")));
+        Assert.ThrowsException<IOException>(() => service.Plan(manifest));
+        manifest.ResourcePackOrder = ["missing.zip"]; manifest.ActiveShader = "missing.zip";
+        Assert.IsFalse(service.Plan(manifest, SyncScope.Mods).Summary.HasChanges, "Optional declarations cannot block a mod check.");
+        manifest.Repositories.RemoveAll(r => r.Category != "mods");
+        manifest.Files.RemoveAll(f => f.Category != "mods"); manifest.ResourcePackOrder = null; manifest.ActiveShader = null;
+        Assert.IsFalse(service.Plan(manifest, SyncScope.Mods).Summary.HasChanges);
+    }
+
+    [TestMethod] public void ScopedVerificationKeepsOptionalRecoveryAndManagedOwnership()
+    {
+        config.Config.SyncResourcePacks = true;
+        Local("shared.jar", "remote");
+        var service = Service(); var manifest = Manifest(); var repo = service.RepositoryFor("resourcepacks");
+        manifest.Repositories.Add(new("resourcepacks", repo.Url, repo.Branch, Commit));
+        manifest.Files.Add(new("resourcepacks", "pack.zip", "pack.zip", 3, Hash("zip")));
+        service.BeginApply(service.Plan(manifest));
+        service.MarkVerified(manifest, SyncScope.Mods);
+        Assert.AreEqual(SyncScope.ResourcePacks | SyncScope.Shaders, service.PendingScope);
+        service.BeginApply(service.Plan(manifest, SyncScope.Mods));
+        service.MarkVerified(manifest, SyncScope.Mods);
+        Assert.AreEqual(SyncScope.ResourcePacks | SyncScope.Shaders, service.PendingScope, "A new mod update retains optional recovery.");
+        Assert.IsTrue(service.State.Managed.Any(f => f.Category == "resourcepacks"));
+        Assert.ThrowsException<IOException>(() => service.MarkVerified(manifest, SyncScope.ResourcePacks));
+        Directory.CreateDirectory(config.ResolvedResourcePacksFolder);
+        File.WriteAllText(Path.Combine(config.ResolvedResourcePacksFolder, "pack.zip"), "zip");
+        service.MarkVerified(manifest, SyncScope.ResourcePacks | SyncScope.Shaders);
+        Assert.IsFalse(service.HasPendingUpdate);
+        Assert.AreEqual(SyncScope.All, service.State.VerifiedScope);
+    }
+
+    [TestMethod] public void MatchingPackOrderDoesNotPlanOptionsRewriteOrPreventVerification()
+    {
+        config.Config.SyncResourcePacks = true;
+        Local("shared.jar", "remote");
+        var service = Service(); var manifest = Manifest(); var repo = service.RepositoryFor("resourcepacks");
+        manifest.Repositories.Add(new("resourcepacks", repo.Url, repo.Branch, Commit));
+        manifest.Files.Add(new("resourcepacks", "FA+Player.zip", "FA+Player.zip", 3, Hash("zip")));
+        manifest.ResourcePackOrder = ["FA+Player.zip"];
+        Directory.CreateDirectory(config.ResolvedResourcePacksFolder);
+        File.WriteAllText(Path.Combine(config.ResolvedResourcePacksFolder, "FA+Player.zip"), "zip");
+        const string options = "music:0.5\nresourcePacks:[\"vanilla\", \"fabric\", \"file/FA+Player.zip\"]\n";
+        string path = Path.Combine(config.MinecraftFolder, "options.txt"); File.WriteAllText(path, options);
+        Assert.IsFalse(service.Plan(manifest).Summary.HasChanges);
+        Assert.IsFalse(service.MarkVerified(manifest).HasChanges, "Completion uses the fresh verified summary.");
+        Assert.IsFalse(service.Plan(manifest, full: true).Summary.HasChanges);
+        Assert.AreEqual(options, File.ReadAllText(path));
+    }
+
     private sealed class PublisherGit : IGitService
     {
         public int Pushes; public string[]? Committed; public bool Ahead;

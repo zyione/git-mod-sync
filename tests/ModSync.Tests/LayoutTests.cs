@@ -216,7 +216,7 @@ public class LayoutTests
                     typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.All, changes });
                     Assert.AreEqual("1 change to review", ((TextBlock)window.FindName("ResourceStateText")).Text);
                     Assert.AreEqual("Review changes", ((Button)window.FindName("SyncResourcesButton")).Content);
-                    Assert.AreEqual(Visibility.Visible, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("SyncModsButton")).Visibility, "Optional packs do not require a modpack update.");
                     root.UpdateLayout();
                     SavePreview(root, dark ? "ui-changes-dark.png" : "ui-changes-light.png");
                     typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.All, new ModSync.Models.SyncSummary() });
@@ -226,7 +226,7 @@ public class LayoutTests
                     var fabricCurrent = new ModSync.Models.FabricStatusInfo { IsConfigured = true, IsMinecraftFound = true, IsUpToDate = true, MinecraftVersion = "1.20.1", InstalledLoaderVersion = "0.19.5", TargetLoaderVersion = "0.19.5" };
                     typeof(MainWindow).GetField("_currentFabricStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(window, fabricCurrent);
                     typeof(MainWindow).GetMethod("ApplyFabricStatusToUI", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { fabricCurrent });
-                    Assert.AreEqual("Everything is up to date", ((TextBlock)window.FindName("OverallStatusText")).Text);
+                    Assert.AreEqual("Mods are up to date", ((TextBlock)window.FindName("OverallStatusText")).Text);
                     Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)window.FindName("FabricVersionComparison")).Visibility);
                     root.UpdateLayout();
                     SavePreview(root, dark ? "ui-synced-dark.png" : "ui-synced-light.png");
@@ -234,7 +234,8 @@ public class LayoutTests
                     metadata.Changes.Add(new ModSync.Models.ModChange { Type = ModSync.Models.ChangeType.Updated, IsInternal = true, RelativePath = ".modsync-managed-packs.json" });
                     typeof(MainWindow).GetMethod("SetCheckedStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { ModSync.Models.SyncScope.ResourcePacks, metadata });
                     Assert.AreEqual("Review metadata updates", ((TextBlock)window.FindName("ResourceStateText")).Text);
-                    Assert.AreEqual(Visibility.Visible, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    Assert.AreEqual(Visibility.Collapsed, ((Button)window.FindName("SyncModsButton")).Visibility);
+                    Assert.AreEqual("Mods are up to date", ((TextBlock)window.FindName("OverallStatusText")).Text);
                     config.Config.SyncResourcePacks = false;
                     typeof(MainWindow).GetMethod("RenderCategoryStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     Assert.IsFalse(((MenuItem)window.FindName("PushResourcesButton")).IsEnabled);

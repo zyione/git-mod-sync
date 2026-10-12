@@ -101,6 +101,21 @@ public class PackSyncTests
     }
 
     [TestMethod]
+    public void EquivalentMinecraftJsonDoesNotRequestOptionsSync()
+    {
+        const string options = "fov:90\r\nresourcePacks:[\"vanilla\", \"fabric\", \"file/FA+Player.zip\", \"file/Tom's Pack.zip\", \"file/Personal.zip\"]\r\n";
+        var order = new[] { "Tom's Pack.zip", "FA+Player.zip" };
+        Assert.AreEqual(options, PackSyncService.ApplyPackOrder(options, order, order));
+        var escaped = options.Replace("+", "\\u002b").Replace("'", "\\u0027");
+        Assert.AreEqual(escaped, PackSyncService.ApplyPackOrder(escaped, order, order));
+        var reversed = PackSyncService.ApplyPackOrder(options, order.Reverse().ToArray(), order);
+        Assert.AreNotEqual(options, reversed);
+        Assert.AreEqual(reversed, PackSyncService.ApplyPackOrder(reversed, order.Reverse().ToArray(), order));
+        StringAssert.Contains(reversed, "fov:90\r\n");
+        StringAssert.Contains(reversed, "file/Personal.zip");
+    }
+
+    [TestMethod]
     public async Task CombinedSyncCopiesAllAssetsAndAppliesSettingsEvenWithoutModChanges()
     {
         Write(Path.Combine(Repo, "mods", "Test.jar"), "mod");

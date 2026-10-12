@@ -26,6 +26,8 @@ public partial class MainWindow
         {
             string? installed = ManifestService.State.Version;
             PackVersionText.Text = installed == null ? "Pack version not verified" : "Pack " + installed + " · last verified";
+            if (installed != null && ManifestService.State.VerifiedScope != SyncScope.All)
+                PackVersionText.Text += ManifestService.State.VerifiedScope == SyncScope.Mods ? " · mods only" : " · selected content only";
             if (available != null && available != installed) PackVersionText.Text += " → " + available + " available";
             PackVersionText.ToolTip = "Version of enabled shared content. Personal exclusions are preserved. Use Full verification to check every file.";
         }
@@ -43,7 +45,7 @@ public partial class MainWindow
         status.VersionSource = "Published pack " + manifest.Version;
         return status;
     }
-    private async void CheckStatus_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.All);
+    private async void CheckStatus_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.Mods);
     private async void FullVerification_Click(object sender, RoutedEventArgs e) => await BeginSyncAsync(SyncScope.All, full: true);
 
     private async Task BeginSyncAsync(SyncScope scope, bool reviewChanges = true, bool full = false)
@@ -56,7 +58,7 @@ public partial class MainWindow
         try
         {
             var service = ManifestService;
-            var manifest = await service.FetchAsync(cancellation);
+            var manifest = await service.FetchAsync(cancellation, scope);
             _currentFabricStatus = ManifestFabric(manifest); ApplyFabricStatusToUI(_currentFabricStatus);
             var review = await Task.Run(() => service.Plan(manifest, scope, full || service.HasPendingUpdate || File.Exists(PendingUpdatePath), cancellation));
             cancellation.ThrowIfCancellationRequested();
@@ -67,15 +69,19 @@ public partial class MainWindow
             bool loader = scope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader && !_currentFabricStatus.IsUpToDate;
             if (!review.Summary.HasChanges && !loader)
             {
-                if (scope == SyncScope.All && (!_configService.Config.SyncFabricLoader || _currentFabricStatus.IsUpToDate))
+                if (!scope.HasFlag(SyncScope.Mods) || !_configService.Config.SyncFabricLoader || _currentFabricStatus.IsUpToDate)
                 {
                     // The initial baseline/full verification is required once; ordinary launches reuse valid metadata.
-                    if (service.State.ManifestHash != PackManifestService.Digest(manifest) || service.HasPendingUpdate || full)
-                        await Task.Run(() => service.MarkVerified(manifest));
+                    if (service.State.ManifestHash != PackManifestService.Digest(manifest) || !service.State.VerifiedScope.HasFlag(scope) || service.HasPendingUpdate || full)
+                        await Task.Run(() => service.MarkVerified(manifest, scope));
                     RefreshPackVersion();
                 }
                 ShowSyncCompletion(review.Summary); SetBusy(false);
-                if (_launchDecision != null) await HandleLaunchCheckAsync(review.Summary);
+                if (_launchDecision != null)
+                {
+                    if (scope.HasFlag(SyncScope.Mods)) await HandleLaunchCheckAsync(review.Summary);
+                    else await BeginSyncAsync(SyncScope.Mods);
+                }
                 return;
             }
             string previous = service.State.Version ?? "unverified";
@@ -118,7 +124,7 @@ public partial class MainWindow
             PackCancelButton.Visibility = Visibility.Collapsed;
             SetBusy(true, "Verifying and applying approved files…");
             await Task.Run(() => service.BeginApply(review));
-            Directory.CreateDirectory(Path.GetDirectoryName(PendingUpdatePath)!); File.WriteAllText(PendingUpdatePath, "Pack update needs verification."); _updateFailed = true;
+            Directory.CreateDirectory(Path.GetDirectoryName(PendingUpdatePath)!); File.WriteAllText(PendingUpdatePath, "Pack update needs verification."); _updateFailed = service.PendingScope.HasFlag(SyncScope.Mods);
             var result = await Task.Run(() => _syncService.ApplyManifestFilesAsync(review.Summary, UpdateProgress));
             if (!result.Success) throw new IOException(result.Error);
             if (loader)
@@ -128,23 +134,29 @@ public partial class MainWindow
                 if (!installed.Success) throw new IOException(installed.Error);
             }
             ShowSyncCompletion(review.Summary);
-            await VerifyManifestAndOfferCloseAsync(review.Manifest);
+            await VerifyManifestAndOfferCloseAsync(review.Manifest, review.Scope);
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested && !_packApplying) { ShowFeedback("Download cancelled. Installed files were not changed.", false); CompleteLaunch(false); }
         catch (Exception ex) { SetCategoryState(review.Scope, "Failed"); ShowFeedback("Update stopped: " + ex.Message + "\nRetry the check. Completed downloads and backups are retained.", true); }
         finally { _packApplying = false; if (ReferenceEquals(_packCancellation, operation)) _packCancellation = null; operation.Dispose(); SetBusy(false); RefreshPackVersion(); await RefreshLocalModCountAsync(false); }
     }
-    private async Task VerifyManifestAndOfferCloseAsync(PackManifest manifest)
+    private async Task VerifyManifestAndOfferCloseAsync(PackManifest manifest, SyncScope scope = SyncScope.All)
     {
         _currentFabricStatus = ManifestFabric(manifest); ApplyFabricStatusToUI(_currentFabricStatus);
-        if (_configService.Config.SyncFabricLoader && !_currentFabricStatus.IsUpToDate) throw new IOException("Fabric Loader still needs attention.");
-        await Task.Run(() => ManifestService.MarkVerified(manifest));
-        _updateFailed = false; if (File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
+        if (scope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader && !_currentFabricStatus.IsUpToDate) throw new IOException("Fabric Loader still needs attention.");
+        var verified = await Task.Run(() => ManifestService.MarkVerified(manifest, scope));
+        _reviewedSync = verified;
+        if (_manifestReview != null) _manifestReview = _manifestReview with { Summary = verified };
+        SetCheckedStates(scope, verified);
+        _updateFailed = ManifestService.PendingScope.HasFlag(SyncScope.Mods);
+        if (!ManifestService.HasPendingUpdate && File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
         _configService.Config.PersonalModsAcknowledged[_configService.InstanceStorageKey] = LocalModNames();
         if (!_configService.Save()) throw new IOException("Could not save the exclusion reminder state.");
         RefreshPackVersion(); SetBusy(false);
         bool launching = _launchDecision != null;
-        int choice = await ChooseAsync("Pack " + manifest.Version + " is synchronized", "Enabled content has been verified. Excluded personal mods were preserved. " +
+        if (launching && !scope.HasFlag(SyncScope.Mods)) { await BeginSyncAsync(SyncScope.Mods); return; }
+        string content = scope == SyncScope.All ? "Enabled content" : scope == SyncScope.Mods ? "Mods" : scope == SyncScope.ResourcePacks ? "Resource packs" : scope == SyncScope.Shaders ? "Shaders" : "Resource pack order";
+        int choice = await ChooseAsync(content + " synchronized · Pack " + manifest.Version, content + " has been verified. Excluded personal mods were preserved. " +
             (launching ? "Continue to Minecraft and close ModSync?" : "Would you like to close ModSync?"),
             launching ? "Play & close ModSync" : "Close ModSync", launching ? "Play & keep ModSync open" : "Keep ModSync open");
         if (choice < 0) return;

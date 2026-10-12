@@ -16,12 +16,12 @@ The manifest records exact commits from the mods, resource-pack, and shader repo
 
 ## Checking and installing
 
-- **Check Now / UltimMC launch:** download only the small manifest, then compare installed files. No JARs, ZIPs, or Git history are downloaded while checking.
+- **Check Now / UltimMC launch:** download only the small manifest, then compare installed mods and the configured Fabric Loader version. Resource packs, shaders, and pack order are optional; check them separately or choose Sync All / Full verification. No JARs, ZIPs, or Git history are downloaded while checking.
 - **First check:** calculate local checksums. Later checks reuse a saved checksum only when the filename, file size, modification time, and expected checksum all match.
 - **Changed expectation:** a new checksum in the published manifest forces a fresh local checksum, even if the filename and local metadata are unchanged.
 - **Review:** show the installed and available versions, additions/replacements/removals, exclusions, and estimated download size.
 - **Approval:** download only required files at the pinned commits. Reuse checksum-verified files in `ModSync/content`. Public files use GitHub's raw endpoint; authenticated repositories use its contents API.
-- **Verification:** verify size and SHA-256 before installation. Recheck the approved local snapshot, back up replaced/removed files, and apply changes. Full enabled-content verification and loader checks must pass before recording the version as installed.
+- **Verification:** verify size and SHA-256 before installation. Recheck the approved local snapshot, back up replaced/removed files, and apply changes. Verify the selected categories after applying, plus the loader when updating mods. The dashboard identifies versions verified for mods or selected content only; optional differences do not block completion.
 - **Completion:** ask whether to close ModSync; during pre-launch, both completion choices continue Minecraft.
 
 The manifest is capped at 4 MiB and 20,000 files. This version supports ordinary GitHub files up to 100 MiB each; Git LFS assets and external download hosts are not supported. Publishing such content requires a different distribution backend.

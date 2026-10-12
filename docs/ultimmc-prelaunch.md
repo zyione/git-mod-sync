@@ -10,6 +10,8 @@
 
 Setup is per instance and per player's computer. A healthy installation continues automatically. Updates are previewed before changing Minecraft files. The app still requests administrator access; rejecting Windows' UAC prompt cancels launch.
 
+Launch checks require only synchronized mods and the configured Fabric Loader version. Resource packs, shaders, and resource-pack order are optional and can be checked or synced separately from the dashboard. Sync All and Full verification still cover all enabled categories.
+
 **Manage** disables the check and restores previous command settings. **Repair** restores missing or outdated generated scripts. Close UltimMC before either action, because an open launcher can overwrite external configuration changes. If someone edited the command outside ModSync, the app refuses to discard that edit; review it in UltimMC or use the saved `instance.cfg.backup`.
 
 Existing effective pre-launch commands run first with the launcher environment; failure cancels launch. Existing wrapper and post-exit commands are preserved. Enabling instance command overrides copies inherited commands into the instance, so later global changes do not propagate until the check is disabled/re-enabled. Existing manual ModSync hooks must be removed before automatic setup to prevent recursion. Unknown settings are retained, including later edits.
@@ -36,7 +38,7 @@ After the first verification, local checksums are reused only when the file path
 - Updates: review additions, replacements, removals, and exclusions before applying.
 - Offline or failed check: **Retry**, **Play anyway**, or **Cancel launch**. An unavailable check is never shown as synchronized.
 - Updated and verified: choose whether to close ModSync or keep it open while Minecraft continues.
-- Incomplete update: Play anyway is blocked until a full check verifies recovery. Completed changes can remain after a later failure; backups are retained.
+- Incomplete mod update: Play anyway is blocked until a full mod check verifies recovery. Optional pack or shader recovery remains available separately and does not block launch. Completed changes can remain after a later failure; backups are retained.
 - Fabric update: cancel launch, close UltimMC, apply in ModSync, and reopen the launcher to reload its metadata.
 - Duplicate launch or update in progress: the extra request is cancelled. Retry once the current operation finishes.
 - Known different instance: ModSync loads that instance's saved settings. Unknown instances require one-time selection and review before retrying.

@@ -75,7 +75,8 @@ public partial class MainWindow
                 if (!_isBusy) CloseModal();
             }));
         });
-        _updateFailed = File.Exists(PendingUpdatePath) || ManifestService.HasPendingUpdate;
+        _updateFailed = ManifestService.PendingScope.HasFlag(SyncScope.Mods) ||
+            !ManifestService.HasPendingUpdate && File.Exists(PendingUpdatePath);
         LaunchBanner.Visibility = Visibility.Visible;
         WindowState = WindowState.Normal;
         Activate();
@@ -108,7 +109,7 @@ public partial class MainWindow
             _configService.Config.PersonalModsAcknowledged[key] = mods;
             if (!_configService.Save()) { ShowFeedback("Could not remember your choice. Check folder access and try again.", true); return; }
         }
-        if (_launchDecision != null) await BeginSyncAsync(SyncScope.All);
+        if (_launchDecision != null) await BeginSyncAsync(SyncScope.Mods);
     }
 
     private Task<int> ChooseAsync(string title, string body, string first, string second, string? third = null)
@@ -139,7 +140,7 @@ public partial class MainWindow
         if (LaunchReadiness.IsReady(summary, _configService.Config.SyncFabricLoader, _currentFabricStatus))
         {
             _updateFailed = false;
-            if (File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
+            if (!ManifestService.HasPendingUpdate && File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
             CompleteLaunch(true); // Healthy launches need no extra confirmation.
         }
         else await LaunchIssueAsync("Content checked; Fabric Loader needs attention. Review the loader settings, or explicitly choose Play anyway.");
@@ -149,7 +150,7 @@ public partial class MainWindow
     {
         int result = await ChooseAsync("Minecraft is waiting", message,
             "Check again", _updateFailed ? "Stay in ModSync" : "Play anyway", "Cancel launch");
-        if (result == 0) await BeginSyncAsync(SyncScope.All);
+        if (result == 0) await BeginSyncAsync(SyncScope.Mods);
         else if (result == 1 && !_updateFailed) CompleteLaunch(true);
         else if (result == 2 || result < 0) CompleteLaunch(false);
     }

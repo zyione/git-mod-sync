@@ -54,17 +54,15 @@ public partial class MainWindow
     private void RenderDashboardActions()
     {
         var enabled = new List<SyncScope> { SyncScope.Mods };
-        if (_configService.Config.SyncResourcePacks) enabled.Add(SyncScope.ResourcePacks);
-        if (_configService.Config.SyncShaderPacks) enabled.Add(SyncScope.Shaders);
         var states = enabled.Select(s => _categoryStates.GetValueOrDefault(s, "Not checked")).ToArray();
         bool changed = states.Any(s => s.Contains("change", StringComparison.OrdinalIgnoreCase) || s.Contains("review", StringComparison.OrdinalIgnoreCase));
         bool failed = states.Any(s => s == "Failed");
         bool current = states.All(s => s.StartsWith("Up to date"));
         bool fabricNeedsUpdate = _configService.Config.SyncFabricLoader && _currentFabricStatus is { IsConfigured: true, IsUpToDate: false };
         bool fabricUnknown = _configService.Config.SyncFabricLoader && _currentFabricStatus is not { IsConfigured: true };
-        OverallStatusText.Text = _isBusy ? "Working on your modpack…" : failed ? "Some checks need attention" : changed ? "Changes need review" : fabricNeedsUpdate ? "Fabric Loader needs attention" : current ? (fabricUnknown ? "Content up to date · loader not checked" : "Everything is up to date") : "Check your modpack";
+        OverallStatusText.Text = _isBusy ? "Working on your modpack…" : failed ? "Mod check needs attention" : changed ? "Mod changes need review" : fabricNeedsUpdate ? "Fabric Loader needs attention" : current ? (fabricUnknown ? "Mods up to date · loader not checked" : "Mods are up to date") : "Check your mods";
         StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, failed ? "ErrorBrush" : changed || fabricNeedsUpdate ? "WarningBrush" : current && !fabricUnknown ? "SuccessBrush" : "SecondaryTextBrush");
-        LastCheckedText.Text = _lastChecked.HasValue ? $"Last content check at {_lastChecked.Value:t} · check again after playing" : "Check for differences with your repositories";
+        LastCheckedText.Text = _lastChecked.HasValue ? $"Last content check at {_lastChecked.Value:t} · packs and shaders are optional" : "Check mods · packs and shaders are optional";
         DashboardCheckButton.Content = _lastChecked.HasValue ? "Check Again" : "Check Now";
         DashboardCheckButton.IsEnabled = !_isBusy;
         SyncModsButton.Visibility = changed || fabricNeedsUpdate ? Visibility.Visible : Visibility.Collapsed;
