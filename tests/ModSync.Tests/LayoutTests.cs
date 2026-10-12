@@ -301,6 +301,39 @@ public class LayoutTests
                 typeof(MainWindow).GetMethod("ShowSyncCompletion", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object?[] { completed, null, false });
                 root.Measure(new Size(580, 760)); root.Arrange(new Rect(0, 0, 580, 760)); root.UpdateLayout();
                 SavePreview(root, "ui-completion-dark.png");
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var appUpdate = new ModSync.Models.UpdateInfo { IsUpdateAvailable = true, CurrentVersion = "1.7.4", LatestVersion = "1.7.5", ReleaseTitle = "ModSync v1.7.5", ReleaseNotes = "App updates take priority over content checks." };
+                var priority = new ModSync.Services.AppUpdatePriority(_ => Task.FromResult(appUpdate));
+                priority.CheckAsync().GetAwaiter().GetResult();
+                typeof(MainWindow).GetField("_appUpdatePriority", flags)!.SetValue(window, priority);
+                foreach (var scope in new[] { ModSync.Models.SyncScope.All, ModSync.Models.SyncScope.Mods, ModSync.Models.SyncScope.ResourcePacks, ModSync.Models.SyncScope.Shaders, ModSync.Models.SyncScope.ResourcePackOrder })
+                {
+                    foreach (var method in new[] { "BeginSyncAsync", "PreviewPushAsync" })
+                    {
+                        typeof(MainWindow).GetMethod("CloseModal", flags)!.Invoke(window, null);
+                        var arguments = method == "BeginSyncAsync" ? new object[] { scope, true, false } : new object[] { scope };
+                        var task = (Task)typeof(MainWindow).GetMethod(method, flags)!.Invoke(window, arguments)!;
+                        Assert.IsTrue(task.IsCompleted, "A known app update must stop content before repository work starts.");
+                        task.GetAwaiter().GetResult();
+                        Assert.AreEqual(Visibility.Visible, ((FrameworkElement)window.FindName("UpdateSheet")).Visibility, method + " must reopen the app update after dismissal.");
+                        Assert.IsFalse((bool)typeof(MainWindow).GetField("_isBusy", flags)!.GetValue(window)!, "The app updater must remain available.");
+                    }
+                }
+                foreach (var method in new[] { "ConfirmCleanReinstall_Click", "ConfirmPush_Click", "PublishPack_Click" })
+                {
+                    typeof(MainWindow).GetMethod("CloseModal", flags)!.Invoke(window, null);
+                    typeof(MainWindow).GetMethod(method, flags)!.Invoke(window, new object[] { window, new RoutedEventArgs() });
+                    Assert.AreEqual(Visibility.Visible, ((FrameworkElement)window.FindName("UpdateSheet")).Visibility, method + " must stop for the app update.");
+                }
+                foreach (bool dark in new[] { false, true })
+                {
+                    ThemeManager.ApplyTheme(dark);
+                    root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
+                    var updateSheet = (FrameworkElement)window.FindName("UpdateSheet");
+                    var updateCard = (FrameworkElement)VisualTreeHelper.GetParent(updateSheet.Parent);
+                    Assert.IsTrue(updateCard.ActualHeight >= updateSheet.ActualHeight, "App update priority prompt must fit the modal.");
+                    SavePreview(root, dark ? "ui-app-update-priority-dark.png" : "ui-app-update-priority-light.png");
+                }
                 window.Close();
                 app.Shutdown();
             }

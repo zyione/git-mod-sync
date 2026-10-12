@@ -642,11 +642,11 @@
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                                    <TextBlock Text="Check for App Updates"
+                                                    <TextBlock Text="Check for App Updates on Startup"
                                                                FontSize="13"
                                                                FontWeight="Medium"
                                                                Foreground="{DynamicResource PrimaryTextBrush}" />
-                                                    <TextBlock Text="Automatically check for new ModSync.exe versions on launch"
+                                                    <TextBlock Text="Content actions always check ModSync first."
                                                                FontSize="11"
                                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                                Margin="0,2,0,0" />
@@ -1081,6 +1081,11 @@
                                        FontSize="12"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Margin="0,0,0,12" />
+                            <TextBlock Text="Update ModSync first. Checks and updates for the modpack, mods, resource packs, shaders, and Fabric are paused until ModSync restarts with this update."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,12" />
 
                             <Border Background="{DynamicResource InputBackgroundBrush}"
                                     CornerRadius="10"
@@ -1131,7 +1136,7 @@
                                         Click="OpenReleaseWeb_Click" />
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="Later"
+                                    <Button Content="Close"
                                             Style="{StaticResource SecondaryButtonStyle}"
                                             Width="80"
                                             Margin="0,0,10,0"

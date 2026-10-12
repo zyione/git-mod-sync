@@ -24,6 +24,8 @@ public partial class MainWindow : Window
     private readonly MinecraftCheckService _mcCheckService;
     private readonly ModIgnoreService _ignoreService;
     private readonly UpdateService _updateService;
+    private readonly AppUpdatePriority _appUpdatePriority;
+    private bool _startupUpdateCheckCompleted;
     private readonly ModSyncService _syncService;
     private readonly FabricService _fabricService;
 
@@ -53,6 +55,7 @@ public partial class MainWindow : Window
         _mcCheckService = new MinecraftCheckService(_logger);
         _ignoreService = new ModIgnoreService(_configService, _logger);
         _updateService = new UpdateService(_configService, _authService, _logger);
+        _appUpdatePriority = new AppUpdatePriority(force => _updateService.CheckForUpdatesAsync(force));
         _syncService = new ModSyncService(_configService, _gitService, _authService, _mcCheckService, _ignoreService, _logger);
         _fabricService = new FabricService(_configService, _logger, _authService);
 
@@ -62,7 +65,7 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
         {
-            if (!_isBusy && _configService.Config.InstanceSelectionCompleted)
+            if (!_isBusy && _startupUpdateCheckCompleted && _appUpdatePriority.AvailableUpdate == null && _configService.Config.InstanceSelectionCompleted)
             {
                 await RefreshLocalModCountAsync(fetchRemote: false);
                 RefreshFabricStatusUI();
@@ -75,6 +78,9 @@ public partial class MainWindow : Window
     {
         UpdateStatusCard();
         RenderCategoryStates();
+        bool canContinue = !_configService.Config.AutoCheckUpdates || await CheckApplicationFirstAsync(force: true);
+        _startupUpdateCheckCompleted = true;
+        if (!canContinue) { _dashboardReady.TrySetResult(); return; }
         if (!EnsureInstanceSelected()) return;
 
         await StartDashboardAsync();
@@ -84,8 +90,8 @@ public partial class MainWindow : Window
     {
         if (_dashboardStarted) return;
         _dashboardStarted = true;
-        // Check for application updates when enabled
-        if (_configService.Config.AutoCheckUpdates) _ = CheckForUpdatesOnStartupAsync();
+        if ((_configService.Config.AutoCheckUpdates || _appUpdatePriority.AvailableUpdate != null) &&
+            !await CheckApplicationFirstAsync()) { _dashboardReady.TrySetResult(); return; }
 
         // Authentication is checked when opening account/settings actions; it must not delay Play.
         await RefreshLocalModCountAsync(fetchRemote: false);
@@ -263,6 +269,7 @@ public partial class MainWindow : Window
     private async Task PreviewPushAsync(SyncScope scope)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
+        if (!await CheckApplicationFirstAsync()) return;
         _activeScope = scope;
         _retryOperation = () => PreviewPushAsync(scope);
 
@@ -341,6 +348,7 @@ public partial class MainWindow : Window
     private async void ConfirmPush_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
+        if (!await CheckApplicationFirstAsync()) return;
         CloseModal();
         SetBusy(true, "Pushing selected updates to GitHub...");
 
@@ -596,6 +604,7 @@ public partial class MainWindow : Window
     private async void ConfirmCleanReinstall_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
+        if (!await CheckApplicationFirstAsync()) return;
         CloseModal();
         DismissFeedback();
         SetBusy(true, "Backing up and reinstalling the selected category…");
@@ -944,31 +953,44 @@ public partial class MainWindow : Window
 
     #region App Updates & Mod Exclusions
 
-    private async Task CheckForUpdatesOnStartupAsync()
+    private async Task<bool> CheckApplicationFirstAsync(bool force = false)
     {
+        if (_isBusy) return false;
+        if (!force && _appUpdatePriority.AvailableUpdate is { } known)
+        {
+            _latestUpdateInfo = known;
+            ShowUpdateSheet(known);
+            CompleteLaunch(false);
+            return false;
+        }
+        _checkingUpdates = true;
+        SetBusy(true, "Checking ModSync for updates…");
         try
         {
-            _logger.Info("Performing startup force check for updates...");
-            var info = await _updateService.CheckForUpdatesAsync(force: false);
-            if (info.IsUpdateAvailable)
+            var info = await _appUpdatePriority.CheckAsync(force);
+            if (_appUpdatePriority.AvailableUpdate is { } update)
             {
-                _latestUpdateInfo = info;
-                Dispatcher.Invoke(() =>
-                {
-                    UpdateBannerText.Text = $"ModSync v{info.LatestVersion} available!";
-                    UpdateBanner.Visibility = Visibility.Visible;
-
-                    // If no other modal is currently active, surface the update sheet so the user can update immediately
-                    if (ModalBackdrop.Visibility != Visibility.Visible)
-                    {
-                        ShowUpdateSheet(info);
-                    }
-                });
+                _latestUpdateInfo = update;
+                UpdateBannerText.Text = $"Update ModSync to v{update.LatestVersion} before checking or updating content.";
+                UpdateBanner.Visibility = Visibility.Visible;
+                ShowUpdateSheet(update);
+                CompleteLaunch(false);
+                return false;
             }
+            if (!string.IsNullOrEmpty(info.ErrorMessage))
+                ShowFeedback("Could not check ModSync for updates. Content checks can continue; try the app update check again when connected.", false);
+            else
+            {
+                _latestUpdateInfo = null;
+                UpdateBanner.Visibility = Visibility.Collapsed;
+            }
+            return true;
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.Warning($"Startup update check failed: {ex.Message}");
+            _checkingUpdates = false;
+            SetBusy(false);
+            CheckAppUpdatesButton.IsEnabled = true;
         }
     }
 
@@ -1000,18 +1022,22 @@ public partial class MainWindow : Window
         _activeScope = null;
         _retryOperation = () => { CheckForUpdates_Click(this, new RoutedEventArgs()); return Task.CompletedTask; };
         _checkingUpdates = true;
+        SetBusy(true, "Checking ModSync for updates…");
         FrontCheckUpdatesButton.IsEnabled = false;
         CheckAppUpdatesButton.IsEnabled = false;
         DismissFeedback();
 
         try
         {
-            var info = await _updateService.CheckForUpdatesAsync();
-            if (info.IsUpdateAvailable)
+            var info = await _appUpdatePriority.CheckAsync(force: true);
+            if (_appUpdatePriority.AvailableUpdate is { } update)
             {
-                _latestUpdateInfo = info;
+                _latestUpdateInfo = update;
+                UpdateBannerText.Text = $"Update ModSync to v{update.LatestVersion} before checking or updating content.";
+                UpdateBanner.Visibility = Visibility.Visible;
+                CompleteLaunch(false);
                 CloseModal();
-                ShowUpdateSheet(info);
+                ShowUpdateSheet(update);
             }
             else if (!string.IsNullOrEmpty(info.ErrorMessage))
             {
@@ -1019,12 +1045,15 @@ public partial class MainWindow : Window
             }
             else
             {
+                _latestUpdateInfo = null;
+                UpdateBanner.Visibility = Visibility.Collapsed;
                 ShowFeedback($"✓ ModSync is up to date (v{info.CurrentVersion}).", false);
             }
         }
         finally
         {
             _checkingUpdates = false;
+            SetBusy(false);
             FrontCheckUpdatesButton.IsEnabled = !_isBusy;
             CheckAppUpdatesButton.IsEnabled = true;
         }

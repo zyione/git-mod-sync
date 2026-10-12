@@ -51,6 +51,7 @@ public partial class MainWindow
     private async Task BeginSyncAsync(SyncScope scope, bool reviewChanges = true, bool full = false)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
+        if (!await CheckApplicationFirstAsync()) return;
         _activeScope = _syncScope = scope; _manifestReview = null;
         _retryOperation = () => BeginSyncAsync(scope, full: full);
         var operation = new CancellationTokenSource(); _packCancellation = operation; var cancellation = operation.Token; PackCancelButton.IsEnabled = true;
@@ -108,6 +109,7 @@ public partial class MainWindow
     private async Task PerformSyncAsync(bool skipConfirmation = false)
     {
         if (_isBusy || _manifestReview == null) return;
+        if (!await CheckApplicationFirstAsync()) return;
         var review = _manifestReview; var service = ManifestService;
         if (review.Configuration != JsonSerializer.Serialize(_configService.Config)) { ShowFeedback("Settings changed. Check again before updating.", true); return; }
         bool loader = review.Scope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader && _reviewedFabric is { IsConfigured: true, IsUpToDate: false };
@@ -165,6 +167,7 @@ public partial class MainWindow
     private async void PublishPack_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
+        if (!await CheckApplicationFirstAsync()) return;
         if (_launchDecision != null) { ShowFeedback("Cancel the pending launch before publishing a pack version.", false); return; }
         if (string.IsNullOrWhiteSpace(_authService.GetStoredToken())) { ShowLoginModal(); return; }
         int start = await ChooseAsync("Prepare a modpack version?", "This downloads authoring repositories to build a file list and checksums. Push your intended content changes first. Nothing is published until you review the version.", "Prepare version", "Cancel");

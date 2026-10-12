@@ -57,6 +57,7 @@ public partial class MainWindow
         }
         await _dashboardReady.Task.WaitAsync(cancellation);
         if (_launchDecision != null || _isBusy) return false;
+        if (!await CheckApplicationFirstAsync()) return false;
         if (PathUtils.InstanceKey(instance) != PathUtils.InstanceKey(_configService.MinecraftFolder))
         {
             if (!_configService.SelectInstance(instance)) { ShowFeedback("Could not load this instance’s saved settings. Launch cancelled.", true); return false; }
@@ -92,6 +93,7 @@ public partial class MainWindow
 
     private async Task ContinueStartupOrLaunchAsync()
     {
+        if ((_launchDecision != null || _appUpdatePriority.AvailableUpdate != null) && !await CheckApplicationFirstAsync()) return;
         string key = _configService.InstanceStorageKey;
         var mods = LocalModNames();
         if (LaunchReadiness.NeedsPersonalReminder(_configService.Config, key, mods))
