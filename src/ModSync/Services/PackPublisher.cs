@@ -9,27 +9,37 @@ public sealed record PackPublication(PackManifest Manifest, string PublisherComm
 /// <summary>Only explicit publishing downloads authoring caches and pushes a manifest; player checks never call this.</summary>
 public sealed class PackPublisher(ConfigService config, IGitService git, PackManifestService manifests, Func<string?> token)
 {
-    public async Task<PackPublication> PrepareAsync(Action<SyncProgressInfo>? progress = null)
+    public async Task<PackPublication> PrepareAsync(Action<SyncProgressInfo>? progress = null, SyncScope scope = SyncScope.All)
     {
+        if (scope is not (SyncScope.All or SyncScope.Mods)) throw new ArgumentOutOfRangeException(nameof(scope));
         var repositories = new RepositorySyncService(config, git);
-        var selected = await repositories.PrepareAsync(SyncScope.All, false, token(), progress, fetch: false);
+        var selected = await repositories.PrepareAsync(scope, false, token(), progress, fetch: false);
         foreach (var repo in selected)
         {
             var status = await git.GetStatusAsync(repo.Folder, repo.Url, repo.Branch, token(), progress);
             if (!status.IsConnected || status.AheadCount > 0 || !(await git.SnapshotAsync(repo.Folder)).Clean)
                 throw new IOException("Finish pending uploads and resolve repository cache changes before publishing a pack version.");
         }
-        await repositories.PrepareAsync(SyncScope.All, true, token(), progress);
+        await repositories.PrepareAsync(scope, true, token(), progress);
         var manifest = new PackManifest { Minecraft = config.Config.MinecraftVersion };
         string previous = Path.Combine(config.ResolvedRepositoryFolder, PackManifestService.ManifestName);
         if (File.Exists(previous))
         {
             var old = JsonSerializer.Deserialize<PackManifest>(File.ReadAllText(previous), PackManifestService.Json) ?? throw new IOException("Existing manifest is unreadable.");
             manifest.Version = PackVersion.Next(old.Version);
+            if (scope == SyncScope.Mods)
+            {
+                manifests.Validate(old, scope);
+                manifest.Repositories.AddRange(old.Repositories.Where(r => r.Category != "mods"));
+                manifest.Files.AddRange(old.Files.Where(f => f.Category != "mods"));
+                manifest.ResourcePackOrder = old.ResourcePackOrder;
+                manifest.ActiveShader = old.ActiveShader;
+            }
         }
         var packs = new PackSyncService(config);
         foreach (var category in new[] { "mods", "resourcepacks", "shaderpacks" })
         {
+            if (scope == SyncScope.Mods && category != "mods") continue;
             if (category == "resourcepacks" && !config.Config.SyncResourcePacks || category == "shaderpacks" && !config.Config.SyncShaderPacks) continue;
             var repo = manifests.RepositoryFor(category);
             var snapshot = await git.SnapshotAsync(repo.Folder);
@@ -53,11 +63,14 @@ public sealed class PackPublisher(ConfigService config, IGitService git, PackMan
         string? Declaration(string folder, string name) => File.Exists(Path.Combine(folder, name)) ? File.ReadAllText(Path.Combine(folder, name)).Trim() : null;
         manifest.Fabric = Declaration(config.ResolvedRepositoryFolder, "fabric-version.txt") ?? config.Config.FabricLoaderVersion;
         manifest.Minecraft = Declaration(config.ResolvedRepositoryFolder, "minecraft-version.txt") ?? config.Config.MinecraftVersion;
-        string? order = Declaration(config.ResolvedResourcePackRepositoryFolder, "resourcepack-order.txt");
-        manifest.ResourcePackOrder = order?.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
-        manifest.ActiveShader = Declaration(config.ResolvedShaderPackRepositoryFolder, "active-shader.txt");
-        manifests.Validate(manifest);
-        foreach (var repository in manifest.Repositories)
+        if (scope == SyncScope.All)
+        {
+            string? order = Declaration(config.ResolvedResourcePackRepositoryFolder, "resourcepack-order.txt");
+            manifest.ResourcePackOrder = order?.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
+            manifest.ActiveShader = Declaration(config.ResolvedShaderPackRepositoryFolder, "active-shader.txt");
+        }
+        manifests.Validate(manifest, scope);
+        foreach (var repository in manifest.Repositories.Where(r => scope == SyncScope.All || r.Category == "mods"))
         {
             var after = await git.SnapshotAsync(manifests.RepositoryFor(repository.Category).Folder);
             if (!after.Clean || after.Commit != repository.Commit) throw new IOException("Repository changed while preparing the manifest. Prepare again.");

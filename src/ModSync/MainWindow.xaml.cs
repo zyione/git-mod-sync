@@ -310,7 +310,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!modChanges.HasChanges)
+            if (!modChanges.HasChanges && _pushScope is not (SyncScope.Mods or SyncScope.All))
             {
                 ShowFeedback("No changes detected. Nothing to push.", false);
                 SetBusy(false);
@@ -324,7 +324,11 @@ public partial class MainWindow : Window
             if (modChanges.RemovedCount > 0) pushParts.Add($"-{modChanges.RemovedCount} removed");
             if (modChanges.IgnoredCount > 0) pushParts.Add($"{modChanges.IgnoredCount} excluded");
             if (modChanges.PendingRepositories.Count > 0) pushParts.Add("pending upload to retry");
-            PushConfirmSummaryText.Text = $"Changes to upload: {string.Join(", ", pushParts)}";
+            PushConfirmSummaryText.Text = modChanges.HasChanges
+                ? $"Changes to upload: {string.Join(", ", pushParts)}"
+                : "No new file changes. Publish the files already uploaded to GitHub.";
+            if (_pushScope is SyncScope.Mods or SyncScope.All)
+                PushConfirmSummaryText.Text += "\nAlso publishes a modpack version so players can detect these updates.";
 
             var sb = new System.Text.StringBuilder();
             foreach (var item in modChanges.Added) sb.AppendLine($"+ {item.RelativePath}");
@@ -360,8 +364,30 @@ public partial class MainWindow : Window
 
             if (success)
             {
-                SetCategoryState(_pushScope, "Published · sync to verify");
-                ShowFeedback("✓ Successfully pushed selected updates to GitHub!", false);
+                if (_pushScope is SyncScope.Mods or SyncScope.All)
+                {
+                    try
+                    {
+                        SetBusy(true, "Publishing uploaded updates for players…");
+                        var publisher = new PackPublisher(_configService, _gitService, ManifestService, _authService.GetStoredToken);
+                        var publication = await Task.Run(() => publisher.PrepareAsync(UpdateProgress, _pushScope));
+                        await Task.Run(() => publisher.PublishAsync(publication, UpdateProgress));
+                        _manifestReview = null;
+                        RefreshPackVersion(publication.Manifest.Version);
+                        SetCategoryState(_pushScope, "Published · sync to verify");
+                        ShowFeedback("Uploaded and published pack " + publication.Manifest.Version + ". Players can now check for these updates.", false);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetCategoryState(_pushScope, "Publication needs attention");
+                        ShowFeedback("Files uploaded, but the modpack version could not be published. Players still see the previous version. Use Modpack actions → Publish modpack version to retry. " + ex.Message, true);
+                    }
+                }
+                else
+                {
+                    SetCategoryState(_pushScope, "Uploaded · publish modpack version");
+                    ShowFeedback("Files uploaded. Use Modpack actions → Publish modpack version to make these updates available to players.", false);
+                }
             }
             else
             {
@@ -1296,15 +1322,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
+    private void CloseIgnoredMods_Click(object sender, RoutedEventArgs e)
     {
-        if (_reviewingPersonalMods)
-        {
-            _reviewingPersonalMods = false;
-            CloseModal();
-            await ContinueStartupOrLaunchAsync();
-            return;
-        }
         ShowModal(SettingsSheet);
     }
 

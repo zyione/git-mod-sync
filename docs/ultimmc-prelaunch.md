@@ -34,7 +34,7 @@ After the first verification, local checksums are reused only when the file path
 
 ## Player experience and recovery
 
-- Personal mods: review exclusions, confirm they are excluded, or skip. New local JAR names trigger the reminder again.
+- Personal mod exclusions apply automatically. Startup and launch checks do not prompt for exclusion confirmation; manage exclusions in Settings when needed.
 - Updates: review additions, replacements, removals, and exclusions before applying.
 - Offline or failed check: **Retry**, **Play anyway**, or **Cancel launch**. An unavailable check is never shown as synchronized.
 - Updated and verified: choose whether to close ModSync or keep it open while Minecraft continues.

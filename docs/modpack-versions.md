@@ -5,14 +5,14 @@ ModSync's app version and the modpack version are separate. The pack starts at *
 ## First publication
 
 1. Open the new ModSync build and confirm the intended instance and repositories.
-2. Review personal-mod exclusions. If you added no personal mods, use **Skip — no personal mods**. Push any intended shared content changes using the existing authoring workflow.
+2. Review personal-mod exclusions in Settings if needed. Mods Push automatically publishes the uploaded mods as a new version; Push modpack publishes all enabled categories.
 3. Choose **Modpack actions → Publish modpack version**. Sign in if requested, then choose the action again.
 4. Approve preparing the version. This authoring step may download repositories to calculate file checksums. It reads local game files only through the existing authoring workflow; publication itself does not change the instance.
 5. Review the version, file count, and repository count. Choose **Publish 1.1** to upload `modsync-manifest.json` to the mods repository's configured branch.
 
 No initial version is published automatically by installing the app. Until publication, launch checks explain that no manifest exists and offer retry, explicit Play anyway, or cancellation. Checks never silently clone repositories as a fallback.
 
-The manifest records exact commits from the mods, resource-pack, and shader repositories, plus Minecraft/Fabric versions and shared pack/shader selections. A later repository commit does not change an already published snapshot. Publish another pack version when that content should reach players. Fabric checking requires a published loader version, obtained from `fabric-version.txt` or the author's configured target.
+The manifest records exact commits from the mods, resource-pack, and shader repositories, plus Minecraft/Fabric versions and shared pack/shader selections. A later repository commit does not change an already published snapshot. Mods Push now publishes a new version after uploading, preserving previously published resource packs and shaders. Push modpack publishes all enabled categories after uploading. For changes pushed outside ModSync or through the separate pack/shader actions, use Publish modpack version when that content should reach players. If upload succeeds but publication fails, the app reports this separately; finish any pending upload and retry Publish modpack version. Fabric checking requires a published loader version, obtained from `fabric-version.txt` or the author's configured target.
 
 ## Checking and installing
 
@@ -28,7 +28,7 @@ The manifest is capped at 4 MiB and 20,000 files. This version supports ordinary
 
 ## Personal files and recovery
 
-The “Have you excluded your personal mods?” reminder remains on startup/launch and returns when new unexcluded local JAR names appear. Filename, wildcard, and Fabric-ID exclusions apply before downloads. Files that ModSync has never managed are kept, including personal additions absent from the manifest. An initial baseline therefore does not remove unknown old versions automatically; review those files and exclusions yourself.
+Startup and launch checks do not prompt about personal mod exclusions, including when new local JAR names appear. Manage exclusions in Settings when needed. Filename, wildcard, and Fabric-ID exclusions apply before downloads. Files that ModSync has never managed are kept, including personal additions absent from the manifest. An initial baseline therefore does not remove unknown old versions automatically; review those files and exclusions yourself.
 
 **Full verification / Repair** ignores the metadata cache and hashes installed managed files. Ordinary fast checks can miss unusual edits preserving file size and modification time; full verification detects those. The app displays the last verified pack version, not a guarantee of server compatibility.
 
@@ -37,3 +37,5 @@ Checks and downloads can be cancelled without changing installed files. Complete
 An update journal and ownership state live outside the instance in `ModSync/pack-state`. An interrupted installation clears its verified version, retains backups and file ownership, and requires another check. Rechecking computes a fresh plan and can finish the update. This is recoverable installation, not an atomic multi-file transaction or automatic rollback: some changes can remain after an installation failure. Do not launch a partially updated pack until verification succeeds.
 
 Settings and caches remain under `UltimMC/ModSync`. All development tests use disposable instances; the developer does not write directly into player instances.
+
+A first Mods Push can publish a mods-only version without downloading optional repositories. Publish modpack version later to include resource packs and shaders. For files uploaded before this change, choose Mods Push again to publish the current uploaded mods even when there are no new file changes.

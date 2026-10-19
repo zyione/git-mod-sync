@@ -559,7 +559,7 @@ The confirmed folder is stored in config.json and survives executable updates. O
 
 Failures now offer an appropriate action: retry the relevant preview/confirmation, sign in again, choose an instance, sync the selected section before pushing, open backups, or view logs. Close Minecraft before retrying locked files. No recovery action silently performs a clean reinstall or deletes backups. A whole sync is still not a transaction; completed file changes may remain after a later failure, so retained backups and retries remain important.
 
-**Mods controls:** Check and Review changes sit beside Mods. Push and Reinstall are in its More actions menu. Mods Push uploads only JAR changes in the mods repository. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. Modpack actions → Push modpack publishes all enabled categories.
+**Mods controls:** Check and Review changes sit beside Mods. Push and Reinstall are in its More actions menu. Mods Push uploads JAR changes and automatically publishes a new modpack version so player checks detect them. Previously published resource packs and shaders remain pinned. Push can also publish already uploaded files when there are no new local changes. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. Modpack actions → Push modpack publishes all enabled categories.
 
 ## State-driven desktop dashboard (v1.6.0)
 

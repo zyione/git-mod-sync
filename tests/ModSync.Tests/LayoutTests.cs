@@ -126,7 +126,7 @@ public class LayoutTests
                     }
                     typeof(MainWindow).GetMethod("RefreshLaunchSetup", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     typeof(MainWindow).GetMethod("ChooseAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                        .Invoke(window, new object?[] { "Have you excluded your personal mods?", "Excluded mods stay on your computer and won’t be uploaded. If you haven’t added personal mods, choose Skip. We’ll ask again when new local mods appear.", "Review exclusions", "Already excluded", "Skip — no personal mods" });
+                        .Invoke(window, new object?[] { "Minecraft is waiting", "Content could not be checked. Check again or choose how to continue.", "Check again", "Play anyway", "Cancel launch" });
                     root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
                     var choiceSheet = (FrameworkElement)window.FindName("ChoiceSheet");
                     Assert.AreEqual(Visibility.Visible, choiceSheet.Visibility);

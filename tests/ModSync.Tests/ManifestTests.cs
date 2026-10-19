@@ -234,6 +234,50 @@ public class ManifestTests
         Assert.AreEqual(options, File.ReadAllText(path));
     }
 
+    [TestMethod] public async Task ModsPublicationPreservesPreviouslyPublishedOptionalContent()
+    {
+        Directory.CreateDirectory(Path.Combine(config.ResolvedRepositoryFolder, ".git"));
+        File.WriteAllText(Path.Combine(config.ResolvedRepositoryFolder, "shared.jar"), "new mods");
+        var service = Service(); var old = Manifest(); old.Version = "1.7";
+        var packs = service.RepositoryFor("resourcepacks"); var shaders = service.RepositoryFor("shaderpacks");
+        const string previousCommit = "2222222222222222222222222222222222222222";
+        old.Repositories.Add(new("resourcepacks", packs.Url, packs.Branch, previousCommit));
+        old.Repositories.Add(new("shaderpacks", shaders.Url, shaders.Branch, previousCommit));
+        old.Files.Add(new("resourcepacks", "pack.zip", "pack.zip", 3, Hash("zip")));
+        old.Files.Add(new("shaderpacks", "shader.zip", "shader.zip", 3, Hash("zip")));
+        old.ResourcePackOrder = ["pack.zip"]; old.ActiveShader = "shader.zip";
+        File.WriteAllText(Path.Combine(config.ResolvedRepositoryFolder, PackManifestService.ManifestName), JsonSerializer.Serialize(old));
+        config.Config.SyncResourcePacks = config.Config.SyncShaderPacks = true;
+        var git = new PublisherGit(); var publisher = new PackPublisher(config, git, service, () => "test");
+        var publication = await publisher.PrepareAsync(scope: SyncScope.Mods);
+        Assert.AreEqual("1.8", publication.Manifest.Version);
+        Assert.AreEqual(Hash("new mods"), publication.Manifest.Files.Single(f => f.Category == "mods").Sha256);
+        CollectionAssert.AreEqual(old.Files.Where(f => f.Category != "mods").ToArray(), publication.Manifest.Files.Where(f => f.Category != "mods").ToArray());
+        CollectionAssert.AreEqual(old.Repositories.Where(r => r.Category != "mods").ToArray(), publication.Manifest.Repositories.Where(r => r.Category != "mods").ToArray());
+        CollectionAssert.AreEqual(old.ResourcePackOrder, publication.Manifest.ResourcePackOrder);
+        Assert.AreEqual(old.ActiveShader, publication.Manifest.ActiveShader);
+        Assert.IsFalse(Directory.Exists(packs.Folder)); Assert.IsFalse(Directory.Exists(shaders.Folder));
+        Local("shared.jar", "remote");
+        Assert.AreEqual(1, service.Plan(publication.Manifest, SyncScope.Mods).Summary.UpdatedCount, "Mods checks must detect the uploaded snapshot.");
+        await publisher.PublishAsync(publication);
+        Assert.AreEqual(1, git.Pushes);
+        Assert.AreEqual("1.8", JsonSerializer.Deserialize<PackManifest>(File.ReadAllText(Path.Combine(config.ResolvedRepositoryFolder, PackManifestService.ManifestName)))!.Version);
+    }
+
+    [TestMethod] public async Task FirstModsPublicationDoesNotRequireOptionalRepositories()
+    {
+        Directory.CreateDirectory(Path.Combine(config.ResolvedRepositoryFolder, ".git"));
+        File.WriteAllText(Path.Combine(config.ResolvedRepositoryFolder, "shared.jar"), "remote");
+        config.Config.SyncResourcePacks = config.Config.SyncShaderPacks = true;
+        var service = Service();
+        var publisher = new PackPublisher(config, new PublisherGit(), service, () => "test");
+        var publication = await publisher.PrepareAsync(scope: SyncScope.Mods);
+        Assert.AreEqual("1.1", publication.Manifest.Version);
+        Assert.AreEqual(1, publication.Manifest.Repositories.Count);
+        Assert.AreEqual("mods", publication.Manifest.Repositories.Single().Category);
+        service.Validate(publication.Manifest, SyncScope.Mods);
+    }
+
     private sealed class PublisherGit : IGitService
     {
         public int Pushes; public string[]? Committed; public bool Ahead;

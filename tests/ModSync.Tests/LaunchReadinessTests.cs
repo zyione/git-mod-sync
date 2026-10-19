@@ -30,14 +30,4 @@ public class LaunchReadinessTests
         Assert.IsFalse(LaunchReadiness.IsReady(content, false, null));
     }
 
-    [TestMethod]
-    public void PersonalReminderIsPerInstanceAndReturnsForNewMods()
-    {
-        var config = new AppConfig();
-        Assert.IsTrue(LaunchReadiness.NeedsPersonalReminder(config, "one", Array.Empty<string>()));
-        config.PersonalModsAcknowledged["one"] = new() { "known.jar" };
-        Assert.IsFalse(LaunchReadiness.NeedsPersonalReminder(config, "one", new[] { "KNOWN.jar" }));
-        Assert.IsTrue(LaunchReadiness.NeedsPersonalReminder(config, "one", new[] { "known.jar", "new.jar" }));
-        Assert.IsTrue(LaunchReadiness.NeedsPersonalReminder(config, "two", new[] { "known.jar" }));
-    }
 }

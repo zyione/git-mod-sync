@@ -9,7 +9,6 @@ public partial class MainWindow
 {
     private TaskCompletionSource<bool>? _launchDecision;
     private TaskCompletionSource<int>? _choice;
-    private bool _reviewingPersonalMods;
     private bool _updateFailed;
     private SyncSummary? _reviewedSync;
     private string? _reviewedConfig;
@@ -39,12 +38,6 @@ public partial class MainWindow
     }
 
     private string ConfigFingerprint() => System.Text.Json.JsonSerializer.Serialize(_configService.Config);
-    private List<string> LocalModNames() => Directory.Exists(_configService.ResolvedModsFolder)
-        ? Directory.EnumerateFiles(_configService.ResolvedModsFolder, "*.jar",
-            _configService.Config.SyncSubdirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
-            .Where(p => !_ignoreService.IsIgnored(Path.GetRelativePath(_configService.ResolvedModsFolder, p), p))
-            .Select(p => Path.GetRelativePath(_configService.ResolvedModsFolder, p)).ToList() : new();
-
     public async Task<bool> RequestLaunchAsync(string instance, CancellationToken cancellation = default)
     {
         // Only a previously configured instance can be activated by the launcher.
@@ -94,23 +87,6 @@ public partial class MainWindow
     private async Task ContinueStartupOrLaunchAsync()
     {
         if ((_launchDecision != null || _appUpdatePriority.AvailableUpdate != null) && !await CheckApplicationFirstAsync()) return;
-        string key = _configService.InstanceStorageKey;
-        var mods = LocalModNames();
-        if (LaunchReadiness.NeedsPersonalReminder(_configService.Config, key, mods))
-        {
-            int choice = await ChooseAsync("Have you excluded your personal mods?",
-                "Excluded mods stay on your computer and won’t be uploaded. If you haven’t added personal mods, choose Skip. We’ll ask again when new local mods appear.",
-                "Review exclusions", "Already excluded", "Skip — no personal mods");
-            if (choice < 0) return;
-            if (choice == 0)
-            {
-                _reviewingPersonalMods = true;
-                OpenIgnoredModsModal_Click(this, new RoutedEventArgs());
-                return;
-            }
-            _configService.Config.PersonalModsAcknowledged[key] = mods;
-            if (!_configService.Save()) { ShowFeedback("Could not remember your choice. Check folder access and try again.", true); return; }
-        }
         if (_launchDecision != null) await BeginSyncAsync(SyncScope.Mods);
     }
 

@@ -152,8 +152,6 @@ public partial class MainWindow
         SetCheckedStates(scope, verified);
         _updateFailed = ManifestService.PendingScope.HasFlag(SyncScope.Mods);
         if (!ManifestService.HasPendingUpdate && File.Exists(PendingUpdatePath)) File.Delete(PendingUpdatePath);
-        _configService.Config.PersonalModsAcknowledged[_configService.InstanceStorageKey] = LocalModNames();
-        if (!_configService.Save()) throw new IOException("Could not save the exclusion reminder state.");
         RefreshPackVersion(); SetBusy(false);
         bool launching = _launchDecision != null;
         if (launching && !scope.HasFlag(SyncScope.Mods)) { await BeginSyncAsync(SyncScope.Mods); return; }
