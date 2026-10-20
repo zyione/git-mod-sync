@@ -59,6 +59,7 @@ public partial class App : Application
             MainWindow = window;
             window.Closed += (_, _) => { _bridgeCancellation.Cancel(); Shutdown(); };
             window.Show();
+            StorageMaintenance.AfterHealthyStartup(PathUtils.GetDataDirectory(), Environment.ProcessPath!, new LoggingService().Warning);
             if (relocated) File.WriteAllText(Path.Combine(PathUtils.GetAppDirectory(), "relocation-ready-" + e.Args[1]), "Ready");
             await LaunchBridge.ListenAsync((instance, cancellation) => Dispatcher.InvokeAsync(() => window.RequestLaunchAsync(instance, cancellation)).Task.Unwrap(),
                 play => Dispatcher.InvokeAsync(() => window.LaunchReplySent(play)), _bridgeCancellation.Token);

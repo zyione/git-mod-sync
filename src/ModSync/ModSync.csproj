@@ -12,9 +12,9 @@
     <ApplicationIcon>Assets/modsync-dark.ico</ApplicationIcon>
     
     <!-- Application Metadata -->
-    <Version>1.7.8</Version>
-    <AssemblyVersion>1.7.8.0</AssemblyVersion>
-    <FileVersion>1.7.8.0</FileVersion>
+    <Version>1.7.9</Version>
+    <AssemblyVersion>1.7.9.0</AssemblyVersion>
+    <FileVersion>1.7.9.0</FileVersion>
     <Product>ModSync</Product>
     <Title>ModSync - Minecraft Mod Manager</Title>
     <Company>ModSync</Company>

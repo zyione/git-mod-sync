@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace ModSync.Services;
 
@@ -26,6 +27,10 @@ public static class StorageMaintenance
             DeleteTree(root, Path.Combine(root, "backups"));
             File.WriteAllText(marker, "Old app-local backups removed; optional new backups are retained.");
         });
+        // The marker records the cutoff, not an instruction to skip future cleanup.
+        // Old snapshots can reappear after restoring or copying an older app folder.
+        if (File.Exists(marker) && IsUnlinked(marker))
+            Attempt(() => SweepLegacyBackups(root, File.GetLastWriteTimeUtc(marker), report));
 
         foreach (var file in Directory.EnumerateFiles(root))
         {
@@ -50,6 +55,59 @@ public static class StorageMaintenance
                 if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddDays(-14))
                     Attempt(() => DeleteFile(root, file));
         Attempt(() => ClearContent(root));
+    }
+
+    private static void SweepLegacyBackups(string root, DateTime cutoffUtc, Action<string>? report)
+    {
+        string backups = Path.Combine(root, "backups");
+        if (!Directory.Exists(backups) || !IsUnlinked(backups)) return;
+        void Inspect(string parent, int depth)
+        {
+            foreach (var directory in Directory.EnumerateDirectories(parent))
+            {
+                if (!IsUnlinked(directory)) continue;
+                var match = Regex.Match(Path.GetFileName(directory), @"^(?:sync|loader|reinstall(?:_[a-z]+)?)_(\d{4}-\d{2}-\d{2}_\d{6})_", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    // Snapshot names use local time with one-second precision. The
+                    // extra second protects new explicit backups near the cutoff.
+                    if (DateTime.TryParseExact(match.Groups[1].Value, "yyyy-MM-dd_HHmmss", CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeLocal, out var created) && created.ToUniversalTime().AddSeconds(1) <= cutoffUtc)
+                    {
+                        try { DeleteTree(root, directory); }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        { report?.Invoke("Old backup cleanup will retry: " + ex.Message); }
+                    }
+                }
+                else if (depth > 0) Inspect(directory, depth - 1);
+            }
+        }
+        Inspect(backups, 1); // Legacy flat snapshots and current per-instance snapshots.
+    }
+
+    /// <summary>Called after the current dashboard starts, so rollback files are no longer needed.</summary>
+    public static void AfterHealthyStartup(string root, string executable, Action<string>? report = null)
+    {
+        root = Path.GetFullPath(root);
+        executable = Path.GetFullPath(executable);
+        if (ConfigService.IsMinecraftDirectory(root) || !IsUnlinked(root) || !File.Exists(executable) ||
+            !string.Equals(Path.GetDirectoryName(executable), root, StringComparison.OrdinalIgnoreCase)) return;
+        var helpers = Directory.EnumerateFiles(root).Where(file => Regex.IsMatch(Path.GetFileName(file),
+            @"^(?:(?:update|relocate)-[a-f0-9]{32}\.(?:json|ps1|exe)|relocation-ready-[a-f0-9]{32}|update_modsync\.bat)$", RegexOptions.IgnoreCase)).ToArray();
+        // An update helper can still be finishing after it starts the new EXE.
+        // Do not remove its staging/rollback files while its instructions are recent.
+        bool activeUpdate = helpers.Any(file => (file.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+            Path.GetFileName(file).Equals("update_modsync.bat", StringComparison.OrdinalIgnoreCase)) &&
+            File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddMinutes(-10));
+        var obsolete = helpers.Where(file => File.GetLastWriteTimeUtc(file) <= DateTime.UtcNow.AddMinutes(-10)).ToList();
+        if (!activeUpdate) obsolete.AddRange(new[] { executable + ".previous", Path.Combine(root, "ModSync.exe.previous"), Path.Combine(root, "ModSync.update.exe") });
+        foreach (var file in obsolete.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (file.Equals(executable, StringComparison.OrdinalIgnoreCase)) continue;
+            try { DeleteFile(root, file); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { report?.Invoke("Old application file cleanup will retry: " + ex.Message); }
+        }
     }
 
     public static void ClearContent(string root)
