@@ -58,9 +58,11 @@ public sealed class PackBackupService(ConfigService config)
         return Snapshot(files, "sync");
     }
 
-    public string SnapshotForReinstall(SyncScope scope = SyncScope.All)
+    public string SnapshotForReinstall(SyncScope scope = SyncScope.All, IEnumerable<ModFileItem>? mods = null)
     {
         var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (scope.HasFlag(SyncScope.Mods) && mods != null)
+            foreach (var mod in mods) files[mod.FullPath] = "mods/" + mod.RelativePath;
         foreach (var (folder, kind, enabled) in new[] {
             (config.ResolvedResourcePacksFolder, "resourcepacks", config.Config.SyncResourcePacks && scope.HasFlag(SyncScope.ResourcePacks)),
             (config.ResolvedShaderPacksFolder, "shaderpacks", config.Config.SyncShaderPacks && scope.HasFlag(SyncScope.Shaders)) })

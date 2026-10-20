@@ -16,6 +16,19 @@ namespace ModSync.Services;
 /// </summary>
 public class GitService : IGitService
 {
+    public async Task<bool> CanDiscardCacheAsync(string folder)
+    {
+        // Cleanup is local-only and must never download a Git runtime or contact a remote.
+        _cachedGitBinaryPath ??= FindGitBinary();
+        if (_cachedGitBinaryPath == null) return false;
+        var state = await RunGitCommandAsync(folder, "status --porcelain --untracked-files=all --ignored");
+        if (state.ExitCode != 0 || !string.IsNullOrWhiteSpace(state.StdOut)) return false;
+        var remote = await RunGitCommandAsync(folder, "for-each-ref --format=%(objectname) refs/remotes/origin/");
+        if (remote.ExitCode != 0 || string.IsNullOrWhiteSpace(remote.StdOut)) return false;
+        // Preserve every unpublished local branch and detached HEAD, including failed uploads.
+        var unpublished = await RunGitCommandAsync(folder, "rev-list --branches HEAD --not --remotes=origin");
+        return unpublished.ExitCode == 0 && string.IsNullOrWhiteSpace(unpublished.StdOut);
+    }
     public async Task<(string Commit, bool Clean)> SnapshotAsync(string folder)
     {
         var head = await RunGitCommandAsync(folder, "rev-parse HEAD");

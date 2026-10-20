@@ -61,6 +61,14 @@ public partial class MainWindow : Window
 
         _feedbackTimer.Tick += (_, _) => { _feedbackTimer.Stop(); DismissFeedback(); };
         Closing += (_, e) => { if (_isBusy) { e.Cancel = true; ShowFeedback("Wait for the current operation to finish before closing.", false); } };
+        Closing += async (_, e) =>
+        {
+            if (e.Cancel || !_authoringCacheActive) return;
+            e.Cancel = true;
+            SetBusy(true, "Removing temporary repository copies…");
+            try { await ReleaseRepositoryCachesAsync(); }
+            finally { _authoringCacheActive = false; SetBusy(false); Close(); }
+        };
         Closed += (_, _) => { _feedbackTimer.Stop(); _choice?.TrySetResult(-1); _launchDecision?.TrySetResult(false); };
         Loaded += MainWindow_Loaded;
         Activated += async (_, _) =>
@@ -92,6 +100,10 @@ public partial class MainWindow : Window
         _dashboardStarted = true;
         if ((_configService.Config.AutoCheckUpdates || _appUpdatePriority.AvailableUpdate != null) &&
             !await CheckApplicationFirstAsync()) { _dashboardReady.TrySetResult(); return; }
+
+        SetBusy(true, "Removing old repository copies…");
+        try { await ReleaseRepositoryCachesAsync(); }
+        finally { SetBusy(false); }
 
         // Authentication is checked when opening account/settings actions; it must not delay Play.
         await RefreshLocalModCountAsync(fetchRemote: false);
@@ -302,10 +314,12 @@ public partial class MainWindow : Window
 
         try
         {
+            _authoringCacheActive = true;
             var (success, modChanges, error) = await Task.Run(() => _syncService.GetPushChangesAsync(UpdateProgress, _pushScope));
             if (!success || modChanges == null)
             {
                 ShowFeedback(error ?? "Failed to inspect modifications.", true);
+                await ReleaseRepositoryCachesAsync();
                 SetBusy(false);
                 return;
             }
@@ -313,6 +327,7 @@ public partial class MainWindow : Window
             if (!modChanges.HasChanges && _pushScope is not (SyncScope.Mods or SyncScope.All))
             {
                 ShowFeedback("No changes detected. Nothing to push.", false);
+                await ReleaseRepositoryCachesAsync();
                 SetBusy(false);
                 return;
             }
@@ -345,6 +360,7 @@ public partial class MainWindow : Window
         {
             _logger.Error("Error checking push diffs", ex);
             ShowFeedback($"Error: {ex.Message}", true);
+            await ReleaseRepositoryCachesAsync();
             SetBusy(false);
         }
     }
@@ -401,7 +417,8 @@ public partial class MainWindow : Window
         }
         finally
         {
-            await RefreshLocalModCountAsync(fetchRemote: _pushScope.HasFlag(SyncScope.Mods));
+            await ReleaseRepositoryCachesAsync();
+            await RefreshLocalModCountAsync(fetchRemote: false);
             SetBusy(false);
         }
     }
@@ -609,7 +626,7 @@ public partial class MainWindow : Window
     private void OpenBackups_Click(object sender, RoutedEventArgs e)
     {
         var folder = _configService.BackupFolder;
-        if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Use Back up and reinstall to save a recovery copy. Automatic sync backups are limited to three snapshots.", false); return; }
+        if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Choose Back up and reinstall to save a recovery copy.", false); return; }
         try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); }
         catch (Exception ex) { ShowFeedback($"Could not open backups: {ex.Message}", true); }
     }
@@ -637,80 +654,30 @@ public partial class MainWindow : Window
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
         if (!await CheckApplicationFirstAsync()) return;
-        CloseModal();
-        DismissFeedback();
-        SetBusy(true, createBackup ? "Backing up and reinstalling…" : "Reinstalling without backup…");
-
+        var (running, details) = _mcCheckService.CheckIfMinecraftRunning();
+        if (running) { ShowFeedback("Close Minecraft before reinstalling. " + details, true); return; }
+        CloseModal(); DismissFeedback();
+        _syncScope = _reinstallScope;
+        SetBusy(true, "Preparing reinstall from the published file list…");
         try
         {
-            var (success, backupDir, count, error) = await Task.Run(() =>
-                _syncService.CleanReinstallAsync(
-                    UpdateProgress,
-                    forceIfMinecraftRunning: false, scope: _reinstallScope, createBackup: createBackup
-                )
-            );
-
-            if (!success && error != null && error.Contains("Minecraft is currently running", StringComparison.OrdinalIgnoreCase))
-            {
-                var result = MessageBox.Show(
-                    $"{error}\n\nChanging files while Minecraft is running may corrupt files or cause crashes.\n\nDo you want to continue anyway?",
-                    "Minecraft Running Warning",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    SetBusy(true, "Forcing clean reinstall...");
-                    (success, backupDir, count, error) = await Task.Run(() =>
-                        _syncService.CleanReinstallAsync(
-                            UpdateProgress,
-                            forceIfMinecraftRunning: true, scope: _reinstallScope, createBackup: createBackup
-                        )
-                    );
-                }
-                else
-                {
-                    ShowFeedback("Clean reinstall cancelled: Close Minecraft and try again.", true);
-                    return;
-                }
-            }
-
-            if (success)
-            {
-                SetStatusDot(true);
-                SetCategoryState(_reinstallScope, "Up to date · last check");
-                _lastBackupFolder = backupDir;
-
-                if (!string.IsNullOrEmpty(backupDir))
-                {
-                    string kind = _reinstallScope is SyncScope.ResourcePacks or SyncScope.Shaders ? "packs" : "mods";
-                    ShowFeedback($"✓ Clean reinstall complete. {count} {kind} restored; backup saved.", false, showBackupAction: true);
-                }
-                else
-                {
-                    string kind = _reinstallScope is SyncScope.ResourcePacks or SyncScope.Shaders ? "packs" : "mods";
-                    ShowFeedback($"✓ Reinstall complete. {count} {kind} installed; no backup created.", false);
-                }
-            }
-            else
-            {
-                SetStatusDot(false);
-                _lastBackupFolder = backupDir;
-                ShowFeedback(error ?? "Clean reinstall failed.", true, showBackupAction: backupDir != null);
-            }
+            await ReleaseRepositoryCachesAsync();
+            var service = ManifestService;
+            var manifest = await service.FetchAsync(scope: _reinstallScope);
+            _currentFabricStatus = ManifestFabric(manifest);
+            ApplyFabricStatusToUI(_currentFabricStatus);
+            var review = await Task.Run(() => service.Plan(manifest, _reinstallScope, full: true, reinstall: true));
+            _manifestReview = review; _reviewedSync = review.Summary;
+            _reviewedConfig = ConfigFingerprint(); _reviewedFabric = _currentFabricStatus;
+            SetBusy(false);
+            await PerformSyncAsync(createBackup: createBackup);
         }
         catch (Exception ex)
         {
-            _logger.Error("GUI Clean Reinstall exception", ex);
-            ShowFeedback($"Clean reinstall error: {ex.Message}", true);
-            SetStatusDot(false);
+            _logger.Error("Reinstall preparation failed", ex);
+            ShowFeedback("Could not prepare reinstall: " + ex.Message, true);
         }
-        finally
-        {
-            await RefreshLocalModCountAsync(fetchRemote: _reinstallScope.HasFlag(SyncScope.Mods));
-            UpdateStatusCard();
-            SetBusy(false);
-        }
+        finally { SetBusy(false); }
     }
 
     private void FeedbackAction_Click(object sender, RoutedEventArgs e)
@@ -952,10 +919,19 @@ public partial class MainWindow : Window
         if (_focusBeforeModal != null) Keyboard.Focus(_focusBeforeModal);
     }
 
-    private void CloseModal_Click(object sender, RoutedEventArgs e)
+    private async Task DismissModalAsync()
     {
+        bool authoring = PushConfirmSheet.Visibility == Visibility.Visible;
         CloseModal();
+        if (authoring && !_isBusy)
+        {
+            SetBusy(true, "Removing temporary repository copies…");
+            try { await ReleaseRepositoryCachesAsync(); }
+            finally { SetBusy(false); }
+        }
     }
+
+    private async void CloseModal_Click(object sender, RoutedEventArgs e) => await DismissModalAsync();
 
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {

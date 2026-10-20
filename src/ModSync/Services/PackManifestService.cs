@@ -8,7 +8,7 @@ using ModSync.Utils;
 
 namespace ModSync.Services;
 
-public sealed record ManifestReview(PackManifest Manifest, SyncSummary Summary, string Configuration, SyncScope Scope);
+public sealed record ManifestReview(PackManifest Manifest, SyncSummary Summary, string Configuration, SyncScope Scope, bool Reinstall = false);
 public sealed class InstalledPackState
 {
     public string? Policy { get; set; }
@@ -154,7 +154,7 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
     }
     private bool Ignored(PackFile file, string destination) => file.Category == "mods" && (ignores.IsIgnored(file.Path, destination) ||
         file.FabricId != null && ignores.GetEffectivePatterns().Contains("fabric-id:" + file.FabricId, StringComparer.Ordinal));
-    public ManifestReview Plan(PackManifest manifest, SyncScope scope = SyncScope.All, bool full = false, CancellationToken cancellation = default)
+    public ManifestReview Plan(PackManifest manifest, SyncScope scope = SyncScope.All, bool full = false, CancellationToken cancellation = default, bool reinstall = false)
     {
         Validate(manifest, scope);
         var state = State; var summary = new SyncSummary();
@@ -180,8 +180,29 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
                 DestinationPath = destination, TargetItem = new ModFileItem { FullPath = destination, RelativePath = old.Path, SizeBytes = new FileInfo(destination).Length,
                     Sha256Hash = cache.Get(destination, old.Sha256.ToUpperInvariant(), full) }, Type = ChangeType.Removed });
         }
+        if (reinstall)
+        {
+            foreach (var change in summary.Changes.Where(c => c.SourceItem != null && c.Type == ChangeType.Unchanged))
+                change.Type = ChangeType.Updated;
+            // A confirmed mods reinstall also removes non-excluded local-only mods.
+            // Ordinary sync preserves those personal files.
+            if (scope.HasFlag(SyncScope.Mods))
+            {
+                var planned = summary.Changes.Where(c => c.DestinationPath != null).Select(c => c.DestinationPath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var path in PackSyncService.SafeFiles(config.ResolvedModsFolder, config.Config.SyncSubdirectories)
+                             .Where(p => p.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)))
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    string relative = Path.GetRelativePath(config.ResolvedModsFolder, path).Replace('\\', '/');
+                    if (planned.Contains(path) || ignores.IsIgnored(relative, path)) continue;
+                    summary.Changes.Add(new ModChange { RelativePath = relative, DestinationPath = path, Type = ChangeType.Removed,
+                        TargetItem = new ModFileItem { RelativePath = relative, FullPath = path, SizeBytes = new FileInfo(path).Length,
+                            Sha256Hash = cache.Get(path, "", full: true) } });
+                }
+            }
+        }
         PlanSettings(manifest, state, summary, scope); cache.Save();
-        return new(manifest, summary, JsonSerializer.Serialize(config.Config), scope);
+        return new(manifest, summary, JsonSerializer.Serialize(config.Config), scope, reinstall);
     }
     private void PlanSettings(PackManifest manifest, InstalledPackState state, SyncSummary summary, SyncScope scope)
     {
@@ -220,17 +241,26 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
     public long DownloadBytes(ManifestReview review) => review.Summary.Changes.Where(c => c.NewContent == null && c.Type is ChangeType.Added or ChangeType.Updated)
         .GroupBy(c => c.SourceItem!.Sha256Hash).Sum(g => Cached(g.First().SourceItem!) ? 0 : g.First().SourceItem!.SizeBytes);
 
-    public async Task DownloadAsync(ManifestReview review, Action<SyncProgressInfo>? progress, CancellationToken cancellation)
+    public async Task DownloadAsync(ManifestReview review, Action<SyncProgressInfo>? progress, CancellationToken cancellation, bool createBackup = false)
     {
-        long required = DownloadBytes(review) + review.Summary.Changes.Where(c => c.Type is ChangeType.Updated or ChangeType.Removed).Sum(c => c.TargetItem?.SizeBytes ?? 0);
+        cancellation.ThrowIfCancellationRequested();
+        long required = DownloadBytes(review) + (createBackup ? review.Summary.Changes.Where(c => c.Type is ChangeType.Updated or ChangeType.Removed).Sum(c => c.TargetItem?.SizeBytes ?? 0) : 0);
         long largest = review.Summary.Changes.Max(c => (long?)c.SourceItem?.SizeBytes) ?? 0;
         var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(Data))!);
         if (drive.AvailableFreeSpace < required + largest) throw new IOException("Not enough disk space for downloads, backups, and temporary files.");
-        foreach (var change in review.Summary.Changes.Where(c => c.NewContent == null && c.Type is ChangeType.Added or ChangeType.Updated).GroupBy(c => c.SourceItem!.FullPath).Select(g => g.First()))
+        long receivedTotal = 0;
+        long downloadBytes = DownloadBytes(review);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        long lastReport = -100;
+        object progressLock = new();
+        var changes = review.Summary.Changes.Where(c => c.NewContent == null && c.Type is ChangeType.Added or ChangeType.Updated)
+            .GroupBy(c => c.SourceItem!.FullPath).Select(g => g.First());
+        await Parallel.ForEachAsync(changes, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellation }, async (change, cancellation) =>
         {
             cancellation.ThrowIfCancellationRequested(); var source = change.SourceItem!;
-            if (Cached(source)) continue;
-            var file = review.Manifest.Files.First(f => ContentPath(f) == source.FullPath);
+            if (!StorageMaintenance.IsUnlinked(source.FullPath)) throw new IOException("Linked download storage is not supported.");
+            if (Cached(source)) return;
+            var file = review.Manifest.Files.First(f => Enabled(f.Category, review.Scope) && ContentPath(f) == source.FullPath);
             var repository = review.Manifest.Repositories.Single(r => r.Category == file.Category);
             Directory.CreateDirectory(Path.GetDirectoryName(source.FullPath)!);
             string temporary = source.FullPath + ".part";
@@ -248,18 +278,27 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
                         count = await input.ReadAsync(bytes, idle.Token); if (count == 0) break;
                         received += count; if (received > file.Size) throw new IOException("Download exceeded its published size.");
                         await output.WriteAsync(bytes.AsMemory(0, count), cancellation);
-                        progress?.Invoke(SyncProgressInfo.Determinate("Downloading approved files…", 100.0 * received / Math.Max(1, file.Size), file.Path));
+                        long total = Interlocked.Add(ref receivedTotal, count);
+                        lock (progressLock)
+                        {
+                            if (timer.ElapsedMilliseconds - lastReport >= 100 || total == downloadBytes)
+                            {
+                                lastReport = timer.ElapsedMilliseconds;
+                                progress?.Invoke(SyncProgressInfo.Determinate("Downloading approved files…", 100.0 * total / Math.Max(1, downloadBytes), file.Path,
+                                    PathUtils.FormatSpeed(total / Math.Max(0.1, timer.Elapsed.TotalSeconds))));
+                            }
+                        }
                     }
                 }
                 if (new FileInfo(temporary).Length != file.Size || !HashUtils.ComputeSha256(temporary).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase)) throw new IOException("Downloaded file failed checksum verification: " + file.Path);
                 File.Move(temporary, source.FullPath, true);
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
-        }
+        });
     }
     public void BeginApply(ManifestReview review)
     {
-        if (review.Configuration != JsonSerializer.Serialize(config.Config) || ModSyncService.PlanFingerprint(review.Summary) != ModSyncService.PlanFingerprint(Plan(review.Manifest, review.Scope, full: true).Summary))
+        if (review.Configuration != JsonSerializer.Serialize(config.Config) || ModSyncService.PlanFingerprint(review.Summary) != ModSyncService.PlanFingerprint(Plan(review.Manifest, review.Scope, full: true, reinstall: review.Reinstall).Summary))
             throw new IOException("Files or settings changed since review. Check again before applying.");
         Directory.CreateDirectory(Path.GetDirectoryName(Journal)!);
         File.WriteAllText(Journal, JsonSerializer.Serialize(review with { Scope = review.Scope | PendingScope }, Json));
@@ -285,6 +324,10 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
             if (remaining == SyncScope.None) File.Delete(Journal);
             else File.WriteAllText(Journal, JsonSerializer.Serialize(pending with { Scope = remaining }, Json));
         }
+        // No content cache is needed once installed files have been verified. Any
+        // unfinished category can redownload its changed files on the next retry.
+        try { StorageMaintenance.ClearContent(Data); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Retry at the next startup. */ }
         return review.Summary;
     }
     private void SaveState(InstalledPackState state)

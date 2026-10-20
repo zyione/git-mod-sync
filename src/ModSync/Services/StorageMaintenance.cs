@@ -49,6 +49,16 @@ public static class StorageMaintenance
             foreach (var file in Directory.EnumerateFiles(logs, "modsync-*.log"))
                 if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddDays(-14))
                     Attempt(() => DeleteFile(root, file));
+        Attempt(() => ClearContent(root));
+    }
+
+    public static void ClearContent(string root)
+    {
+        string content = Path.Combine(root, "content");
+        if (!Directory.Exists(content) || !IsUnlinked(content)) return;
+        foreach (var file in Directory.EnumerateFiles(content))
+            if (Regex.IsMatch(Path.GetFileName(file), @"^[a-f0-9]{64}(\.part)?$", RegexOptions.IgnoreCase))
+                DeleteFile(root, file);
     }
 
     public static bool IsUnlinked(string path)

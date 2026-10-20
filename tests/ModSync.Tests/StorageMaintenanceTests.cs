@@ -21,7 +21,8 @@ public class StorageMaintenanceTests
     public void UpgradeRemovesOldArtifactsOnceAndKeepsSettingsRepositoriesHooksAndPartialDownloads()
     {
         var deleted = new[] { Write("backups/instance/reinstall_old/mods/old.jar"), Write("ModSync.before-relocation.20261006.exe"),
-            Write(".updates/" + new string('a', 64) + ".exe"), Write(".updates/" + new string('b', 64) + ".delta"), Write("logs/modsync-old.log") };
+            Write(".updates/" + new string('a', 64) + ".exe"), Write(".updates/" + new string('b', 64) + ".delta"),
+            Write("content/" + new string('c', 64)), Write("content/" + new string('d', 64) + ".part"), Write("logs/modsync-old.log") };
         File.SetLastWriteTimeUtc(deleted[^1], DateTime.UtcNow.AddDays(-30));
         var kept = new[] { Write("config.json"), Write("ModSync.exe"), Write("ModSync.exe.previous"), Write("repository/mod.jar"),
             Write("launch-hooks/instance/prelaunch.ps1"), Write("pending-updates/instance.txt"), Write(".updates/current.part"), Write("logs/modsync-today.log") };

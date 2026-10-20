@@ -30,7 +30,8 @@ public class ModSyncService
     {
         var (running, details) = _minecraftStatus();
         if (running) return (false, "Close Minecraft before updating. " + details);
-        return await ApplyChangesCoreAsync(summary, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress);
+        return await ApplyChangesCoreAsync(summary, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress,
+            backupPacks: false, consumeDownloads: true);
     }
 
     public SyncSummary InspectCachedFiles(SyncScope scope = SyncScope.All)
@@ -830,7 +831,7 @@ public class ModSyncService
 
     private async Task<(bool Success, string? Error)> ApplyChangesCoreAsync(
         SyncSummary summary, string sourceDir, string targetDir,
-        Action<SyncProgressInfo>? progressCallback = null, bool backupPacks = true)
+        Action<SyncProgressInfo>? progressCallback = null, bool backupPacks = true, bool consumeDownloads = false)
     {
         try
         {
@@ -840,6 +841,8 @@ public class ModSyncService
             var textChanges = summary.Changes.Where(c => c.NewContent != null).ToList();
             var itemsToCopy = summary.Changes.Where(c => c.NewContent == null && (c.Type == ChangeType.Added || c.Type == ChangeType.Updated)).ToList();
             var itemsToRemove = summary.Changes.Where(c => c.Type == ChangeType.Removed).ToList();
+            var remainingSources = itemsToCopy.Where(c => c.SourceItem != null).GroupBy(c => c.SourceItem!.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
             int totalOps = itemsToCopy.Count + itemsToRemove.Count + textChanges.Count;
             long totalBytes = itemsToCopy.Sum(c => c.SourceItem?.SizeBytes ?? 0);
@@ -931,6 +934,15 @@ public class ModSyncService
                 }
 
                 bytesCopied += change.SourceItem?.SizeBytes ?? 0;
+                if (consumeDownloads && change.SourceItem != null && --remainingSources[sourcePath] == 0)
+                {
+                    string content = Path.Combine(Path.GetDirectoryName(_configService.ConfigFilePath)!, "content");
+                    // Consume only app-owned downloads, never a repository or installed file.
+                    string fullSource = Path.GetFullPath(sourcePath);
+                    if (Path.GetDirectoryName(fullSource) == Path.GetFullPath(content) &&
+                        Path.GetFileName(fullSource).Length == 64 && Path.GetFileName(fullSource).All(Uri.IsHexDigit))
+                        StorageMaintenance.DeleteFile(content, fullSource);
+                }
                 opsCompleted++;
             }
 

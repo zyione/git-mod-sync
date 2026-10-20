@@ -14,6 +14,12 @@ public partial class MainWindow
     private ManifestReview? _manifestReview;
     private CancellationTokenSource? _packCancellation;
     private bool _packApplying;
+    private bool _authoringCacheActive;
+    private async Task ReleaseRepositoryCachesAsync()
+    {
+        await new RepositoryCacheCleanup(_configService, _gitService).ReleaseAsync(_logger.Warning);
+        _authoringCacheActive = false;
+    }
     private void CancelPackOperation_Click(object sender, RoutedEventArgs e)
     {
         if (!_packApplying) { _packCancellation?.Cancel(); PackCancelButton.IsEnabled = false; }
@@ -106,7 +112,7 @@ public partial class MainWindow
         if (_isBusy || _manifestReview == null) return;
         CloseModal(); await PerformSyncAsync();
     }
-    private async Task PerformSyncAsync(bool skipConfirmation = false)
+    private async Task PerformSyncAsync(bool skipConfirmation = false, bool createBackup = false)
     {
         if (_isBusy || _manifestReview == null) return;
         if (!await CheckApplicationFirstAsync()) return;
@@ -115,16 +121,25 @@ public partial class MainWindow
         bool loader = review.Scope.HasFlag(SyncScope.Mods) && _configService.Config.SyncFabricLoader && _reviewedFabric is { IsConfigured: true, IsUpToDate: false };
         if (loader && !EnsureLoaderCanUpdate()) return;
         var operation = new CancellationTokenSource(); _packCancellation = operation; PackCancelButton.IsEnabled = true;
+        _lastBackupFolder = null;
         SetBusy(true, "Downloading approved files…"); SetCategoryState(review.Scope, "Syncing…");
         try
         {
-            await service.DownloadAsync(review, UpdateProgress, _packCancellation.Token);
+            await service.DownloadAsync(review, UpdateProgress, _packCancellation.Token, createBackup);
             _packCancellation.Token.ThrowIfCancellationRequested();
             var (running, details) = _mcCheckService.CheckIfMinecraftRunning();
             if (running) throw new IOException("Close Minecraft before applying updates. " + details);
             _packApplying = true;
             PackCancelButton.Visibility = Visibility.Collapsed;
             SetBusy(true, "Verifying and applying approved files…");
+            if (createBackup)
+            {
+                SetBusy(true, "Saving the optional reinstall backup…");
+                var mods = review.Summary.Changes.Where(c => c.TargetItem != null && c.Type != ChangeType.Ignored &&
+                    !c.RelativePath.StartsWith("resourcepacks/") && !c.RelativePath.StartsWith("shaderpacks/"))
+                    .Select(c => c.TargetItem!);
+                _lastBackupFolder = await Task.Run(() => new PackBackupService(_configService).SnapshotForReinstall(review.Scope, mods));
+            }
             await Task.Run(() => service.BeginApply(review));
             Directory.CreateDirectory(Path.GetDirectoryName(PendingUpdatePath)!); File.WriteAllText(PendingUpdatePath, "Pack update needs verification."); _updateFailed = service.PendingScope.HasFlag(SyncScope.Mods);
             var result = await Task.Run(() => _syncService.ApplyManifestFilesAsync(review.Summary, UpdateProgress));
@@ -136,10 +151,11 @@ public partial class MainWindow
                 if (!installed.Success) throw new IOException(installed.Error);
             }
             ShowSyncCompletion(review.Summary);
+            if (_lastBackupFolder != null) ShowFeedback("Reinstall complete; optional backup saved.", false, showBackupAction: true);
             await VerifyManifestAndOfferCloseAsync(review.Manifest, review.Scope);
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested && !_packApplying) { ShowFeedback("Download cancelled. Installed files were not changed.", false); CompleteLaunch(false); }
-        catch (Exception ex) { SetCategoryState(review.Scope, "Failed"); ShowFeedback("Update stopped: " + ex.Message + "\nRetry the check. Completed downloads and backups are retained.", true); }
+        catch (Exception ex) { SetCategoryState(review.Scope, "Failed"); ShowFeedback("Update stopped: " + ex.Message + "\nRetry the check. Unfinished downloads remain available for recovery.", true, showBackupAction: _lastBackupFolder != null); }
         finally { _packApplying = false; if (ReferenceEquals(_packCancellation, operation)) _packCancellation = null; operation.Dispose(); SetBusy(false); RefreshPackVersion(); await RefreshLocalModCountAsync(false); }
     }
     private async Task VerifyManifestAndOfferCloseAsync(PackManifest manifest, SyncScope scope = SyncScope.All)
@@ -173,6 +189,7 @@ public partial class MainWindow
         try
         {
             SetBusy(true, "Preparing modpack version…");
+            _authoringCacheActive = true;
             var publisher = new PackPublisher(_configService, _gitService, ManifestService, _authService.GetStoredToken);
             var publication = await Task.Run(() => publisher.PrepareAsync(UpdateProgress));
             SetBusy(false);
@@ -184,6 +201,6 @@ public partial class MainWindow
             ShowFeedback("Published pack " + publication.Manifest.Version + ". Players can now check for this version.", false); RefreshPackVersion(publication.Manifest.Version);
         }
         catch (Exception ex) { ShowFeedback("Could not publish pack: " + ex.Message, true); }
-        finally { SetBusy(false); }
+        finally { SetBusy(true, "Removing temporary repository copies…"); await ReleaseRepositoryCachesAsync(); SetBusy(false); }
     }
 }

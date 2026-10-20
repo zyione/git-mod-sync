@@ -96,7 +96,9 @@ public class ManifestTests
         var result = await engine.ApplyManifestFilesAsync(plan.Summary); Assert.IsTrue(result.Success, result.Error);
         service.MarkVerified(manifest); Assert.AreEqual("1.1", service.State.Version); Assert.IsFalse(service.HasPendingUpdate);
         Assert.AreEqual("remote", File.ReadAllText(local));
-        Assert.IsTrue(Directory.GetFiles(config.BackupFolder, "shared.jar", SearchOption.AllDirectories).Any(p => File.ReadAllText(p) == "before"));
+        Assert.IsFalse(Directory.Exists(config.BackupFolder), "Normal player updates do not duplicate installed assets in backups.");
+        Assert.IsFalse(Directory.Exists(config.ResolvedRepositoryFolder));
+        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(root, "content")).Length, "Successful installation consumes its downloads.");
     }
     [TestMethod] public async Task CorruptDownloadCannotBeginInstallation()
     {
@@ -104,6 +106,73 @@ public class ManifestTests
         var service = Service(handler); var review = service.Plan(Manifest());
         await Assert.ThrowsExceptionAsync<IOException>(() => service.DownloadAsync(review, null, default));
         Assert.AreEqual("before", File.ReadAllText(Path.Combine(config.ResolvedModsFolder, "shared.jar"))); Assert.IsFalse(service.HasPendingUpdate);
+    }
+
+    [DataTestMethod]
+    [DataRow(SyncScope.Mods)]
+    [DataRow(SyncScope.ResourcePacks)]
+    [DataRow(SyncScope.Shaders)]
+    [DataRow(SyncScope.All)]
+    public async Task ManifestReinstallUsesNoGitAndLeavesOnlyInstalledContent(SyncScope scope)
+    {
+        config.Config.SyncResourcePacks = config.Config.SyncShaderPacks = true;
+        var handler = new Handler { Reply = _ => new(HttpStatusCode.OK) { Content = new StringContent("remote") } };
+        var service = Service(handler);
+        var manifest = Manifest();
+        foreach (string category in new[] { "resourcepacks", "shaderpacks" })
+        {
+            var repository = service.RepositoryFor(category);
+            manifest.Repositories.Add(new(category, repository.Url, repository.Branch, Commit));
+            manifest.Files.Add(new(category, "shared.zip", "shared.zip", 6, Hash("remote")));
+        }
+        Local("shared.jar", "remote"); Local("extra.jar", "remove on reinstall"); Local("personal.jar", "personal");
+        config.Config.IgnoredMods.Add("personal.jar");
+        Directory.CreateDirectory(config.ResolvedResourcePacksFolder); Directory.CreateDirectory(config.ResolvedShaderPacksFolder);
+        File.WriteAllText(Path.Combine(config.ResolvedResourcePacksFolder, "personal.zip"), "personal pack");
+        File.WriteAllText(Path.Combine(config.ResolvedResourcePacksFolder, "shared.zip"), "old pack");
+        File.WriteAllText(Path.Combine(config.ResolvedShaderPacksFolder, "shared.zip"), "old shader");
+        string world = Path.Combine(config.MinecraftFolder, "saves", "World", "level.dat"); Directory.CreateDirectory(Path.GetDirectoryName(world)!); File.WriteAllText(world, "world");
+        var review = service.Plan(manifest, scope, full: true, reinstall: true);
+        if (scope.HasFlag(SyncScope.Mods)) Assert.AreEqual(1, review.Summary.RemovedCount);
+        Assert.IsTrue(review.Summary.UpdatedCount > 0, "Matching shared files are refreshed during reinstall.");
+        await service.DownloadAsync(review, null, default);
+        Assert.AreEqual(1, handler.Requests.Count, "Identical content across categories is downloaded once.");
+        service.BeginApply(review);
+        var engine = new ModSyncService(config, new GitService(logger), new AuthenticationService(logger), new MinecraftCheckService(logger), ignores, logger, minecraftStatus: () => (false, null));
+        var applied = await engine.ApplyManifestFilesAsync(review.Summary);
+        Assert.IsTrue(applied.Success, applied.Error);
+        service.MarkVerified(manifest, scope);
+        Assert.AreEqual(!scope.HasFlag(SyncScope.Mods), File.Exists(Path.Combine(config.ResolvedModsFolder, "extra.jar")));
+        Assert.AreEqual("personal", File.ReadAllText(Path.Combine(config.ResolvedModsFolder, "personal.jar")));
+        Assert.AreEqual("personal pack", File.ReadAllText(Path.Combine(config.ResolvedResourcePacksFolder, "personal.zip")));
+        Assert.AreEqual("world", File.ReadAllText(world));
+        Assert.IsFalse(Directory.Exists(config.ResolvedRepositoryFolder));
+        Assert.IsFalse(Directory.Exists(config.BackupFolder));
+        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(root, "content")).Length);
+        Assert.IsFalse(service.Plan(manifest, scope, full: true).Summary.HasChanges);
+    }
+
+    [TestMethod] public async Task OptionalManifestReinstallBackupIncludesModsAndPackSettings()
+    {
+        Local("shared.jar", "old"); Local("extra.jar", "extra");
+        var service = Service(new Handler { Reply = _ => new(HttpStatusCode.OK) { Content = new StringContent("remote") } });
+        var manifest = Manifest(); var review = service.Plan(manifest, SyncScope.Mods, full: true, reinstall: true);
+        string backup = new PackBackupService(config).SnapshotForReinstall(SyncScope.Mods, review.Summary.Changes.Where(c => c.TargetItem != null).Select(c => c.TargetItem!));
+        await service.DownloadAsync(review, null, default, createBackup: true); service.BeginApply(review);
+        var engine = new ModSyncService(config, new GitService(logger), new AuthenticationService(logger), new MinecraftCheckService(logger), ignores, logger, minecraftStatus: () => (false, null));
+        Assert.IsTrue((await engine.ApplyManifestFilesAsync(review.Summary)).Success); service.MarkVerified(manifest, SyncScope.Mods);
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(backup, "mods", "shared.jar")));
+        Assert.AreEqual("extra", File.ReadAllText(Path.Combine(backup, "mods", "extra.jar")));
+        Assert.AreEqual("remote", File.ReadAllText(Path.Combine(config.ResolvedModsFolder, "shared.jar")));
+    }
+
+    [TestMethod] public void ReinstallRevalidatesLocalOnlyModsBeforeRemovingThem()
+    {
+        string extra = Local("extra.jar", "before"); var service = Service();
+        var review = service.Plan(Manifest(), SyncScope.Mods, full: true, reinstall: true);
+        File.WriteAllText(extra, "newer change");
+        Assert.ThrowsException<IOException>(() => service.BeginApply(review));
+        Assert.AreEqual("newer change", File.ReadAllText(extra));
     }
     [TestMethod] public async Task CancelledDownloadLeavesInstallationUnchanged()
     {

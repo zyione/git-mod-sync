@@ -29,12 +29,12 @@ public partial class MainWindow
             menu.Resources[key] = FindResource(key);
     }
 
-    private void Window_KeyDown(object sender, KeyEventArgs e)
+    private async void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && ModalBackdrop.Visibility == Visibility.Visible && !_isBusy)
         {
-            CloseModal();
             e.Handled = true;
+            await DismissModalAsync();
         }
     }
 
