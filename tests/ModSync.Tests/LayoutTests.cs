@@ -192,6 +192,20 @@ public class LayoutTests
                     typeof(MainWindow).GetMethod("Settings_Click", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { window, new RoutedEventArgs() });
                     root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
                     SavePreview(root, dark ? "ui-settings-dark.png" : "ui-settings-light.png");
+                    var discordStatus = (TextBlock)window.FindName("DiscordWebhookStatus");
+                    discordStatus.BringIntoView();
+                    root.UpdateLayout();
+                    foreach (var name in new[] { "DiscordWebhookStatus" })
+                    {
+                        var control = (FrameworkElement)window.FindName(name);
+                        var point = control.TranslatePoint(new Point(), root);
+                        Assert.IsTrue(control.ActualWidth > 0 && point.X >= 0 && point.X + control.ActualWidth <= 580, name + " must fit the settings sheet.");
+                        Assert.IsTrue(point.Y >= 0 && point.Y + control.ActualHeight <= 640, name + " must be reachable in the settings sheet.");
+                    }
+                    Assert.IsNull(window.FindName("DiscordWebhookInput"), "Pushers should not have to configure their own webhook.");
+                    Assert.IsFalse(string.IsNullOrWhiteSpace(discordStatus.Text));
+                    root.UpdateLayout();
+                    SavePreview(root, dark ? "ui-discord-settings-dark.png" : "ui-discord-settings-light.png");
                     ((FrameworkElement)window.FindName("SettingsSheet")).Visibility = Visibility.Collapsed;
                     typeof(MainWindow).GetMethod("ShowInstancePicker", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null);
                     ((ListBox)window.FindName("InstanceList")).ItemsSource = new[] { new ModSync.Services.MinecraftInstance("My Minecraft instance", "C:/Games/PrismLauncher/instances/My instance/.minecraft") };

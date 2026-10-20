@@ -736,6 +736,20 @@
                                         </StackPanel>
                                     </Border>
 
+                                    <TextBlock Text="DISCORD ANNOUNCEMENTS" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryTextBrush}" Margin="2,0,0,6" />
+                                    <Border Background="{DynamicResource InputBackgroundBrush}" CornerRadius="12" Padding="16" Margin="0,0,0,14">
+                                        <StackPanel>
+                                            <TextBlock Text="Announce pushes to Discord" FontSize="13" FontWeight="Medium"
+                                                       Foreground="{DynamicResource PrimaryTextBrush}" />
+                                            <TextBlock Text="One message per push, grouped by Mods, Resource Packs, and Shaders."
+                                                       TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,4,0,12" />
+                                            <TextBlock x:Name="DiscordWebhookStatus" TextWrapping="Wrap" FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       AutomationProperties.LiveSetting="Polite" />
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- Group 2: Ignored Mods & Exclusions -->
                                     <TextBlock Text="IGNORED MODS &amp; EXCLUSIONS"
                                                FontSize="11"

@@ -371,12 +371,17 @@ public partial class MainWindow : Window
         if (!await CheckApplicationFirstAsync()) return;
         CloseModal();
         SetBusy(true, "Pushing selected updates to GitHub...");
+        SyncSummary? uploadedSummary = null;
+        bool published = false;
+        bool pushSucceeded = false;
 
         try
         {
             var (success, summary, message) = await Task.Run(() =>
                 _syncService.PushModsAsync(UpdateProgress, _pushScope)
             );
+            uploadedSummary = summary;
+            pushSucceeded = success;
 
             if (success)
             {
@@ -388,6 +393,7 @@ public partial class MainWindow : Window
                         var publisher = new PackPublisher(_configService, _gitService, ManifestService, _authService.GetStoredToken);
                         var publication = await Task.Run(() => publisher.PrepareAsync(UpdateProgress, _pushScope));
                         await Task.Run(() => publisher.PublishAsync(publication, UpdateProgress));
+                        published = true;
                         _manifestReview = null;
                         RefreshPackVersion(publication.Manifest.Version);
                         SetCategoryState(_pushScope, "Published · sync to verify");
@@ -417,6 +423,19 @@ public partial class MainWindow : Window
         }
         finally
         {
+            if (uploadedSummary?.UploadedChanges.Count > 0)
+            {
+                SetBusy(true, "Sending Discord announcement…");
+                string? warning = await new DiscordNotificationService()
+                    .NotifyAsync(uploadedSummary.UploadedChanges, published, partial: !pushSucceeded);
+                if (warning != null)
+                {
+                    _logger.Warning(warning);
+                    // Keep publication/upload feedback visible, including partial failure details.
+                    FeedbackMessageText.Text += "\n" + warning;
+                    _feedbackTimer.Stop();
+                }
+            }
             await ReleaseRepositoryCachesAsync();
             await RefreshLocalModCountAsync(fetchRemote: false);
             SetBusy(false);
@@ -550,6 +569,7 @@ public partial class MainWindow : Window
         SyncResourcePacksToggle.IsChecked = cfg.SyncResourcePacks;
         SyncShaderPacksToggle.IsChecked = cfg.SyncShaderPacks;
         EnforceActiveShaderToggle.IsChecked = cfg.EnforceActiveShader;
+        RefreshDiscordSettings();
         SettingsModsFolderPathText.Text = _configService.ResolvedModsFolder;
         SettingsAppVersionText.Text = $"ModSync v{_updateService.CurrentVersion}";
 

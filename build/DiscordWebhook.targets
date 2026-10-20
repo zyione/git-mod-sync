@@ -1,0 +1,62 @@
+<Project>
+  <!-- Generate only the webhook resource; never embed the entire private .env. -->
+  <UsingTask TaskName="GenerateModSyncDiscordWebhook" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <EnvFile ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+      <RequireWebhook ParameterType="System.Boolean" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        string webhook = Environment.GetEnvironmentVariable("MODSYNC_DISCORD_WEBHOOK_URL");
+        if (String.IsNullOrWhiteSpace(webhook) && File.Exists(EnvFile))
+        {
+            foreach (string raw in File.ReadAllLines(EnvFile))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith("export ", StringComparison.Ordinal)) line = line.Substring(7).TrimStart();
+                int equals = line.IndexOf('=');
+                if (equals < 0 || line.Substring(0, equals).Trim() != "MODSYNC_DISCORD_WEBHOOK_URL") continue;
+                webhook = line.Substring(equals + 1).Trim();
+                if (webhook.Length >= 2 && ((webhook[0] == '\"' && webhook[webhook.Length - 1] == '\"') ||
+                    (webhook[0] == '\'' && webhook[webhook.Length - 1] == '\'')))
+                    webhook = webhook.Substring(1, webhook.Length - 2);
+            }
+        }
+        webhook = (webhook ?? "").Trim();
+        Uri endpoint;
+        if (webhook.Length > 0 && (!Uri.TryCreate(webhook, UriKind.Absolute, out endpoint) || endpoint.Scheme != "https" ||
+            endpoint.Host != "discord.com" || !endpoint.IsDefaultPort || endpoint.UserInfo.Length != 0 ||
+            endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0 ||
+            !Regex.IsMatch(endpoint.AbsolutePath, @"^/api/(?:v[0-9]+/)?webhooks/[0-9]+/[A-Za-z0-9_-]+$")))
+        {
+            Log.LogError("MODSYNC_DISCORD_WEBHOOK_URL is invalid. Copy a Discord channel webhook URL into the private .env or build environment.");
+            return false;
+        }
+        if (RequireWebhook && webhook.Length == 0)
+        {
+            Log.LogError("The release build requires MODSYNC_DISCORD_WEBHOOK_URL in the private .env or build environment.");
+            return false;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(OutputFile));
+        // Avoid needless recompilation, but overwrite stale resources when configuration is removed.
+        if (!File.Exists(OutputFile) || File.ReadAllText(OutputFile) != webhook) File.WriteAllText(OutputFile, webhook);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="PrepareModSyncDiscordWebhook" BeforeTargets="AssignTargetPaths">
+    <GenerateModSyncDiscordWebhook EnvFile="$(MSBuildThisFileDirectory)../.env"
+        OutputFile="$(IntermediateOutputPath)modsync-discord-webhook.txt"
+        RequireWebhook="$(RequireDiscordWebhook)" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)modsync-discord-webhook.txt" LogicalName="ModSync.DiscordWebhook" />
+    </ItemGroup>
+  </Target>
+  <PropertyGroup>
+    <RequireDiscordWebhook Condition="'$(RequireDiscordWebhook)' == ''">false</RequireDiscordWebhook>
+  </PropertyGroup>
+</Project>

@@ -7,6 +7,9 @@ public class SyncSummary
 {
     public List<ModChange> Changes { get; set; } = new();
     public List<string> PendingRepositories { get; set; } = new();
+    // Only changes from repositories whose upload actually succeeded, including pending commits.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<PushNotificationItem> UploadedChanges { get; } = new();
 
     public int AddedCount => Added.Count();
     public int UpdatedCount => Updated.Count();

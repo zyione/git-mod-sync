@@ -28,3 +28,8 @@ $RECYCLE.BIN/
 
 # Isolated checkout used for modpack organization
 .migration/
+
+# Private build configuration (only the example is tracked)
+.env
+.env.*
+!.env.example

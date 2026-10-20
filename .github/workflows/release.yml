@@ -53,8 +53,10 @@ jobs:
           "version=$cleanVer" >> $env:GITHUB_OUTPUT
 
       - name: Publish Single-File Executable
+        env:
+          MODSYNC_DISCORD_WEBHOOK_URL: ${{ secrets.MODSYNC_DISCORD_WEBHOOK_URL }}
         run: |
-          dotnet publish src/ModSync/ModSync.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:Version=${{ steps.get_version.outputs.version }} -p:AssemblyVersion=${{ steps.get_version.outputs.version }}.0 -p:FileVersion=${{ steps.get_version.outputs.version }}.0 -o ./publish
+          dotnet publish src/ModSync/ModSync.csproj -c Release -r win-x64 --self-contained true -p:RequireDiscordWebhook=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:Version=${{ steps.get_version.outputs.version }} -p:AssemblyVersion=${{ steps.get_version.outputs.version }}.0 -p:FileVersion=${{ steps.get_version.outputs.version }}.0 -o ./publish
 
       - name: Build and verify smaller update downloads
         shell: pwsh
@@ -80,4 +82,5 @@ jobs:
             publish/ModSync.exe
             publish/*.delta
             publish/SHA256SUMS.txt
+            src/ModSync/Assets/modsync-logo-128.jpg
           generate_release_notes: true

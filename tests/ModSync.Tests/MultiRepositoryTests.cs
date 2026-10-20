@@ -476,8 +476,50 @@ public class MultiRepositoryTests
         Assert.AreEqual("invalid pack tracking", File.ReadAllText(Path.Combine(_config.MinecraftFolder, ".modsync-managed-packs.json")));
     }
 
+    [TestMethod]
+    public async Task DiscordBatchCombinesOnlySuccessfullyUploadedRepositories()
+    {
+        Write(Path.Combine(_config.ResolvedModsFolder, "First.jar"), "first");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Second.jar"), "second");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Textures.zip"), "texture");
+        Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip"), "shader");
+        _git.FailedPush = PacksRepo;
+        var result = await Engine().PushModsAsync();
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(2, result.Summary!.UploadedChanges.Count);
+        Assert.IsTrue(result.Summary.UploadedChanges.All(c => c.Category == "Mods"));
+        _git.FailedPush = null;
+        var retry = await Engine().PushModsAsync();
+        Assert.IsTrue(retry.Success, retry.Message);
+        Assert.IsFalse(retry.Summary!.UploadedChanges.Any(c => c.Category == "Mods"), "Previously successful uploads must not be announced twice.");
+        Assert.IsTrue(retry.Summary.UploadedChanges.Any(c => c.Category == "Shader packs"));
+    }
+
+    [TestMethod]
+    public async Task DiscordBatchUsesCommittedDiffWhenRetryHasNoWorkingTreeChanges()
+    {
+        _git.Ahead[PacksRepo] = 1;
+        _git.Unpushed[PacksRepo] = [new("Retry.zip", ChangeType.Added)];
+        var result = await Engine().PushModsAsync(scope: SyncScope.ResourcePacks);
+        Assert.IsTrue(result.Success, result.Message);
+        Assert.AreEqual(0, result.Summary!.TotalActionableChanges);
+        Assert.AreEqual(new PushNotificationItem("Resource packs", "Retry.zip", ChangeType.Added), result.Summary.UploadedChanges.Single());
+    }
+
+    [TestMethod]
+    public async Task NoOpOrEntirelyFailedPushHasNoDiscordBatch()
+    {
+        Assert.AreEqual(0, (await Engine().PushModsAsync()).Summary!.UploadedChanges.Count);
+        Write(Path.Combine(_config.ResolvedModsFolder, "Failed.jar"), "mod");
+        _git.FailedPush = ModsRepo;
+        var result = await Engine().PushModsAsync();
+        Assert.IsFalse(result.Success); Assert.AreEqual(0, result.Summary!.UploadedChanges.Count);
+    }
+
     private sealed class FakeGit : IGitService
     {
+        public Dictionary<string, IReadOnlyList<GitFileChange>> Unpushed = new();
+        public Task<IReadOnlyList<GitFileChange>?> GetUnpushedChangesAsync(string folder, string branch) => Task.FromResult<IReadOnlyList<GitFileChange>?>(Unpushed.GetValueOrDefault(folder));
         public ConcurrentBag<string> Touched = new();
         public ConcurrentDictionary<string, int> Behind = new(), Ahead = new();
         public Dictionary<string, string[]> CommitPaths = new();

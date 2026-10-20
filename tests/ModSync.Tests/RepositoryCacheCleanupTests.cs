@@ -45,6 +45,18 @@ public class RepositoryCacheCleanupTests
         await new RepositoryCacheCleanup(config, git).ReleaseAsync();
         Assert.IsFalse(Directory.Exists(repo)); Assert.AreEqual("installed", File.ReadAllText(installed));
     }
+    [TestMethod] public async Task NotificationDiffIncludesPendingCommitsAndHandlesSpacesAndUnicode()
+    {
+        File.WriteAllText(Path.Combine(repo, "mods", "shared.jar"), "updated");
+        File.WriteAllText(Path.Combine(repo, "mods", "New Pack 日本.jar"), "added");
+        Run(repo, "add", "."); Run(repo, "commit", "-m", "Pending upload");
+        var changes = (await git.GetUnpushedChangesAsync(repo, "main"))!;
+        Assert.AreEqual(2, changes.Count);
+        Assert.IsTrue(changes.Any(c => c.Path == "mods/shared.jar" && c.Type == ModSync.Models.ChangeType.Updated));
+        Assert.IsTrue(changes.Any(c => c.Path == "mods/New Pack 日本.jar" && c.Type == ModSync.Models.ChangeType.Added));
+        Run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+        Assert.AreEqual(0, (await git.GetUnpushedChangesAsync(repo, "main"))!.Count);
+    }
     [TestMethod] public async Task DirtyAndUntrackedFilesArePreserved()
     {
         File.WriteAllText(Path.Combine(repo, "mods", "shared.jar"), "unpublished edit");

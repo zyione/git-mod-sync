@@ -6,6 +6,8 @@ Designed specifically for non-technical players, ModSync requires no Git knowled
 
 **UltimMC pre-launch checks:** See [setup and behavior](docs/ultimmc-prelaunch.md) for checking repositories before Minecraft starts, personal-mod reminders, explicit Play anyway, and verified completion prompts. The integration is opt-in and must be configured in UltimMC.
 
+**Discord announcements:** Builds can include a shared Discord destination, so every pusher sends one grouped message automatically. See [build setup and notification behavior](docs/discord-announcements.md).
+
 ---
 
 ## Table of Contents

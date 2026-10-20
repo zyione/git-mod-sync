@@ -16,6 +16,17 @@ namespace ModSync.Services;
 /// </summary>
 public class GitService : IGitService
 {
+    public async Task<IReadOnlyList<GitFileChange>?> GetUnpushedChangesAsync(string folder, string branch)
+    {
+        if (!RepositorySyncService.ValidBranch(branch)) return null;
+        var diff = await RunGitCommandAsync(folder, $"diff --name-status -z --no-renames refs/remotes/origin/{branch} HEAD --");
+        if (diff.ExitCode != 0) return null;
+        var parts = diff.StdOut.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        var changes = new List<GitFileChange>();
+        for (int i = 0; i + 1 < parts.Length; i += 2)
+            changes.Add(new(parts[i + 1], parts[i] == "A" ? ChangeType.Added : parts[i] == "D" ? ChangeType.Removed : ChangeType.Updated));
+        return changes;
+    }
     public async Task<bool> CanDiscardCacheAsync(string folder)
     {
         // Cleanup is local-only and must never download a Git runtime or contact a remote.
@@ -767,6 +778,7 @@ public class GitService : IGitService
             Arguments = "-c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 " + arguments,
             WorkingDirectory = workingDir,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = Encoding.UTF8,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true

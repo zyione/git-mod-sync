@@ -260,9 +260,18 @@ public class ModSyncService
                         $"{repo.Label} update: +{plan.AddedCount} added, -{plan.RemovedCount} removed, ~{plan.UpdatedCount} updated - {DateTime.Now:yyyy-MM-dd HH:mm}", progressCallback, paths);
                     if (!committed.Success) throw new IOException($"{repo.Label}: {committed.Error}");
                 }
+                // Inspect the committed range, rather than just the working-tree plan: retries
+                // can upload earlier commits even when there are no new local file differences.
+                IReadOnlyList<GitFileChange>? committedChanges = null;
+                try { committedChanges = await _gitService.GetUnpushedChangesAsync(repo.Folder, repo.Branch); }
+                catch { _logger.Warning("Could not inspect upload filenames for the Discord announcement."); }
+                var notices = committedChanges == null
+                    ? DiscordNotificationService.FromPlan(plan)
+                    : DiscordNotificationService.FromGit(committedChanges, repo.Scope);
                 var pushed = await _gitService.PushAsync(repo.Folder, repo.Branch, token, progressCallback);
                 if (!pushed.Success) throw new IOException($"{repo.Label}: {pushed.Error}");
                 uploaded.Add(repo.Label);
+                summary.UploadedChanges.AddRange(notices);
             }
             return (true, summary, null);
         }
