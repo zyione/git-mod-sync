@@ -93,7 +93,7 @@ public class AppConfig
     public bool CleanInstallOnFirstRun { get; set; } = true;
 
     [JsonPropertyName("backupBeforeClean")]
-    public bool BackupBeforeClean { get; set; } = true;
+    public bool BackupBeforeClean { get; set; } = false;
 
     [JsonPropertyName("firstSyncCompleted")]
     public bool FirstSyncCompleted { get; set; } = false;

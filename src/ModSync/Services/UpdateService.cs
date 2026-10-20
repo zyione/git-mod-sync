@@ -174,12 +174,12 @@ public class UpdateService
 
     public void PruneDownloadCache()
     {
-        if (!Directory.Exists(_cacheDirectory)) return;
+        if (!Directory.Exists(_cacheDirectory) || !StorageMaintenance.IsUnlinked(_cacheDirectory)) return;
         foreach (var extension in new[] { ".exe", ".delta", ".part" })
         {
             var files = new DirectoryInfo(_cacheDirectory).GetFiles("*" + extension)
                 .Where(x => (x.Attributes & FileAttributes.ReparsePoint) == 0).OrderByDescending(x => x.LastWriteTimeUtc);
-            foreach (var file in extension == ".part" ? files.Where(x => x.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-7)) : files.Skip(extension == ".exe" ? 2 : 3))
+            foreach (var file in extension == ".part" ? files.Where(x => x.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-7)) : files)
             {
                 try { file.Delete(); } catch (IOException ex) { _logger.Warning($"Could not remove old download cache: {ex.Message}"); }
             }

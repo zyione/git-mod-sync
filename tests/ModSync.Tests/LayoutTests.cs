@@ -255,6 +255,8 @@ public class LayoutTests
                         var point = sheet.TranslatePoint(new Point(), root);
                         Assert.IsTrue(point.Y >= 0 && point.Y + sheet.ActualHeight <= 760, "Scoped reinstall confirmation must fit.");
                         var title = ((TextBlock)window.FindName("ReinstallTitleText")).Text;
+                        Assert.AreEqual("Reinstall only", ((Button)window.FindName("ConfirmReinstallButton")).Content);
+                        StringAssert.Contains(((TextBlock)window.FindName("ReinstallDescriptionText")).Text, "only when testing");
                         StringAssert.Contains(title, scope == ModSync.Models.SyncScope.Mods ? "Mods" : scope == ModSync.Models.SyncScope.ResourcePacks ? "Resource Packs" : "Shaders");
                         SavePreview(root, $"ui-reinstall-{scope}-{(dark ? "dark" : "light")}.png");
                         ((FrameworkElement)window.FindName("CleanReinstallConfirmSheet")).Visibility = Visibility.Collapsed;
@@ -319,7 +321,7 @@ public class LayoutTests
                         Assert.IsFalse((bool)typeof(MainWindow).GetField("_isBusy", flags)!.GetValue(window)!, "The app updater must remain available.");
                     }
                 }
-                foreach (var method in new[] { "ConfirmCleanReinstall_Click", "ConfirmPush_Click", "PublishPack_Click" })
+                foreach (var method in new[] { "ConfirmCleanReinstall_Click", "ConfirmBackupReinstall_Click", "ConfirmPush_Click", "PublishPack_Click" })
                 {
                     typeof(MainWindow).GetMethod("CloseModal", flags)!.Invoke(window, null);
                     typeof(MainWindow).GetMethod(method, flags)!.Invoke(window, new object[] { window, new RoutedEventArgs() });

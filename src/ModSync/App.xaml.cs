@@ -53,6 +53,7 @@ public partial class App : Application
             _dashboardMutex = new Mutex(true, "Local\\ModSync-dashboard-" + PathUtils.InstanceKey(PathUtils.GetAppDirectory()), out bool owns);
             if (!owns) { _dashboardMutex.Dispose(); _dashboardMutex = null; Shutdown(); return; }
             AppStorage.Initialize();
+            StorageMaintenance.Run(PathUtils.GetDataDirectory());
             ThemeManager.InitializeTheme();
             var window = new MainWindow();
             MainWindow = window;

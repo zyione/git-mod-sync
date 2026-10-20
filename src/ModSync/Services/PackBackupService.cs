@@ -106,6 +106,42 @@ public sealed class PackBackupService(ConfigService config)
         }
         File.WriteAllText(Path.Combine(folder, "restore-paths.json"), JsonSerializer.Serialize(
             files.ToDictionary(pair => pair.Value, pair => pair.Key), new JsonSerializerOptions { WriteIndented = true }));
+        if (operation is "sync" or "loader") PruneAutomaticBackups(folder);
         return folder;
+    }
+
+    private void PruneAutomaticBackups(string newest)
+    {
+        // Keep at most three automatic snapshots within 512 MiB. Always retain the
+        // newest recovery copy, even if that snapshot alone exceeds the budget.
+        // Explicit reinstall snapshots are never part of routine retention.
+        long bytes = 0;
+        int kept = 0;
+        foreach (var directory in new DirectoryInfo(BackupRoot).EnumerateDirectories()
+                     .Where(d => d.Name.StartsWith("sync_", StringComparison.Ordinal) || d.Name.StartsWith("loader_", StringComparison.Ordinal))
+                     .OrderByDescending(d => d.FullName == newest).ThenByDescending(d => d.CreationTimeUtc))
+        {
+            try
+            {
+                if (!StorageMaintenance.IsUnlinked(directory.FullName)) continue;
+                long size = SizeWithoutLinks(directory.FullName);
+                if (kept == 0 || (kept < 3 && bytes + size <= 512L * 1024 * 1024))
+                { kept++; bytes += size; }
+                else StorageMaintenance.DeleteTree(BackupRoot, directory.FullName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Retry next snapshot. */ }
+        }
+    }
+
+    private static long SizeWithoutLinks(string directory)
+    {
+        long bytes = 0;
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            if ((File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Linked backup paths are not supported.");
+            bytes += Directory.Exists(entry) ? SizeWithoutLinks(entry) : new FileInfo(entry).Length;
+        }
+        return bytes;
     }
 }

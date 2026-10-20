@@ -313,7 +313,7 @@ public class ConfigService
             WarnFileSizeMb = 50,
             MaxFileSizeMb = 100,
             CleanInstallOnFirstRun = true,
-            BackupBeforeClean = true,
+            BackupBeforeClean = false,
             FirstSyncCompleted = false,
             IgnoredMods = new List<string>(),
             AutoCheckUpdates = true,

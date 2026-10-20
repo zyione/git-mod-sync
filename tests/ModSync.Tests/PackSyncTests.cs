@@ -42,6 +42,56 @@ public class PackSyncTests
     private ModSyncService Engine() => new(_config, new OfflineGit(), new AuthenticationService(_logger),
         new MinecraftCheckService(_logger), new ModIgnoreService(_config, _logger), _logger);
 
+    [DataTestMethod]
+    [DataRow(SyncScope.Mods)]
+    [DataRow(SyncScope.ResourcePacks)]
+    [DataRow(SyncScope.Shaders)]
+    [DataRow(SyncScope.All)]
+    public async Task ReinstallOnlyCreatesNoBackupAndPreservesPersonalContent(SyncScope scope)
+    {
+        Write(Path.Combine(Repo, "mods", "New.jar"), "new");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Old.jar"), "old");
+        Write(Path.Combine(_config.ResolvedModsFolder, "Personal.jar"), "personal");
+        _config.Config.IgnoredMods = ["Personal.jar"];
+        Write(Path.Combine(Repo, "resourcepacks", "Shared.zip"), "new pack");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip"), "old pack");
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal pack");
+        Write(Path.Combine(Repo, "shaderpacks", "Shared.zip"), "new shader");
+        Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Shared.zip"), "old shader");
+        Write(Path.Combine(Instance, "saves", "World", "level.dat"), "world");
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: scope);
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsNull(result.BackupFolder);
+        Assert.IsFalse(Directory.Exists(_config.BackupFolder));
+        Assert.AreEqual("personal", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Personal.jar")));
+        Assert.AreEqual("personal pack", File.ReadAllText(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip")));
+        Assert.AreEqual("world", File.ReadAllText(Path.Combine(Instance, "saves", "World", "level.dat")));
+        if (scope.HasFlag(SyncScope.Mods))
+        {
+            Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "Old.jar")));
+            Assert.AreEqual("new", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "New.jar")));
+        }
+        else Assert.AreEqual("old", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Old.jar")));
+        Assert.AreEqual(scope.HasFlag(SyncScope.ResourcePacks) ? "new pack" : "old pack",
+            File.ReadAllText(Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip")));
+        Assert.AreEqual(scope.HasFlag(SyncScope.Shaders) ? "new shader" : "old shader",
+            File.ReadAllText(Path.Combine(_config.ResolvedShaderPacksFolder, "Shared.zip")));
+    }
+
+    [TestMethod]
+    public void AutomaticBackupRetentionKeepsThreeAndPreservesManualSnapshots()
+    {
+        Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip"), "pack");
+        var backups = new PackBackupService(_config);
+        string manual = backups.SnapshotForReinstall(SyncScope.ResourcePacks);
+        var summary = new SyncSummary();
+        string path = Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip");
+        summary.Changes.Add(new ModChange { Type = ChangeType.Removed, RelativePath = "resourcepacks/Shared.zip", DestinationPath = path });
+        for (int i = 0; i < 6; i++) Assert.IsNotNull(backups.BackupChanges(summary));
+        Assert.AreEqual(3, Directory.GetDirectories(_config.BackupFolder, "sync_*").Length);
+        Assert.IsTrue(Directory.Exists(manual));
+    }
+
     [TestMethod]
     public async Task IdentityExclusionsProtectOldLocalAndRenamedRepositoryVersions()
     {
@@ -249,7 +299,7 @@ public class PackSyncTests
         Write(Path.Combine(_config.ResolvedModsFolder, "Old.jar"), "old");
         Write(Path.Combine(Repo, "resourcepacks", "Shared.zip"), "shared");
         Write(Path.Combine(_config.ResolvedResourcePacksFolder, "Personal.zip"), "personal");
-        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, createBackup: true);
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual("old", File.ReadAllText(Path.Combine(result.BackupFolder!, "mods", "Old.jar")));
         Assert.IsTrue(File.Exists(Path.Combine(_config.ResolvedResourcePacksFolder, "Shared.zip")));
@@ -451,7 +501,7 @@ public class PackSyncTests
         Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip"), "shader");
         Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip.txt"), "settings");
         Write(Path.Combine(Repo, "resourcepacks", "New.zip"), "new");
-        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, createBackup: true);
         Assert.IsTrue(result.Success, result.Error);
         Assert.IsNotNull(result.BackupFolder);
         Assert.AreEqual("personal", File.ReadAllText(Path.Combine(result.BackupFolder, "resourcepacks", "Personal.zip")));
@@ -470,7 +520,7 @@ public class PackSyncTests
         Write(pack, "old");
         using (var locked = new FileStream(pack, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
-            var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true);
+            var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, createBackup: true);
             Assert.IsFalse(result.Success);
             Assert.AreEqual("old", File.ReadAllText(Path.Combine(_config.ResolvedModsFolder, "Old.jar")));
             Assert.IsFalse(File.Exists(Path.Combine(_config.ResolvedModsFolder, "New.jar")));

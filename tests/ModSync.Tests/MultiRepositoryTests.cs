@@ -221,7 +221,7 @@ public class MultiRepositoryTests
         Assert.IsTrue(_git.Touched.All(folder => folder == PacksRepo));
         Assert.AreEqual(1, preview.LocalModChanges.UpdatedCount);
         _git.Touched.Clear();
-        var reinstall = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true);
+        var reinstall = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, createBackup: true);
         Assert.IsTrue(reinstall.Success, reinstall.Error);
         Assert.AreEqual(3, _git.Touched.Distinct().Count());
         Assert.AreEqual("new", File.ReadAllText(Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip")));
@@ -269,7 +269,7 @@ public class MultiRepositoryTests
         Write(Path.Combine(_config.MinecraftFolder, "options.txt"), "music:0.5\nresourcePacks:[\"vanilla\"]\n");
         var shader = Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip"); Write(shader, "shader");
         using var locked = new FileStream(shader, FileMode.Open, FileAccess.Read, FileShare.None);
-        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks, createBackup: true);
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(2, result.RestoredCount);
         StringAssert.Contains(File.ReadAllText(Path.Combine(_config.MinecraftFolder, "options.txt")), "resourcePacks:[\"vanilla\",\"file/Extracted\",\"file/Pack.zip\"]");
@@ -295,7 +295,7 @@ public class MultiRepositoryTests
         Write(Path.Combine(_config.ResolvedShaderPacksFolder, "Personal.zip"), "personal");
         var options = Path.Combine(_config.MinecraftFolder, "options.txt"); Write(options, "untouched");
         using var locked = new FileStream(options, FileMode.Open, FileAccess.Read, FileShare.None);
-        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.Shaders);
+        var result = await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.Shaders, createBackup: true);
         Assert.IsTrue(result.Success, result.Error);
         Assert.AreEqual(1, result.RestoredCount);
         Assert.AreEqual("new", File.ReadAllText(Path.Combine(_config.ResolvedShaderPacksFolder, "Shader.zip")));
@@ -357,11 +357,11 @@ public class MultiRepositoryTests
         var local = Path.Combine(_config.ResolvedResourcePacksFolder, "Pack.zip"); Write(local, "old");
         Write(Path.Combine(PacksRepo, "Pack.zip"), "new");
         _git.FailedRefresh = PacksRepo;
-        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks, createBackup: true)).Success);
         Assert.AreEqual("old", File.ReadAllText(local));
         _git.FailedRefresh = null;
         Write(_config.BackupFolder, "blocked");
-        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks, createBackup: true)).Success);
         Assert.AreEqual("old", File.ReadAllText(local));
     }
 
@@ -377,7 +377,7 @@ public class MultiRepositoryTests
         Assert.IsTrue(_git.Touched.All(folder => folder == ModsRepo));
         Assert.AreEqual("original", File.ReadAllText(options));
         _git.Touched.Clear(); _config.Config.SyncResourcePacks = false;
-        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks)).Success);
+        Assert.IsFalse((await Engine().CleanReinstallAsync(forceIfMinecraftRunning: true, scope: SyncScope.ResourcePacks, createBackup: true)).Success);
         Assert.AreEqual(0, _git.Touched.Count);
     }
 

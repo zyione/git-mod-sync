@@ -597,19 +597,19 @@ public partial class MainWindow : Window
         string category = scope == SyncScope.ResourcePacks ? "Resource Packs" : scope == SyncScope.Shaders ? "Shaders" : scope == SyncScope.Mods ? "Mods" : "Modpack";
         bool packs = scope is SyncScope.ResourcePacks or SyncScope.Shaders;
         ReinstallTitleText.Text = $"Clean Reinstall {category}?";
-        ReinstallDescriptionText.Text = packs ? "Save a safety backup, then reinstall every shared pack from this category’s repository." : scope == SyncScope.Mods ? "Back up and reinstall mods without changing resource packs or shaders." : "Back up and reinstall repository mods, then safely sync enabled packs.";
-        ReinstallStepOneText.Text = packs ? "1. Back up this pack folder and its selection settings." : scope == SyncScope.Mods ? "1. Move non-excluded mods into a safety backup." : "1. Back up mods, enabled packs, and pack settings.";
+        ReinstallDescriptionText.Text = "Note: Choose Reinstall only for normal syncing. Use Back up and reinstall only when testing and you need a recovery copy.";
+        ReinstallStepOneText.Text = packs ? "1. Replace shared packs without creating a backup." : "1. Delete non-excluded mods without creating a backup.";
         ReinstallStepTwoText.Text = packs ? "2. Replace all shared packs with fresh, verified copies." : "2. Install fresh repository mods; excluded mods stay.";
         ReinstallStepThreeText.Text = packs ? "3. Remove obsolete managed files; personal packs stay." : scope == SyncScope.Mods ? "3. Leave resource packs, shaders, and settings untouched." : "3. Sync shared packs; personal packs stay.";
         ReinstallPreservationText.Text = packs ? "Other categories and worlds stay untouched. Enabled selection rules are applied after the files succeed." : scope == SyncScope.Mods ? "Resource packs, shaders, and worlds stay untouched." : "Worlds stay untouched. Pack order and active shader follow enabled rules.";
-        CleanReinstallBackupPreviewText.Text = _configService.BackupFolder;
+        CleanReinstallBackupPreviewText.Text = "Reinstall only cannot undo replaced or deleted files.";
         ShowModal(CleanReinstallConfirmSheet);
     }
 
     private void OpenBackups_Click(object sender, RoutedEventArgs e)
     {
         var folder = _configService.BackupFolder;
-        if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Backups are created before pack changes or a clean reinstall.", false); return; }
+        if (!Directory.Exists(folder)) { ShowFeedback("No backups yet. Use Back up and reinstall to save a recovery copy. Automatic sync backups are limited to three snapshots.", false); return; }
         try { Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true }); }
         catch (Exception ex) { ShowFeedback($"Could not open backups: {ex.Message}", true); }
     }
@@ -628,19 +628,25 @@ public partial class MainWindow : Window
     }
 
     private async void ConfirmCleanReinstall_Click(object sender, RoutedEventArgs e)
+        => await ReinstallAsync(createBackup: false);
+
+    private async void ConfirmBackupReinstall_Click(object sender, RoutedEventArgs e)
+        => await ReinstallAsync(createBackup: true);
+
+    private async Task ReinstallAsync(bool createBackup)
     {
         if (_isBusy || !EnsureInstanceSelected()) return;
         if (!await CheckApplicationFirstAsync()) return;
         CloseModal();
         DismissFeedback();
-        SetBusy(true, "Backing up and reinstalling the selected category…");
+        SetBusy(true, createBackup ? "Backing up and reinstalling…" : "Reinstalling without backup…");
 
         try
         {
             var (success, backupDir, count, error) = await Task.Run(() =>
                 _syncService.CleanReinstallAsync(
                     UpdateProgress,
-                    forceIfMinecraftRunning: false, scope: _reinstallScope
+                    forceIfMinecraftRunning: false, scope: _reinstallScope, createBackup: createBackup
                 )
             );
 
@@ -658,7 +664,7 @@ public partial class MainWindow : Window
                     (success, backupDir, count, error) = await Task.Run(() =>
                         _syncService.CleanReinstallAsync(
                             UpdateProgress,
-                            forceIfMinecraftRunning: true, scope: _reinstallScope
+                            forceIfMinecraftRunning: true, scope: _reinstallScope, createBackup: createBackup
                         )
                     );
                 }
@@ -682,7 +688,8 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    ShowFeedback($"✓ Clean Reinstall Complete! {count} mods installed fresh.", false);
+                    string kind = _reinstallScope is SyncScope.ResourcePacks or SyncScope.Shaders ? "packs" : "mods";
+                    ShowFeedback($"✓ Reinstall complete. {count} {kind} installed; no backup created.", false);
                 }
             }
             else
@@ -1137,7 +1144,12 @@ public partial class MainWindow : Window
             ShowFeedback(result.RootElement.GetProperty("Message").GetString() ?? "Update finished.",
                 !result.RootElement.GetProperty("Success").GetBoolean());
             File.Delete(path);
-            if (result.RootElement.GetProperty("Success").GetBoolean()) _updateService.PruneDownloadCache();
+            if (result.RootElement.GetProperty("Success").GetBoolean())
+            {
+                _updateService.PruneDownloadCache();
+                string previous = Environment.ProcessPath + ".previous";
+                StorageMaintenance.DeleteFile(PathUtils.GetAppDirectory(), previous);
+            }
         }
         catch (Exception ex) { _logger.Warning($"Could not read update result: {ex.Message}"); }
     }

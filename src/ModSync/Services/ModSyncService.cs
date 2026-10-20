@@ -324,17 +324,18 @@ public class ModSyncService
 
     /// <summary>
     /// Performs a fresh clean install of all repository mods into the local mods folder.
-    /// Backs up mods, enabled packs, and pack settings under modsync_backups.
+    /// Creates a recovery snapshot only when explicitly requested.
     /// Provides live per-file backup & install progress, transfer speed, and ETA.
     /// </summary>
     public async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallAsync(
         Action<SyncProgressInfo>? progressCallback = null,
-        bool forceIfMinecraftRunning = false, SyncScope scope = SyncScope.All)
+        bool forceIfMinecraftRunning = false, SyncScope scope = SyncScope.All, bool createBackup = false)
     {
         if (scope is SyncScope.ResourcePacks or SyncScope.Shaders)
-            return await CleanReinstallPacksAsync(scope, progressCallback, forceIfMinecraftRunning);
+            return await CleanReinstallPacksAsync(scope, progressCallback, forceIfMinecraftRunning, createBackup);
         if (scope is not (SyncScope.Mods or SyncScope.All))
             return (false, null, 0, "Select Mods, Resource Packs, Shaders, or the whole modpack to reinstall.");
+        string? backupDir = null;
         try
         {
             var config = _configService.Config;
@@ -369,14 +370,14 @@ public class ModSyncService
             var packChanges = new PackSyncService(_configService).Plan(scope: scope);
 
             // Step 1: Backup existing mods if any exist (0% -> 40%)
-            string backupDir = new PackBackupService(_configService).SnapshotForReinstall(scope);
+            backupDir = createBackup ? new PackBackupService(_configService).SnapshotForReinstall(scope) : null;
+            // Read and validate the source before deleting any installed mods.
+            var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
             if (Directory.Exists(modsFolder))
             {
                 var localMods = ScanFolder(modsFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: false);
                 if (localMods.Count > 0)
                 {
-                    PathUtils.EnsureDirectoryExists(backupDir);
-
                     int i = 0;
                     foreach (var mod in localMods.Values)
                     {
@@ -391,25 +392,27 @@ public class ModSyncService
                         string speedEta = $"{remaining} item{(remaining > 1 ? "s" : "")} left";
 
                         progressCallback?.Invoke(SyncProgressInfo.Determinate(
-                            "Creating safety backup...",
+                            createBackup ? "Creating safety backup..." : "Removing old mods...",
                             pct,
-                            $"Backing up: {mod.RelativePath} ({i + 1} of {localMods.Count})",
+                            $"{(createBackup ? "Backing up" : "Removing")}: {mod.RelativePath} ({i + 1} of {localMods.Count})",
                             speedEta));
 
-                        string dest = Path.Combine(backupDir, "mods", mod.RelativePath);
-                        string destSubdir = Path.GetDirectoryName(dest) ?? backupDir;
-                        PathUtils.EnsureDirectoryExists(destSubdir);
-                        File.Move(mod.FullPath, dest, overwrite: true);
+                        if (backupDir != null)
+                        {
+                            string dest = Path.Combine(backupDir, "mods", mod.RelativePath);
+                            PathUtils.EnsureDirectoryExists(Path.GetDirectoryName(dest)!);
+                            File.Move(mod.FullPath, dest, overwrite: false);
+                        }
+                        else File.Delete(mod.FullPath);
                         i++;
                     }
-                    _logger.Info($"Backed up {localMods.Count} mods to {backupDir}");
+                    _logger.Info(createBackup ? $"Mods backed up to {backupDir}" : "Old non-excluded mods removed without backup.");
                 }
             }
 
             PathUtils.EnsureDirectoryExists(modsFolder);
 
             // Step 2: Copy all repo mods cleanly into ../mods with Speed & ETA (40% -> 100%)
-            var repoFiles = ScanFolder(repoFolder, config.AllowedExtensions, config.SyncSubdirectories, isRepoFolder: true);
             long totalBytes = repoFiles.Values.Sum(f => f.SizeBytes);
             int totalFiles = repoFiles.Count;
 
@@ -470,12 +473,12 @@ public class ModSyncService
         catch (Exception ex)
         {
             _logger.Error("Clean reinstall failed", ex);
-            return (false, null, 0, $"Clean reinstall failed: {ex.Message}");
+            return (false, backupDir, 0, $"Clean reinstall failed: {ex.Message}");
         }
     }
 
     private async Task<(bool Success, string? BackupFolder, int RestoredCount, string? Error)> CleanReinstallPacksAsync(
-        SyncScope scope, Action<SyncProgressInfo>? progress, bool forceIfMinecraftRunning)
+        SyncScope scope, Action<SyncProgressInfo>? progress, bool forceIfMinecraftRunning, bool createBackup)
     {
         string? backup = null;
         try
@@ -491,8 +494,11 @@ public class ModSyncService
             // Recopy all shared files, including files that already match. Local-only personal files stay.
             foreach (var change in plan.Changes.Where(change => change.SourceItem != null && change.Type == ChangeType.Unchanged))
                 change.Type = ChangeType.Updated;
-            progress?.Invoke(SyncProgressInfo.Indeterminate("Creating safety backup…", "Saving the selected packs and their settings…"));
-            backup = new PackBackupService(_configService).SnapshotForReinstall(scope);
+            if (createBackup)
+            {
+                progress?.Invoke(SyncProgressInfo.Indeterminate("Creating safety backup…", "Saving the selected packs and their settings…"));
+                backup = new PackBackupService(_configService).SnapshotForReinstall(scope);
+            }
             int packs = plan.Changes.Where(change => change.SourceItem != null).Select(change => change.RelativePath.Split('/')[1]).Distinct(StringComparer.OrdinalIgnoreCase).Count();
             var result = await ApplyChangesCoreAsync(plan, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress, backupPacks: false);
             return (result.Success, backup, packs, result.Error);

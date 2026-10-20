@@ -196,7 +196,7 @@ If `config.json` is missing, `ModSync.exe` will automatically generate it on sta
   "warnFileSizeMb": 50,
   "maxFileSizeMb": 100,
   "cleanInstallOnFirstRun": true,
-  "backupBeforeClean": true,
+  "backupBeforeClean": false,
   "firstSyncCompleted": false,
   "ignoredMods": [
     "OptiFine*",
@@ -224,7 +224,7 @@ If `config.json` is missing, `ModSync.exe` will automatically generate it on sta
 | `warnFileSizeMb` | integer | `50` | Displays a warning if any mod exceeds this size |
 | `maxFileSizeMb` | integer | `100` | Aborts push if any mod exceeds GitHub's hard file limit |
 | `cleanInstallOnFirstRun` | bool | `true` | Prompts for clean install on brand-new installs |
-| `backupBeforeClean` | bool | `true` | Automatically backs up existing mods before performing a clean reinstall |
+| `backupBeforeClean` | bool | `false` | Legacy compatibility field. Reinstall now uses the explicit dialog choice; old saved values do not enable backups. |
 | `ignoredMods` | array | `[]` | List of mod filenames or wildcard patterns (`*`, `?`) to ignore/exclude |
 | `autoCheckUpdates` | bool | `true` | Automatically checks for new `ModSync.exe` releases on launch |
 | `appUpdateRepository` | string | `"https://github.com/zyione/git-mod-sync"` | GitHub repository URL used for ModSync application self-updates |
@@ -251,17 +251,17 @@ Normal players who only download/synchronize mods **do not need a GitHub account
 
 ### Fresh "Clean Reinstall" (For Messed-Up Folders)
 
-Use **Settings → Maintenance & Tools → Reinstall...** to rebuild repository mods, or **Clean reinstall entire modpack…** in the same group for all enabled categories. Review the confirmation and click **Reinstall & Backup**.
+Use **Settings → Maintenance & Tools → Reinstall...** to rebuild repository mods, or **Clean reinstall entire modpack…** in the same group for all enabled categories. Review the confirmation and choose **Reinstall only** for normal syncing. Choose **Back up and reinstall** only when testing and you need a recovery copy.
 
 1. ModSync snapshots the complete enabled resource pack and shader folders, including personal files, and Minecraft pack selection settings.
-2. Existing non-excluded mods move into the backup's `mods/` folder. Excluded personal mods stay in place.
+2. Existing non-excluded mods are deleted. If you explicitly choose backup, they move into the snapshot instead. Excluded personal mods stay in place.
 3. Repository mods are installed fresh. Shared packs follow normal synchronization, so personal packs stay on disk. Pack order and active shader follow enabled repository declarations. Worlds and other unrelated files stay untouched.
 
-Backups live under the Minecraft instance's `modsync_backups/reinstall_<timestamp>_<unique ID>/`. The completion notification has an **Open Backup** action.
+Optional backups live beside ModSync.exe under `backups/<instance ID>/reinstall_<timestamp>_<unique ID>/`. The completion notification offers **Open Backup** only when a backup was created.
 
 ### Pack backups and restoration
 
-Before an ordinary download replaces or removes an existing pack file, ModSync copies and verifies the old file and affected pack settings under `modsync_backups/sync_<timestamp>_<unique ID>/`. An already-current sync creates no backup. Newly added files have no previous version to save. If backup creation or verification fails, pack writes stop. Backups are retained until you delete them yourself.
+Before an ordinary download replaces or removes an existing pack file, ModSync copies and verifies the old file and affected pack settings under the app's `backups/<instance ID>/sync_<timestamp>_<unique ID>/`. An already-current sync creates no backup. Newly added files have no previous version to save. If backup creation or verification fails, pack writes stop. Automatic sync/loader snapshots keep the newest recovery copy and up to three snapshots within 512 MiB; the newest snapshot is retained even if larger. Explicit reinstall backups are retained until you delete them, except for the one-time storage cleanup described below.
 
 Click **Backups** on the dashboard to open the backup folder. To restore, close Minecraft and copy desired files from `mods/`, `resourcepacks/`, or `shaderpacks/` into their original folders. `restore-paths.json` records the original locations of pack files and settings, including custom pack destinations. Restoring a backed-up `options.txt` restores its full contents. Re-running sync may reapply repository changes.
 
@@ -537,7 +537,7 @@ GitHub Actions caches dependency downloads, tests the app, publishes the EXE, ge
 
 ## Pack Reinstall and Order Sync (v1.4.0)
 
-Use **More actions → Reinstall…** on Resource Packs or Shaders to refresh only that category's repository and replace every shared pack with a fresh, verified copy, including matching files. Before replacing anything, ModSync snapshots the selected pack folder (including personal files), its selection settings, and tracking metadata into `modsync_backups/`. Obsolete managed files are removed; local-only personal packs remain. Other categories and worlds stay untouched. Settings offers separate mods-only and entire-modpack reinstall actions.
+Use **More actions → Reinstall…** on Resource Packs or Shaders to refresh only that category's repository and replace every shared pack with a fresh, verified copy, including matching files. Reinstall only creates no snapshot. If you choose Back up and reinstall, ModSync snapshots the selected pack folder (including personal files), selection settings, and tracking metadata into the app's `backups/<instance ID>/` folder before replacing anything. Obsolete managed files are removed; local-only personal packs remain. Other categories and worlds stay untouched. Settings offers separate mods-only and entire-modpack reinstall actions.
 
 Use **Sync Order** beside Resource Packs to apply `resourcepack-order.txt` without replacing installed pack files. The declaration lists highest priority first; Minecraft's stored list is reversed, with built-in and personal selections preserved. Required shared packs must already be installed; otherwise ModSync asks you to Sync Resource Packs first and leaves options unchanged. A missing declaration is reported rather than clearing your selection. Unchanged order makes no file changes or new backup. Changed options are backed up before replacement.
 
@@ -559,7 +559,7 @@ The confirmed folder is stored in config.json and survives executable updates. O
 
 Failures now offer an appropriate action: retry the relevant preview/confirmation, sign in again, choose an instance, sync the selected section before pushing, open backups, or view logs. Close Minecraft before retrying locked files. No recovery action silently performs a clean reinstall or deletes backups. A whole sync is still not a transaction; completed file changes may remain after a later failure, so retained backups and retries remain important.
 
-**Mods controls:** Check and Review changes sit beside Mods. Push and Reinstall are in its More actions menu. Mods Push uploads JAR changes and automatically publishes a new modpack version so player checks detect them. Previously published resource packs and shaders remain pinned. Push can also publish already uploaded files when there are no new local changes. Mods Reinstall backs up non-excluded mods before reinstalling repository mods; excluded mods, resource packs, shaders, and worlds remain untouched. Modpack actions → Push modpack publishes all enabled categories.
+**Mods controls:** Check and Review changes sit beside Mods. Push and Reinstall are in its More actions menu. Mods Push uploads JAR changes and automatically publishes a new modpack version so player checks detect them. Previously published resource packs and shaders remain pinned. Push can also publish already uploaded files when there are no new local changes. Mods Reinstall deletes non-excluded mods before reinstalling repository mods, with backup available as an explicit choice; excluded mods, resource packs, shaders, and worlds remain untouched. Modpack actions → Push modpack publishes all enabled categories.
 
 ## State-driven desktop dashboard (v1.6.0)
 
@@ -572,3 +572,7 @@ The interface uses neutral light/dark palettes, visible keyboard focus, Escape t
 The current comparison engine identifies differences, but does not establish a three-way local/remote/conflict history for every asset. The UI therefore reports **changes to review**, rather than guessing direction from counts. The upload preview retains its remote-change protections.
 
 All frontend changes must follow [ModSyncUI_UI_SKILL.md](ModSyncUI_UI_SKILL.md), the project's UI/UX source of truth.
+
+## Storage cleanup (v1.7.7)
+
+On the first dashboard launch after upgrading, ModSync permanently removes existing backups inside its portable app folder. It also removes old `ModSync.before-*.exe` copies and completed update downloads. New optional reinstall backups survive later launches. Old logs expire after 14 days; recent partial downloads remain resumable. Legacy recovery folders outside the app are preserved. Settings, launch hooks, and repository caches remain. The release is a self-contained EXE, but Git repository caches still require additional disk space for syncing and publishing.

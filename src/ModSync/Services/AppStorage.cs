@@ -80,7 +80,8 @@ public static class AppStorage
         string marker = Path.Combine(destination, ".imported-" + key);
         if (!File.Exists(marker))
         {
-            CopyMissing(Path.Combine(match.Folder, "backups", key), Path.Combine(destination, "backups", key));
+            if (!File.Exists(Path.Combine(destination, StorageMaintenance.MigrationMarker)))
+                CopyMissing(Path.Combine(match.Folder, "backups", key), Path.Combine(destination, "backups", key));
             string pending = Path.Combine(match.Folder, "pending-updates", key + ".txt");
             if (File.Exists(pending))
             {

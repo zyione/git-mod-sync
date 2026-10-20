@@ -864,7 +864,7 @@
                                                                FontSize="13"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource PrimaryTextBrush}" />
-                                                    <TextBlock Text="Safely backup existing mods &amp; restore fresh from repo"
+                                                    <TextBlock Text="Reinstall from the repository; backup is optional"
                                                                FontSize="11"
                                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                                Margin="0,2,0,0" />
@@ -973,7 +973,8 @@
                                                    FontSize="12"
                                                    Foreground="{DynamicResource PrimaryTextBrush}" />
                                         <TextBlock x:Name="CleanReinstallBackupPreviewText"
-                                                   Text="modsync_backups/reinstall_.../"
+                                                   TextWrapping="Wrap"
+                                                   Text="Reinstall only cannot undo replaced or deleted files."
                                                    FontFamily="Consolas, monospace"
                                                    FontSize="11"
                                                    Foreground="{DynamicResource AccentTextBrush}"
@@ -999,27 +1000,30 @@
                                 </StackPanel>
                             </Border>
 
-                            <Grid>
+                            <StackPanel>
                                 <Button x:Name="ReinstallBackButton"
                                         Content="← Back"
                                         Style="{StaticResource GhostButtonStyle}"
                                         HorizontalAlignment="Left"
                                         Click="BackFromReinstall_Click" />
 
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <StackPanel>
+                                    <Button x:Name="ConfirmReinstallButton"
+                                            Content="Reinstall only"
+                                            Style="{StaticResource DangerButtonStyle}"
+                                            Height="42" Margin="0,0,0,8"
+                                            Click="ConfirmCleanReinstall_Click" />
+                                    <Button Content="Back up and reinstall"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Height="42" Margin="0,0,0,8"
+                                            Click="ConfirmBackupReinstall_Click" />
                                     <Button Content="Cancel"
                                             Style="{StaticResource SecondaryButtonStyle}"
                                             Width="80"
-                                            Margin="0,0,10,0"
+                                            HorizontalAlignment="Right"
                                             Click="CloseModal_Click" />
-                                    <Button x:Name="ConfirmReinstallButton"
-                                            Content="Reinstall &amp; Backup"
-                                            Style="{StaticResource DangerButtonStyle}"
-                                            Height="42"
-                                            Width="160"
-                                            Click="ConfirmCleanReinstall_Click" />
                                 </StackPanel>
-                            </Grid>
+                            </StackPanel>
                         </StackPanel>
 
                         <!-- ================= 7. SYNC CONFIRMATION MODAL ================= -->
