@@ -7,6 +7,7 @@ public sealed class RepositoryCacheCleanup(ConfigService config, IGitService git
 {
     public async Task ReleaseAsync(Action<string>? report = null)
     {
+        if (config.Config.KeepRepositoryCopies) return;
         string root = Path.GetFullPath(Path.GetDirectoryName(config.ConfigFilePath)!);
         if (ConfigService.IsMinecraftDirectory(root) || !StorageMaintenance.IsUnlinked(root)) return;
         var selected = new RepositorySyncService(config, git).Selected(SyncScope.All);

@@ -12,9 +12,9 @@
     <ApplicationIcon>Assets/modsync-dark.ico</ApplicationIcon>
     
     <!-- Application Metadata -->
-    <Version>1.7.10</Version>
-    <AssemblyVersion>1.7.10.0</AssemblyVersion>
-    <FileVersion>1.7.10.0</FileVersion>
+    <Version>1.7.11</Version>
+    <AssemblyVersion>1.7.11.0</AssemblyVersion>
+    <FileVersion>1.7.11.0</FileVersion>
     <Product>ModSync</Product>
     <Title>ModSync - Minecraft Mod Manager</Title>
     <Company>ModSync</Company>
@@ -47,4 +47,5 @@
 
   <Import Project="../../build/DiscordWebhook.targets" />
 </Project>
+
 

@@ -45,6 +45,20 @@ public class RepositoryCacheCleanupTests
         await new RepositoryCacheCleanup(config, git).ReleaseAsync();
         Assert.IsFalse(Directory.Exists(repo)); Assert.AreEqual("installed", File.ReadAllText(installed));
     }
+    [TestMethod] public async Task RetentionSurvivesReloadAndDisablingRestoresCleanup()
+    {
+        Assert.IsFalse(config.Config.KeepRepositoryCopies);
+        config.Config.KeepRepositoryCopies = true;
+        config.Save();
+        var reloaded = new ConfigService(new LoggingService(), config.ConfigFilePath);
+        Assert.IsTrue(reloaded.Load().Success);
+        Assert.IsTrue(reloaded.Config.KeepRepositoryCopies);
+        await new RepositoryCacheCleanup(reloaded, git).ReleaseAsync();
+        Assert.IsTrue(Directory.Exists(repo));
+        reloaded.Config.KeepRepositoryCopies = false;
+        await new RepositoryCacheCleanup(reloaded, git).ReleaseAsync();
+        Assert.IsFalse(Directory.Exists(repo));
+    }
     [TestMethod] public async Task NotificationDiffIncludesPendingCommitsAndHandlesSpacesAndUnicode()
     {
         File.WriteAllText(Path.Combine(repo, "mods", "shared.jar"), "updated");

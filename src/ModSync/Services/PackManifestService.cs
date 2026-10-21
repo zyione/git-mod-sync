@@ -324,9 +324,8 @@ public sealed class PackManifestService(ConfigService config, ModIgnoreService i
             if (remaining == SyncScope.None) File.Delete(Journal);
             else File.WriteAllText(Journal, JsonSerializer.Serialize(pending with { Scope = remaining }, Json));
         }
-        // No content cache is needed once installed files have been verified. Any
-        // unfinished category can redownload its changed files on the next retry.
-        try { StorageMaintenance.ClearContent(Data); }
+        // Opted-in users keep verified downloads for later syncs and reinstalls.
+        try { if (!config.Config.KeepRepositoryCopies) StorageMaintenance.ClearContent(Data); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* Retry at the next startup. */ }
         return review.Summary;
     }

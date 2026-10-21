@@ -71,6 +71,9 @@ public class AppConfig
     [JsonPropertyName("repositoryFolder")]
     public string RepositoryFolder { get; set; } = "./repository";
 
+    [JsonPropertyName("keepRepositoryCopies")]
+    public bool KeepRepositoryCopies { get; set; } = false;
+
     [JsonPropertyName("requireConfirmationBeforePush")]
     public bool RequireConfirmationBeforePush { get; set; } = true;
 

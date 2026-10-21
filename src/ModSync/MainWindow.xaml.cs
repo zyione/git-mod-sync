@@ -101,8 +101,17 @@ public partial class MainWindow : Window
         if ((_configService.Config.AutoCheckUpdates || _appUpdatePriority.AvailableUpdate != null) &&
             !await CheckApplicationFirstAsync()) { _dashboardReady.TrySetResult(); return; }
 
-        SetBusy(true, "Removing old repository copies…");
-        try { await ReleaseRepositoryCachesAsync(); }
+        SetBusy(true, "Preparing local storage…");
+        try
+        {
+            if (!_configService.Config.KeepRepositoryCopies)
+            {
+                try { StorageMaintenance.ClearContent(Path.GetDirectoryName(_configService.ConfigFilePath)!); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                { _logger.Warning("Download cleanup will retry: " + ex.Message); }
+            }
+            await ReleaseRepositoryCachesAsync();
+        }
         finally { SetBusy(false); }
 
         // Authentication is checked when opening account/settings actions; it must not delay Play.
@@ -565,6 +574,7 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         ConfirmPushToggle.IsChecked = cfg.RequireConfirmationBeforePush;
         AutoCheckUpdatesToggle.IsChecked = cfg.AutoCheckUpdates;
+        KeepRepositoryCopiesToggle.IsChecked = cfg.KeepRepositoryCopies;
         SyncFabricLoaderToggle.IsChecked = cfg.SyncFabricLoader;
         SyncResourcePacksToggle.IsChecked = cfg.SyncResourcePacks;
         SyncShaderPacksToggle.IsChecked = cfg.SyncShaderPacks;
@@ -599,6 +609,7 @@ public partial class MainWindow : Window
         var cfg = _configService.Config;
         cfg.RequireConfirmationBeforePush = ConfirmPushToggle.IsChecked == true;
         cfg.AutoCheckUpdates = AutoCheckUpdatesToggle.IsChecked == true;
+        cfg.KeepRepositoryCopies = KeepRepositoryCopiesToggle.IsChecked == true;
         cfg.SyncFabricLoader = SyncFabricLoaderToggle.IsChecked == true;
         cfg.SyncResourcePacks = SyncResourcePacksToggle.IsChecked == true;
         cfg.SyncShaderPacks = SyncShaderPacksToggle.IsChecked == true;

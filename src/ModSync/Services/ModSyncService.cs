@@ -31,7 +31,7 @@ public class ModSyncService
         var (running, details) = _minecraftStatus();
         if (running) return (false, "Close Minecraft before updating. " + details);
         return await ApplyChangesCoreAsync(summary, _configService.ResolvedRepositoryFolder, _configService.ResolvedModsFolder, progress,
-            backupPacks: false, consumeDownloads: true);
+            backupPacks: false, consumeDownloads: !_configService.Config.KeepRepositoryCopies);
     }
 
     public SyncSummary InspectCachedFiles(SyncScope scope = SyncScope.All)

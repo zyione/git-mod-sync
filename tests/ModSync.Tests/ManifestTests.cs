@@ -100,6 +100,31 @@ public class ManifestTests
         Assert.IsFalse(Directory.Exists(config.ResolvedRepositoryFolder));
         Assert.AreEqual(0, Directory.GetFiles(Path.Combine(root, "content")).Length, "Successful installation consumes its downloads.");
     }
+    [TestMethod] public async Task RetainedDownloadsAreReusedAndRevalidated()
+    {
+        config.Config.KeepRepositoryCopies = true;
+        var handler = new Handler { Reply = _ => new(HttpStatusCode.OK) { Content = new StringContent("remote") } };
+        var service = Service(handler); var manifest = Manifest(); var review = service.Plan(manifest);
+        await service.DownloadAsync(review, null, default);
+        var engine = new ModSyncService(config, new GitService(logger), new AuthenticationService(logger), new MinecraftCheckService(logger), ignores, logger, minecraftStatus: () => (false, null));
+        Assert.IsTrue((await engine.ApplyManifestFilesAsync(review.Summary)).Success);
+        service.MarkVerified(manifest);
+        string cached = review.Summary.Changes.First().SourceItem!.FullPath;
+        Assert.IsTrue(File.Exists(cached));
+        Local("shared.jar", "changed");
+        review = service.Plan(manifest, full: true);
+        await service.DownloadAsync(review, null, default);
+        Assert.AreEqual(1, handler.Requests.Count, "Matching retained content should avoid a second download.");
+        File.WriteAllText(cached, "broken");
+        await service.DownloadAsync(review, null, default);
+        Assert.AreEqual(2, handler.Requests.Count, "Corrupt retained content must be downloaded again.");
+        config.Config.KeepRepositoryCopies = false;
+        review = service.Plan(manifest, full: true);
+        Assert.IsTrue((await engine.ApplyManifestFilesAsync(review.Summary)).Success);
+        service.MarkVerified(manifest);
+        Assert.IsFalse(File.Exists(cached));
+    }
+
     [TestMethod] public async Task CorruptDownloadCannotBeginInstallation()
     {
         Local("shared.jar", "before"); var handler = new Handler { Reply = _ => new(HttpStatusCode.OK) { Content = new StringContent("broken") } };

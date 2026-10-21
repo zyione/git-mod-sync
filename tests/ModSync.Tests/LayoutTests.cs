@@ -192,6 +192,17 @@ public class LayoutTests
                     typeof(MainWindow).GetMethod("Settings_Click", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, new object[] { window, new RoutedEventArgs() });
                     root.Measure(new Size(580, 640)); root.Arrange(new Rect(0, 0, 580, 640)); root.UpdateLayout();
                     SavePreview(root, dark ? "ui-settings-dark.png" : "ui-settings-light.png");
+                    var keepCopies = (CheckBox)window.FindName("KeepRepositoryCopiesToggle");
+                    keepCopies.BringIntoView(); root.UpdateLayout();
+                    var keepPoint = keepCopies.TranslatePoint(new Point(), root);
+                    Assert.IsTrue(keepCopies.ActualHeight >= 32 && keepPoint.X >= 0 && keepPoint.X + keepCopies.ActualWidth <= 580);
+                    Assert.IsTrue(keepPoint.Y >= 0 && keepPoint.Y + keepCopies.ActualHeight <= 640, "Repository retention must be reachable in a small window.");
+                    foreach (bool enabled in new[] { false, true })
+                    {
+                        keepCopies.IsChecked = enabled; root.UpdateLayout();
+                        SavePreview(root, $"ui-repository-retention-{(dark ? "dark" : "light")}-{(enabled ? "on" : "off")}.png");
+                    }
+                    keepCopies.IsChecked = config.Config.KeepRepositoryCopies;
                     var discordStatus = (TextBlock)window.FindName("DiscordWebhookStatus");
                     discordStatus.BringIntoView();
                     root.UpdateLayout();

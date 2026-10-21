@@ -8,7 +8,7 @@ public static class StorageMaintenance
 {
     public const string MigrationMarker = ".storage-cleanup-v1";
 
-    public static void Run(string root, Action<string>? report = null)
+    public static void Run(string root, Action<string>? report = null, bool clearContent = true)
     {
         root = Path.GetFullPath(root);
         if (ConfigService.IsMinecraftDirectory(root) || !IsUnlinked(root)) return;
@@ -54,7 +54,7 @@ public static class StorageMaintenance
             foreach (var file in Directory.EnumerateFiles(logs, "modsync-*.log"))
                 if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddDays(-14))
                     Attempt(() => DeleteFile(root, file));
-        Attempt(() => ClearContent(root));
+        if (clearContent) Attempt(() => ClearContent(root));
     }
 
     private static void SweepLegacyBackups(string root, DateTime cutoffUtc, Action<string>? report)
